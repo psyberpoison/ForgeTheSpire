@@ -1,0 +1,7 @@
+{
+  "_comment": "The Slay the Spire 2 build Forge's compiler/decompile research was last actively verified against. Compared on every /api/game-status call (see gameLocator.js's compareGameVersion / server.js's currentGame()) against the CURRENTLY installed game's own release_info.json — a mismatch means the game updated since this snapshot was taken, so some of Forge's [VERIFIED]/[BEST EFFORT] API assumptions could be stale. Update this file's version/commit/mainAssemblyHash (and verifiedAt) whenever a research round re-confirms Forge's compiled output still matches a freshly-installed game build — do not bump it just because time passed with no re-verification.",
+  "version": "v0.111.0",
+  "commit": "41cef1ea",
+  "mainAssemblyHash": 222455745,
+  "verifiedAt": "2026-09-18"
+}

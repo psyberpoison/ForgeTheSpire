@@ -1,0 +1,40 @@
+{
+  "name": "forge-sts2-character-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Downloadable local app: design a custom Slay the Spire 2 character and compile it against your own game install.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "release": "electron-builder --publish always"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.4"
+  },
+  "build": {
+    "appId": "com.forge.sts2characterbuilder",
+    "productName": "Forge",
+    "files": [
+      "main.js",
+      "preload.js",
+      "../backend/**/*",
+      "../frontend/**/*",
+      "!../backend/node_modules/.cache"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "mac": { "target": "dmg" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" },
+    "publish": {
+      "provider": "github",
+      "owner": "REPLACE_WITH_GITHUB_USERNAME",
+      "repo": "REPLACE_WITH_REPO_NAME"
+    }
+  }
+}

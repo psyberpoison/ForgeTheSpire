@@ -1,0 +1,65 @@
+<!--
+  [VERIFIED via real Godot engine source, 2026-09-02 — see
+  TOOLCHAIN_FINDINGS.md "getting the character working for real"] Exists
+  ONLY to satisfy Godot's own exporter. Real Godot engine source
+  (modules/mono/editor/GodotTools/GodotTools/Export/ExportPlugin.cs) shows
+  that the moment ANY .tscn in this pack/ project references a Script-type
+  ext_resource, Godot's export-pack step checks
+  File.Exists(GodotSharpDirs.ProjectSlnPath) and throws
+  "X is a C# file but no solution file exists" if it's missing, exactly
+  the real build error Tyler hit twice this project (card-trail VFX, then
+  the creature-visuals scene). That check isn't cosmetic: right after it
+  passes, ExportPlugin._ExportBeginImpl() calls
+  BuildManager.PublishProjectBlocking(...), which runs a REAL
+  `dotnet publish` against this exact .csproj/the matching .sln
+  (pack/{{modName}}.sln), confirmed via the same real engine source, not
+  assumed. This project deliberately has ZERO real code: the three script
+  stubs it compiles (NCardTrailVfx.cs, NCardTrail.cs, NCreatureVisuals.cs,
+  all real, single-newline-byte placeholders matching the base game's own
+  real exported convention, confirmed earlier this project by extracting
+  the base game's own .pck) exist only so their res:// paths resolve for
+  Godot's exporter; the REAL behavior those scripts drive comes from the
+  base game's own already-loaded MegaCrit assembly at runtime (Godot
+  resolves a loaded C# script's real Type via ScriptPathAttribute, not by
+  parsing this text), confirmed via real, working
+  `card_trail_ironclad.tscn`/`nibbit.tscn`/`crusher.tscn`, all extracted
+  directly from the base game's SlayTheSpire2.pck, doing the exact same
+  thing.
+
+  This mod's REAL C# gameplay code (cards, relics, powers, ModEntry,
+  Harmony patches) is completely unaffected: it still compiles entirely
+  separately via the existing, already-proven-working top-level
+  mod.csproj / `dotnet build`. This is a second, small, self-contained
+  project that lives ONLY inside pack/, purely so Godot's own exporter,
+  when invoked as a shell-out from mod.csproj's own build (see
+  ModProject.csproj.template's own export-pack Exec), finds what it's
+  looking for.
+
+  NOTE, learned the hard way: this file is itself parsed by Godot's own
+  editor tooling (GodotSharpEditor.ApplyNecessaryChangesToSolution, via
+  Microsoft.Build.Construction.ProjectRootElement) as part of the export
+  step, which uses a strict XML reader that rejects two adjacent hyphen
+  characters anywhere inside an XML comment, even mid-sentence (confirmed
+  by a real build failure: an XmlException naming exactly that pair of
+  characters, pointing straight at this file's own header, once the
+  Godot flag names above were written the normal way). This comment block
+  is deliberately written without that pair of characters anywhere,
+  including inside those two Godot flag names. Don't reintroduce it.
+
+  Sdk version/shape modeled on the REAL official Alchyr.Sts2.Templates
+  package's own `content/ModTemplate/ModTemplate.csproj`
+  (`Sdk="Godot.NET.Sdk/4.5.1"`, fetched verbatim in an earlier round, see
+  TOOLCHAIN_FINDINGS.md's "Round 28 ground-up audit"), and confirmed
+  against a real, live, shipped STS2 character mod's own top-level project
+  (github.com/harsh2204/STS2-Buu's Buu.csproj, also
+  `Sdk="Godot.NET.Sdk/4.5.1"`). net9.0 matches the TargetFramework Forge's
+  own mod.csproj already uses successfully on Tyler's machine (and Buu's
+  real csproj also uses net9.0 with this same SDK, live evidence they're
+  compatible), not a fresh guess.
+-->
+<Project Sdk="Godot.NET.Sdk/4.5.1">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+</Project>

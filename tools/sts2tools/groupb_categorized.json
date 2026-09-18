@@ -1,0 +1,405 @@
+{
+ "gate": [
+  [
+   "ShouldAddToDeck",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card"
+  ],
+  [
+   "ShouldAfflict",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, MegaCrit.Sts2.Core.Models.AfflictionModel affliction"
+  ],
+  [
+   "ShouldAllowAncient",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Models.AncientEventModel ancient"
+  ],
+  [
+   "ShouldAllowHitting",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature"
+  ],
+  [
+   "ShouldAllowTargeting",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target"
+  ],
+  [
+   "ShouldAllowSelectingMoreCardRewards",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Rewards.CardReward cardReward"
+  ],
+  [
+   "ShouldClearBlock",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature"
+  ],
+  [
+   "ShouldDie",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature"
+  ],
+  [
+   "ShouldDieLate",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature"
+  ],
+  [
+   "ShouldDisableRemainingRestSiteOptions",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldDraw",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, bool fromHandDraw"
+  ],
+  [
+   "ShouldEtherealTrigger",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card"
+  ],
+  [
+   "ShouldFlush",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldGainStars",
+   "bool",
+   "System.Decimal amount, MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldGenerateTreasure",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldPayExcessEnergyCostWithStars",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldPlay",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, MegaCrit.Sts2.Core.Entities.Cards.AutoPlayType autoPlayType"
+  ],
+  [
+   "ShouldPlayerResetEnergy",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldProceedToNextMapPoint",
+   "bool",
+   ""
+  ],
+  [
+   "ShouldProcurePotion",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.PotionModel potion, MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldPowerBeRemovedOnDeath",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.PowerModel power"
+  ],
+  [
+   "ShouldRefillMerchantEntry",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry entry, MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldAllowMerchantCardRemoval",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldCreatureBeRemovedFromCombatAfterDeath",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature"
+  ],
+  [
+   "ShouldStopCombatFromEnding",
+   "bool",
+   ""
+  ],
+  [
+   "ShouldTakeExtraTurn",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player"
+  ],
+  [
+   "ShouldForcePotionReward",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Rooms.RoomType roomType"
+  ],
+  [
+   "ShouldAllowFreeTravel",
+   "bool",
+   ""
+  ]
+ ],
+ "numeric": [
+  [
+   "ModifyAttackHitCount",
+   "int",
+   "MegaCrit.Sts2.Core.Commands.Builders.AttackCommand attack, int hitCount"
+  ],
+  [
+   "ModifyBlockAdditive",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal block, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Models.CardModel cardSource, MegaCrit.Sts2.Core.Entities.Cards.CardPlay cardPlay"
+  ],
+  [
+   "ModifyBlockMultiplicative",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal block, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Models.CardModel cardSource, MegaCrit.Sts2.Core.Entities.Cards.CardPlay cardPlay"
+  ],
+  [
+   "ModifyCardPlayCount",
+   "int",
+   "MegaCrit.Sts2.Core.Models.CardModel card, MegaCrit.Sts2.Core.Entities.Creatures.Creature target, int playCount"
+  ],
+  [
+   "ModifyOrbPassiveTriggerCounts",
+   "int",
+   "MegaCrit.Sts2.Core.Models.OrbModel orb, int triggerCount"
+  ],
+  [
+   "ModifyCardRewardUpgradeOdds",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Models.CardModel card, System.Decimal odds"
+  ],
+  [
+   "ModifyDamageAdditive",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource, MegaCrit.Sts2.Core.Entities.Cards.CardPlay cardPlay"
+  ],
+  [
+   "ModifyDamageCap",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource, MegaCrit.Sts2.Core.Entities.Cards.CardPlay cardPlay"
+  ],
+  [
+   "ModifyDamageMultiplicative",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource, MegaCrit.Sts2.Core.Entities.Cards.CardPlay cardPlay"
+  ],
+  [
+   "ModifyEnergyGain",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Decimal amount"
+  ],
+  [
+   "ModifyGoldGained",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Decimal amount"
+  ],
+  [
+   "ModifyHandDraw",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Decimal count"
+  ],
+  [
+   "ModifyHandDrawLate",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Decimal count"
+  ],
+  [
+   "ModifyHpLostBeforeOsty",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyHpLostBeforeOstyLate",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyHpLostAfterOsty",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyHpLostAfterOstyLate",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyMaxEnergy",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Decimal amount"
+  ],
+  [
+   "ModifyMerchantPrice",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry entry, System.Decimal cost"
+  ],
+  [
+   "ModifyOrbValue",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Models.OrbModel orb, System.Decimal value"
+  ],
+  [
+   "ModifyPowerAmountGivenAdditive",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Models.PowerModel power, MegaCrit.Sts2.Core.Entities.Creatures.Creature giver, System.Decimal amount, MegaCrit.Sts2.Core.Entities.Creatures.Creature target, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyPowerAmountGivenMultiplicative",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Models.PowerModel power, MegaCrit.Sts2.Core.Entities.Creatures.Creature giver, System.Decimal amount, MegaCrit.Sts2.Core.Entities.Creatures.Creature target, MegaCrit.Sts2.Core.Models.CardModel cardSource"
+  ],
+  [
+   "ModifyRestSiteHealAmount",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature creature, System.Decimal amount"
+  ],
+  [
+   "ModifySummonAmount",
+   "System.Decimal",
+   "MegaCrit.Sts2.Core.Entities.Players.Player summoner, System.Decimal amount, MegaCrit.Sts2.Core.Models.AbstractModel source"
+  ],
+  [
+   "ModifyOddsIncreaseForUnrolledRoomType",
+   "float",
+   "MegaCrit.Sts2.Core.Rooms.RoomType roomType, float oddsIncrease"
+  ],
+  [
+   "ModifyXValue",
+   "int",
+   "MegaCrit.Sts2.Core.Models.CardModel card, int originalValue"
+  ]
+ ],
+ "combined": [
+  [
+   "TryModifyCardBeingAddedToDeck",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, ref MegaCrit.Sts2.Core.Models.CardModel newCard"
+  ],
+  [
+   "TryModifyCardBeingAddedToDeckLate",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, ref MegaCrit.Sts2.Core.Models.CardModel newCard"
+  ],
+  [
+   "TryModifyEnergyCostInCombat",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, System.Decimal originalCost, ref System.Decimal modifiedCost"
+  ],
+  [
+   "TryModifyEnergyCostInCombatLate",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, System.Decimal originalCost, ref System.Decimal modifiedCost"
+  ],
+  [
+   "TryModifyStarCost",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, System.Decimal originalCost, ref System.Decimal modifiedCost"
+  ],
+  [
+   "TryModifyPowerAmountReceived",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.PowerModel canonicalPower, MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.Entities.Creatures.Creature applier, ref System.Decimal modifiedAmount"
+  ]
+ ],
+ "complex": [
+  [
+   "ModifyCardPlayResultLocation",
+   "MegaCrit.Sts2.Core.Entities.Cards.CardLocation",
+   "MegaCrit.Sts2.Core.Models.CardModel card, bool isAutoPlay, MegaCrit.Sts2.Core.Entities.Cards.ResourceInfo resources, MegaCrit.Sts2.Core.Entities.Cards.CardLocation cardLocation"
+  ],
+  [
+   "ModifyCardRewardCreationOptions",
+   "MegaCrit.Sts2.Core.Runs.CardCreationOptions",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Runs.CardCreationOptions options"
+  ],
+  [
+   "ModifyCardRewardCreationOptionsLate",
+   "MegaCrit.Sts2.Core.Runs.CardCreationOptions",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Runs.CardCreationOptions options"
+  ],
+  [
+   "ModifyGeneratedMap",
+   "MegaCrit.Sts2.Core.Map.ActMap",
+   "MegaCrit.Sts2.Core.Runs.IRunState runState, MegaCrit.Sts2.Core.Map.ActMap map, int actIndex"
+  ],
+  [
+   "ModifyGeneratedMapLate",
+   "MegaCrit.Sts2.Core.Map.ActMap",
+   "MegaCrit.Sts2.Core.Runs.IRunState runState, MegaCrit.Sts2.Core.Map.ActMap map, int actIndex"
+  ],
+  [
+   "ModifyMerchantCardPool",
+   "System.Collections.Generic.IEnumerable`1<MegaCrit.Sts2.Core.Models.CardModel>",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.IEnumerable`1<MegaCrit.Sts2.Core.Models.CardModel> options"
+  ],
+  [
+   "ModifyMerchantCardRarity",
+   "MegaCrit.Sts2.Core.Entities.Cards.CardRarity",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Entities.Cards.CardRarity rarity"
+  ],
+  [
+   "ModifyUnblockedDamageTarget",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature",
+   "MegaCrit.Sts2.Core.Entities.Creatures.Creature target, System.Decimal amount, MegaCrit.Sts2.Core.ValueProps.ValueProp props, MegaCrit.Sts2.Core.Entities.Creatures.Creature dealer"
+  ],
+  [
+   "ModifyNextEvent",
+   "MegaCrit.Sts2.Core.Models.EventModel",
+   "MegaCrit.Sts2.Core.Models.EventModel currentEvent"
+  ],
+  [
+   "ModifyUnknownMapPointRoomTypes",
+   "System.Collections.Generic.IReadOnlySet`1<MegaCrit.Sts2.Core.Rooms.RoomType>",
+   "System.Collections.Generic.IReadOnlySet`1<MegaCrit.Sts2.Core.Rooms.RoomType> roomTypes"
+  ],
+  [
+   "TryModifyCardRewardAlternatives",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, MegaCrit.Sts2.Core.Rewards.CardReward cardReward, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Entities.CardRewardAlternatives.CardRewardAlternative> alternatives"
+  ],
+  [
+   "TryModifyCardRewardOptions",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Entities.Cards.CardCreationResult> cardRewardOptions, MegaCrit.Sts2.Core.Runs.CardCreationOptions creationOptions"
+  ],
+  [
+   "TryModifyCardRewardOptionsLate",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Entities.Cards.CardCreationResult> cardRewardOptions, MegaCrit.Sts2.Core.Runs.CardCreationOptions creationOptions"
+  ],
+  [
+   "TryModifyKeywordsInCombat",
+   "bool",
+   "MegaCrit.Sts2.Core.Models.CardModel card, System.Collections.Generic.ISet`1<MegaCrit.Sts2.Core.Entities.Cards.CardKeyword> keywords"
+  ],
+  [
+   "TryModifyRestSiteOptions",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.ICollection`1<MegaCrit.Sts2.Core.Entities.RestSite.RestSiteOption> options"
+  ],
+  [
+   "TryModifyRestSiteHealRewards",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Rewards.Reward> rewards, bool isMimicked"
+  ],
+  [
+   "TryModifyRewards",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Rewards.Reward> rewards, MegaCrit.Sts2.Core.Rooms.AbstractRoom room"
+  ],
+  [
+   "TryModifyRewardsLate",
+   "bool",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.List`1<MegaCrit.Sts2.Core.Rewards.Reward> rewards, MegaCrit.Sts2.Core.Rooms.AbstractRoom room"
+  ],
+  [
+   "ModifyExtraRestSiteHealText",
+   "System.Collections.Generic.IReadOnlyList`1<MegaCrit.Sts2.Core.Localization.LocString>",
+   "MegaCrit.Sts2.Core.Entities.Players.Player player, System.Collections.Generic.IReadOnlyList`1<MegaCrit.Sts2.Core.Localization.LocString> currentExtraText"
+  ]
+ ]
+}

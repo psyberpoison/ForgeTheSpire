@@ -1,0 +1,1498 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "STS2CharacterPackage",
+  "description": "The full definition of a custom Slay the Spire 2 character. This is the ONLY thing that lives in the browser (localStorage). Nothing server-side ever persists it \u2014 it is sent to /api/compile on export and discarded by the server after the response is returned.",
+  "type": "object",
+  "required": [
+    "formatVersion",
+    "character",
+    "cards",
+    "relics",
+    "mechanics"
+  ],
+  "properties": {
+    "formatVersion": {
+      "type": "integer",
+      "description": "Bump whenever the schema changes shape, so the frontend can migrate old localStorage blobs."
+    },
+    "author": {
+      "type": "string",
+      "description": "Credited as the mod's author in the generated manifest. Optional \u2014 defaults to 'Unknown' at compile time if omitted."
+    },
+    "modVersion": {
+      "type": "string",
+      "description": "Semantic version string for the exported mod, e.g. '1.0.0'. Optional \u2014 defaults to '1.0.0' at compile time."
+    },
+    "character": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "color",
+        "maxHp",
+        "startingGold",
+        "energyPerTurn"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Slug used as the C# namespace / mod id, e.g. 'ember_knight'"
+        },
+        "name": {
+          "type": "string"
+        },
+        "shortDescription": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Tints card frames + orb"
+        },
+        "maxHp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startingGold": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "energyPerTurn": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "[Round 95, VERIFIED compiled as of this round via decompiling TheBurdenedNewCharacter.dll's real TheBurdened.cs — public override int MaxEnergy, same override-block position as StartingHp/StartingGold] Compiles to `public override int MaxEnergy => <value>;` on the generated character class (Character.cs.template) — previously collected but left uncompiled (\"nowhere confirmed to put it\")."
+        },
+        "baseOrbSlotCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "[Round 95, Tyler: \"'Char options for orb slots base' is an option for how many orb slots the character should start with. The Defect (base game character) starts with like 3 orb slots.\"] [BEST EFFORT via decompiling TheBurdenedNewCharacter.dll's real TheBurdened.cs — `public override int BaseOrbSlotCount => 0;`, same override-block position as StartingHp/StartingGold/MaxEnergy above] Compiles to `public override int BaseOrbSlotCount => <value>;` on the generated character class. Defaults to 0 when omitted (a safe no-orbs default) — set this above 0 for an Orb-focused character (see the `orbs` array below for the Orb definitions themselves).",
+          "default": 0
+        },
+        "startingDeckCardIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Card ids in the starting deck. Not deduplicated — a card id may appear more than once, and how many times it appears IS its starting-deck quantity (e.g. 5 copies of a Strike's id = 5 starting Strikes). This is a direct consequence of how backend/compiler.js emits StartingDeck: each entry maps 1:1 to its own `ModelDb.Card<T>()` expression with no dedup, so N copies of an id really do produce N separate starting-deck instances. The frontend's card board Quantities dropdown is what edits this field to more than one copy per card."
+        },
+        "startingRelicId": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "Neutral",
+            "Feminine",
+            "Masculine"
+          ],
+          "default": "Neutral",
+          "description": "Maps to the real MegaCrit.Sts2.Core.Entities.Characters.CharacterGender enum [VERIFIED via reflect-baselib rounds 11/12] \u2014 an abstract, override-required member on CharacterModel/CustomCharacterModel. Optional; defaults to Neutral when omitted (for backward-compat with characters saved before this field existed)."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Free-text note of which STS2 Steam branch (e.g. 'default', 'beta') this character package targets. Not compiled or validated \u2014 a reminder to Tyler only, since BaseLib's shape can differ between branches."
+        },
+        "resourceBarAnchor": {
+          "enum": ["EnergyCounter", "HealthBar"],
+          "default": "EnergyCounter",
+          "description": "[LEGACY, round 92/53 \u2014 superseded by the per-entry resourceBars[].anchor field below as of round 101] A single character-wide anchor for every resource bar. Kept only as a fallback: a resourceBars[] entry with no anchor of its own resolves to this value, so a project saved before round 101 keeps behaving exactly as it did. New/edited bars should set their own resourceBars[].anchor instead \u2014 Tyler: \"the 'Resource bars anchor' section. Can we move that to the status section. Ideally i'd like to be able to set that per status.\" See backend/compiler.js's resolveBarAnchor()/writeResourceBars() and claude/round92-resource-bars.md."
+        },
+        "resourceBars": {
+          "type": "array",
+          "description": "[BEST EFFORT \u2014 first real build of this feature] Each entry is an on-screen bar tied to a status/mechanic's real current stack count (ForgeActions.GetStatusStacks<T>, the same [VERIFIED] generic amountScalesWithStatus already uses), generalizing the bar-drawing shape already proven real in Tyler's own installed mod (TheBurdenedNewCharacter's Patches.ModStatusBarsPatch, round 51/52 evidence) into a schema-driven Forge feature. Optional; an omitted/empty array compiles to nothing (no Generated/ForgeResourceBar*.cs at all). Round 101 \u2014 each entry picks its own anchor (see the `anchor` property below), so different bars can anchor to different places on the same character; up to 3 standalone bars are supported PER anchor (not 3 total across both), and the \"below health bar\" anchor supports only 1 bar/diamond group total \u2014 see backend/compiler.js's writeResourceBars() for the exact per-anchor caps.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": true, "description": "Set false to keep the bar's configuration without compiling it in \u2014 mirrors how other optional entries in this schema stay editable while disabled." },
+              "anchor": {
+                "enum": ["EnergyCounter", "HealthBar"],
+                "default": "HealthBar",
+                "description": "Round 101 \u2014 where THIS bar anchors on screen, independent of every other entry. \"EnergyCounter\" sits above the energy counter (up to 3 standalone bars there); \"HealthBar\" sits below the health bar (1 bar/diamond group total there, and is the default \u2014 round 102, Tyler: \"they should all go below the health bar by default\"), with an explicit Creature.IsPlayer + character-type guard so it doesn't draw under enemy health bars too. Optional; an entry with no anchor of its own falls back to the character-wide resourceBarAnchor (above), then to \"HealthBar\" \u2014 see backend/compiler.js's resolveBarAnchor(). Every entry sharing one diamondGroup must resolve to the same anchor (a diamond group is one indivisible widget). Round 102 \u2014 the Forge UI only lets a mechanic-linked (\"custom\") bar's own per-status editor move this away from the default; the Character panel's bar list has no anchor control at all."
+              },
+              "label": { "type": "string", "description": "Optional display label on the bar itself. Defaults to the chosen status's own name when omitted." },
+              "statusKind": { "enum": ["vanilla", "custom"], "default": "custom", "description": "Same 3-field vocabulary as amountScalesWithStatus/amountScalesWithBuiltinStatus elsewhere in this schema \u2014 whether the tracked status is one of this character's own mechanics (\"custom\") or a real built-in game status (\"vanilla\")." },
+              "status": { "type": "string", "description": "Mechanic id \u2014 used when statusKind is \"custom\" (or omitted)." },
+              "builtinStatus": { "type": "string", "description": "Real built-in status name (see BUILTIN_STATUSES) \u2014 used when statusKind is \"vanilla\"." },
+              "max": { "type": "integer", "minimum": 1, "description": "The stack count at which this bar reads as full." },
+              "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#3399ff", "description": "Hex color for the bar's fill, e.g. \"#3399ff\"." },
+              "layout": { "enum": ["standalone", "diamond"], "default": "standalone", "description": "Round 94 — \"standalone\" (default) is an independent bar, same as round 92's original shape. \"diamond\" reproduces Tyler's own real, shipping, hand-built ModStatusBarsPatch layout exactly [VERIFIED — reverse-engineered from Tyler's own installed TheBurdenedNewCharacter.dll v3.0.0, then further hardened through rounds 93/94's tooltip fixes on that same real code]: two side bars flanking a center diamond, sharing one combined widget. Diamond-layout entries need diamondGroup + diamondRole below to say which 3 (or 2) bars belong to the same widget and where each sits." },
+              "diamondGroup": { "type": "string", "description": "Only used when layout is \"diamond\" — an arbitrary id shared by the 2-3 entries that make up one dual-bar+diamond widget. Entries with different diamondGroup values compile into separate widgets." },
+              "diamondRole": { "enum": ["left", "right", "center"], "description": "Only used when layout is \"diamond\" — which position this entry fills in its diamondGroup. Exactly one \"left\" and one \"right\" are required per group; \"center\" is optional (a group with only left+right is two bars with no diamond between them)." }
+            }
+          }
+        },
+        "bodySpriteAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[EXPORTED into the compiled mod as of the 'fully functional' round \u2014 BEST EFFORT confidence] asset id, see assets[] (kind:'bodySprite'), exactly 512\u00d7512px. The real in-game model art, meant to be used with a transparent background. Shown as-is in its own standalone preview \u2014 no scene compositing (an earlier round overlaid this on a Forge-generated combat placeholder scene; Tyler asked to drop that in favor of just seeing the uploaded art directly). On compile, written to pack/images/packed/portraits/<id>_creature.png \u2014 a real, confirmed filename convention (seen in both disassembled DLLs) but with NO confirmed C# override pointing at it (unlike hudIconAssetRef/selectScreenArtAssetRef/handArt below), so this is placed by naming convention only and flagged BEST EFFORT in the generated README.md."
+        },
+        "combatSpriteScale": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2,
+          "default": 1,
+          "description": "[Round 122, Tyler: \"is it possible to add a slider to change the size of the sprite?\"] Uniform size multiplier for the character's on-screen combat sprite — 1 = the existing auto-normalized default size (a Body sprite or pose-sheet idle frame is scaled to fill the standard ~465px-tall creature bounds, same as every base-game creature), 0.5 = half that size, 2 = double. Applies to BOTH the pose-sheet AnimationPlayer system (character.poseSheets) and the legacy static single-image creature_visuals scene — whichever one is actually generated for this character (see compiler.js's writeCharacterArt/generatePoseSheetVisuals). The Bounds/CenterPos/IntentPos/OrbPos/TalkPos marker node offsets scale proportionally too, so hover/click bounds, the intent icon, and the energy-orb-channel VFX position all stay visually aligned with the resized sprite rather than the sprite alone changing size. Baked into the generated C#/scene at compile time as a plain multiplier on the existing fixed numbers — no new runtime mechanism, same \"generate the final numbers once\" convention as every other Forge-computed value."
+        },
+        "hudIconAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[VERIFIED, EXPORTED into the compiled mod] asset id, see assets[] (kind:'hudIcon'), exactly 88\u00d788px. Shown as the character's icon while traversing the map. On compile, written to pack/images/packed/portraits/<id>_hud_icon.png and wired via two real overrides confirmed in both disassembled DLLs: CustomMapMarkerPath and CustomIconTexturePath (both point at the same file)."
+        },
+        "selectScreenArtAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[VERIFIED, EXPORTED into the compiled mod] asset id, see assets[] (kind:'selectScreenArt'), exactly 132\u00d7195px. A portrait-shaped image shown on the character-select screen. In the Forge UI this is previewed nested inside selectScreenBackgroundAssetRef's frame (rather than as its own separate box) \u2014 the overlap position (left:2.1% top:44.6% width:20.4% height:52.5% of the background frame) was measured directly from Tyler's own annotated mockup screenshot via color-based border detection against the frame's --border-soft outline, not eyeballed. On compile, written to pack/images/packed/portraits/<id>_char_select.png and wired via the real CustomCharacterSelectIconPath override, confirmed in both disassembled DLLs."
+        },
+        "selectScreenBackgroundAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[VERIFIED, EXPORTED into the compiled mod as of 2026-09-01 \u2014 UPDATED: earlier rounds marked this permanently preview-only, believing the real game needed a full ANIMATED Godot scene here that Forge had no way to author. That belief was wrong: extracting a real char_select_bg_*.tscn straight out of Tyler's own compiled TheBurdenedNewCharacter.pck (see TOOLCHAIN_FINDINGS.md) showed it's just a static Control/TextureRect with a 3-line GDScript loading a flat PNG \u2014 exactly the shape Forge can and now does generate (backend/compiler.js writeCharacterArt). CharacterModel.CharacterSelectBg is not virtual, so there's no C# override; the generated .tscn/.gd + this PNG are placed at the real convention-based res:// path instead, confirmed via direct sts2.dll IL disassembly.] asset id, see assets[] (kind:'selectScreenBackground'), exactly 1280\u00d7720px. Background shown behind the character while selected on the character-select screen. In the Forge UI, selectScreenArtAssetRef is composited on top of this at a measured position (see that field's description) so the combined preview matches the real character-select layout. If left unset, the real game falls back gracefully to an empty background (confirmed non-fatal) rather than erroring."
+        },
+        "campfireArtAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[UPDATED round 50 \u2014 now REALLY EXPORTED into the compiled mod, not preview-only] Earlier rounds marked this permanently preview-only, believing Forge could never author a real Godot rest-site scene. That belief was wrong: round 50 built a real generator (backend/compiler.js, 'Rest site character scene -> REAL flat-PNG export') that writes this PNG plus a real scenes/rest_site/characters/<modid>-<entry>_rest_site.tscn (Node2D root + a TextureRect 'Sprite' child + a ControlRoot/%Hitbox pair) and overrides CustomRestSiteAnimPath to point at it \u2014 the exact structure BaseLib's NRestSiteCharacterFactory needs, confirmed via direct IL disassembly of BaseLib.dll (GenerateNode/TransferAndCreateNodes) and cross-checked against two real reference .tscn scenes extracted from real .pck files (vanilla Ironclad's own rest_site scene, and Tyler's own installed TheBurdenedNewCharacter mod's real flat-PNG rest_site scene). Prior to this fix, Forge's blank placeholder scene here crashed BaseLib's auto-conversion (missing %Hitbox), which is why a real character's own rest-site visit showed the vanilla Ironclad fallback instead of their own character \u2014 see claude/toolchain-findings.md 'Round 50'. See restSpriteExportTransform for the real in-engine placement (modelHeight/offsetX/offsetY, Godot px) used by this export \u2014 a SEPARATE coordinate system from restSpriteTransform's own campfire-photo-percentage preview space, below.] asset id, see assets[] (kind:'campfireArt'), exactly 512\u00d7512px. The character sitting at a campfire, meant to be used with a transparent background. In the Forge UI this is composited onto a real bundled campfire background (frontend/assets/campfire-placeholder.png) at a measured seated-character position (left:16.14% top:22.51% width:26.54% height:33.18%), so Tyler can preview it without visiting the in-game campfire scene every time \u2014 kept per Tyler: 'I still want to keep the campfire preview feature since getting to the campfire section of the game is tedious to do for testing' (a brief prior round had dropped this in favor of a plain standalone preview, same as bodySpriteAssetRef, before being asked to restore it). DISPLAYED as 'Rest sprite' in the Forge UI as of the panel-reorg round (Tyler's own 'Template' reference screenshot) \u2014 a label-only rename confirmed with Tyler; the field key, asset kind ('campfireArt'), and element ids all stayed as-is on purpose, no migration needed."
+        },
+        "restSpriteTransform": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "[DESIGN-TIME PREVIEW ONLY, not compiled] Optional {x,y,width,height}, all percentages of the 585\u00d7465 campfire-preview frame (the same coordinate space this used to hard-code in CSS) \u2014 where campfireArtAssetRef's sitting art is drawn in the Forge UI's rest-site preview. Defaults to the originally-measured seated-character box (x:16.14 y:22.51 width:26.54 height:33.18, from the earlier OpenCV CampfireAvailableSpace.png measurement \u2014 see TOOLCHAIN_FINDINGS.md) whenever null/unset. Set live by dragging the Rest sprite (repositions x/y) or its corner handle (resizes width/height) directly in the Forge UI \u2014 Tyler: 'I would like to be able to move the character around and resize them ... reuse that same technique to see the size and placement of the character in real-time in the app.' NOT read by backend/compiler.js or backend/validate.js \u2014 the real game still resolves the rest-site scene via a Godot .tscn (see campfireArtAssetRef's own description above), so this stays a design-time aid only for now. Round 27's IL findings (claude/round27-alchemist-shop-rest-sprite-findings.md) confirmed a flat image IS structurally viable there with no Spine rig required; if that's ever wired into a real .tscn export, this x/y/width/height is the natural source for the generated node's Position/Scale.",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          }
+        },
+        "restSpriteExportTransform": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "[NEW round 50 \u2014 EXPORTED into the compiled mod] Optional {modelHeight, offsetX, offsetY} \u2014 real Godot pixel units, NOT percentages (same shape/convention as shopSpriteTransform, and for the same reason: this stores the actual values backend/compiler.js writes directly into the generated rest_site .tscn's TextureRect/Hitbox offset_* properties). Defaults to {modelHeight:465, offsetX:0, offsetY:0} whenever null/unset \u2014 the exact real, in-game-proven value read directly out of Tyler's own installed TheBurdenedNewCharacter mod's real rest_site .tscn/.gd (extracted from its own .pck, round 50), NOT an arbitrary guess. campfireArtAssetRef is schema-enforced exactly 512\u00d7512px, so scale is always uniform (modelHeight/512) and the rendered art is always a square of side modelHeight, bottom-anchored at the node's local origin (mirroring the already-proven Shop sprite 'ArtBottomCenter' convention) \u2014 left=offsetX-modelHeight/2, right=offsetX+modelHeight/2, top=offsetY-modelHeight, bottom=offsetY. The generated %Hitbox Control is sized to this exact same rect, so BaseLib's own auto-generated %ThoughtBubbleLeft/%ThoughtBubbleRight/%SelectionReticle (confirmed via IL of NRestSiteCharacterFactory.GenerateNode to be positioned relative to %Hitbox's real Position/Size) scale sensibly regardless of a character's specific art. [VERIFIED mechanism, round 50 \u2014 see backend/compiler.js and claude/toolchain-findings.md 'Round 50' for the full IL + real-reference-scene evidence trail] [BEST EFFORT default placement \u2014 465px/centered/bottom-anchored is a real value proven in-game for a DIFFERENT character (TheBurdenedNewCharacter), not independently re-measured against any other character's own art; nudge and re-export if a screenshot shows it needs adjusting, same iterative process used for the Shop sprite]. NOTE: this is a SEPARATE coordinate system from restSpriteTransform (above), which remains campfire-PHOTO-percentage space for the Forge-UI preview modal only \u2014 the two are not yet unified; a future round could OpenCV-recalibrate the preview against a real rest-site screenshot the same way round 49 did for the Shop sprite.",
+          "properties": {
+            "modelHeight": { "type": "number" },
+            "offsetX": { "type": "number" },
+            "offsetY": { "type": "number" }
+          }
+        },
+        "shopSpriteTransform": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "[EXPORTED into the compiled mod only when shopSpriteResizable is true \u2014 round 48] Optional {modelHeight, offsetX, offsetY} \u2014 real Godot pixel units, NOT percentages (unlike restSpriteTransform \u2014 the shop rig has no real screenshot-measured reference frame to measure percentages against, so this stores the actual values compiler.js writes into the generated Harmony prefix directly). Defaults to {modelHeight:473, offsetX:0, offsetY:0} whenever null/unset \u2014 the exact values spine-shop-test2's own round 45/46 fix used and Tyler confirmed via screenshot, so an untouched character compiles to byte-identical constants as the already-validated test rig. modelHeight is the sprite's rendered height in the shop, in pixels (width scales uniformly with it \u2014 the source PNG is square and always scaled uniformly, matching the real reference mod's own AlchemistMerchant.Attach technique). offsetX/offsetY nudge where the art's bottom-center lands relative to wherever the base game itself places the character's Node2D root (small, single/double-digit-pixel nudges are typical \u2014 large repositioning isn't expected, since screen placement itself is controlled by the base game's own shop-room scene, not this field). Set live by dragging the Shop sprite (repositions offsetX/offsetY) or its corner handle (resizes modelHeight) in the Forge UI's \"Modify position/size\" modal (openShopSpriteModal, same drag/resize mechanism as the Rest sprite's, round 28) \u2014 Tyler: \"I want the character to be resizable here when this gets uploaded into forge.\" [Round 49] The modal's preview frame is now a REAL shop screenshot (ShopPlaceholder.png, bundled as frontend/assets/shop-placeholder.png), and its default-position reference lines are OpenCV-measured (same feature-matching technique as the Rest sprite's CampfireAvailableSpace.png) against a second real screenshot of Forge's own default modelHeight=473/offset=(0,0) rendering (a plain white 512x512 square, via the spine-shop-test2 test rig) \u2014 confirmed Godot pixel units map 1:1 to this screenshot's own pixels (the rendered square measured almost exactly 473x473px). [MEASURED against a real screenshot for the DEFAULT placement specifically, round 49] \u2014 still [BEST EFFORT] for any position a user drags/resizes to, since only the one default configuration was actually measured in-game; nudge by screenshot-and-adjust for anything else, same iterative process the real reference mod's own author used.",
+          "properties": {
+            "modelHeight": { "type": "number" },
+            "offsetX": { "type": "number" },
+            "offsetY": { "type": "number" }
+          }
+        },
+        "shopSpriteResizable": {
+          "type": "boolean",
+          "default": false,
+          "description": "[Round 48] Opt-in flag controlling whether the Shop sprite compiles into a real, resizable/positionable in-game Spine attachment (round 47's fake-single-region-Spine-rig technique + the generated Generated/ForgeShopSpriteAttach.cs Harmony prefix), or stays a design-time Forge-UI preview only, same as every art field before round 47. Tyler: \"some users might not want to resize their sprite in the shop. this should be an optional feature. it should only apply the spine if the user intends to resize the shop sprite.\" Defaults to false \u2014 uploading a Shop sprite PNG (shopSpriteAssetRef) alone does NOT trigger the Spine rig export; the user must also explicitly check \"Make this sprite resizable/positionable in the shop\" in the Forge UI. When false, or when shopSpriteAssetRef is null, compiler.js writes no atlas/skeleton/PNG files under pack/spine_shop/ and no Generated/ForgeShopSpriteAttach.cs \u2014 CustomMerchantAnimPath's blank placeholder .tscn (round 36) is the only thing exported for the shop scene, same as every character compiled before round 47. When true (and a Shop sprite is uploaded), see shopSpriteAssetRef/shopSpriteTransform for exactly what gets generated and exported."
+        },
+        "shopSpriteAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[DESIGN-TIME PREVIEW ONLY by default; EXPORTED into the compiled mod only when shopSpriteResizable is true \u2014 see shopSpriteResizable, round 48] Round 47 built the fake-single-region-Spine-rig technique (round 27's second addendum, validated end to end in spine-shop-test2 through rounds 40\u201346) as real Forge codegen; round 48 (Tyler: \"some users might not want to resize their sprite in the shop. this should be an optional feature. it should only apply the spine if the user intends to resize the shop sprite.\") gated it behind an explicit opt-in instead of triggering on upload alone. When shopSpriteResizable is true, compiler.js synthesizes a minimal atlas+skeleton-JSON pair from this PNG (no live Spine software needed \u2014 a single bone/slot/region attachment sized to the upload's real 512\u00d7512 dimensions) and a per-character Harmony [HarmonyPrefix] on NMerchantCharacter._Ready() (Generated/ForgeShopSpriteAttach.cs) that swaps the placeholder child for a real SpineSprite built from that rig, scaled/positioned per shopSpriteTransform. [VERIFIED mechanism \u2014 confirmed working via a real godot.log + Tyler's own screenshot on the hand-authored rig this ports from] [BEST EFFORT default placement \u2014 see shopSpriteTransform]. When shopSpriteResizable is false (the default) or this field is null, none of that is generated \u2014 the sprite is a Forge-UI preview only, same as every character before round 47. CustomMerchantAnimPath still points at a real, separately-registered .tscn (round 36) \u2014 unchanged either way, still required for BaseLib to register the scene for conversion at all.] asset id, see assets[] (kind:'shopSprite'), exactly 512\u00d7512px. Shown when the character visits the shop."
+        },
+        "showEnergyStars": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to show the small star icon overlay on the energy orb preview, AND (as of the 'fully functional' round) whether to export a star icon file into the compiled mod at all \u2014 see starAssetRef."
+        },
+        "starAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[EXPORTED into the compiled mod when showEnergyStars is true \u2014 BEST EFFORT confidence, same caveat as bodySpriteAssetRef: a real, confirmed filename convention (pack/images/packed/portraits/<id>_star_icon.png, seen in both disassembled DLLs) but no confirmed C# override pointing at it.] asset id, see assets[] (kind:'star'), exactly 64\u00d764px, enforced on upload. Shown when showEnergyStars is true; null means \"show Forge's bundled default placeholder star art\" (ORB_STAR_DEFAULT_ASSET in frontend/index.html \u2014 Star.png, real placeholder art Tyler uploaded directly, a cyan 4-pointed sparkle) instead of a custom image \u2014 this bundled default is what actually gets exported too when no custom image is uploaded. Replaces the old text-glyph fallback (a \u2726 character in CSS color #42ccff) now that real bundled art exists. Click the star badge in the live preview to open a small editor (openStarEditor in frontend/index.html) letting you recolor it (see starColor) and/or replace it with your own image, live \u2014 Tyler: \"Clicking on the revealed star should present them with the option to recolor or replace it with their own image.\" NOTE: starColor's tint IS baked into the exported PNG for real (Round 119 \u2014 see starColor's own description) \u2014 backend/lib/pngTint.js is a small dependency-free PNG recolor added specifically for this."
+        },
+        "selectSfxAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[Round 151, EXPORTED into the compiled mod] asset id, see assets[] (kind:'selectSfx') — an uploaded WAV/MP3 (Tyler's own ask: \"5 second wav or mp3\", not schema-enforced — a longer clip is accepted and just plays in full) that replaces the sound played when this character is highlighted/chosen on the character-select screen. [VERIFIED via direct IL: MegaCrit.Sts2.Core.Models.CharacterModel.CharacterSelectSfx is a real, virtual, overridable string getter — confirmed with a fresh ecma_dump.py metadata read of the actual current sts2.dll, not the older/stale reflection dump an earlier pass in this same round had relied on.] [BEST EFFORT — the *resource format* the getter's return value needs is unconfirmed: compiler.js writes the uploaded file's raw bytes as-is into the pack (same 'write real bytes, no separate Godot .import step' convention every image asset in this app already uses successfully) and points the override at that res:// path, betting Godot's built-in runtime WAV/OggVorbis/MP3 loaders accept a raw file the same way its built-in PNG loader does for every image slot above — not independently proven for audio specifically. Test in-game and report back if the sound doesn't play; see claude/round151-custom-sound-feasibility-research.md for the full evidence trail.] null means no override — the game's own default select sound plays."
+        },
+        "deathSfxAssetRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "[Round 151, EXPORTED into the compiled mod] asset id, see assets[] (kind:'deathSfx') — an uploaded WAV/MP3 that replaces the sound played when this character dies. [VERIFIED via direct IL: BaseLib.Abstracts.CustomCharacterModel.CustomDeathSfx is a real, virtual, overridable string getter, on the exact class Forge already generates characters as — confirmed with a fresh ecma_dump.py metadata read of the actual current BaseLib.dll (v3.4.1, matching BASELIB_MIN_VERSION), not the older/stale reflection dump an earlier pass in this same round had relied on. Tyler's own real, published, affects_gameplay:true \"The Burdened\" mod's real shipped source overrides this exact member (silenced to \"res://\", on purpose, to stop Ironclad's own death sound leaking onto a custom character) — proof this override point compiles and is read by the real game, not a guess.] [BEST EFFORT — same resource-format caveat as selectSfxAssetRef above: the uploaded file's raw bytes are written as-is, no separate Godot .import step, betting on the same runtime-loader behavior every image asset already relies on.] null means no override — the game's own default death sound plays. Being-hit and winning sounds were investigated the same way this round and have NO equivalent override point anywhere on CharacterModel for a playable character (unlike monsters, which do have HurtSfx/TakeDamageSfx) — not offered here."
+        },
+        "handArt": {
+          "type": "object",
+          "description": "[VERIFIED, EXPORTED into the compiled mod] four hand-pose images, each exactly 422\u00d71200px, enforced on upload (see assets[], kind:'handArt'). Each uploaded pose is written to pack/images/packed/hands/<id>_hand_<pose>.png and wired via a real per-pose override, all 4 confirmed in both disassembled DLLs: CustomArmPointingTexturePath/CustomArmRockTexturePath/CustomArmPaperTexturePath/CustomArmScissorsTexturePath (schema key 'point' maps to the real 'Pointing' name \u2014 the one naming mismatch found). Poses left un-uploaded are simply skipped, not required.",
+          "properties": {
+            "point": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "asset id, see assets[]"
+            },
+            "rock": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "asset id, see assets[]"
+            },
+            "paper": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "asset id, see assets[]"
+            },
+            "scissors": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "asset id, see assets[]"
+            }
+          }
+        },
+        "cardFrames": {
+          "type": "object",
+          "description": "[Round 133, DESIGN-TIME PREVIEW ONLY — NOT YET compiled/validated, same honest-gap tier as orb/lore] Five optional 598×844px card-frame images (see assets[], kind:'cardFrame') — Tyler: \"we need the ability to add card frame art. one for every card/attacks/skills/powers/legendaries... unless a specific frame is uploaded for that type of card, they all default back to the 'all cards' frame.\" 'allCards' is the fallback used whenever a more specific slot (attack/skill/power/legendary) is left unset. Each frame's own art-window — where the card's own portrait art shows through — is a fixed 498×380px rectangle, top-left at (50,86) within the 598×844 frame, per Tyler's own spec. 'legendary' is a naming choice mapping to the schema's 'Ancient' CardRarity (the only rarest/most-special tier that exists) — not yet confirmed against Tyler directly. Whether the real game/BaseLib exposes an actual per-card-type frame override (the way CustomPortraitPath does for card art) is UNRESEARCHED — Tyler offered his own TheBurdenedNewCharacter's uploaded card frame as a reference if that research happens in a future round.",
+          "properties": {
+            "allCards": { "type": ["string", "null"], "description": "asset id, see assets[] — the fallback frame used whenever a more specific slot below is unset." },
+            "attack": { "type": ["string", "null"], "description": "asset id, see assets[]" },
+            "skill": { "type": ["string", "null"], "description": "asset id, see assets[]" },
+            "power": { "type": ["string", "null"], "description": "asset id, see assets[]" },
+            "legendary": { "type": ["string", "null"], "description": "asset id, see assets[] — maps to the 'Ancient' CardRarity tier." }
+          }
+        },
+        "vanillaCardAccess": {
+          "type": "object",
+          "description": "[Round 139, DESIGN-TIME PREVIEW ONLY — NOT YET compiled, same honest-gap tier as cardFrames/lore above] Whole-character opt-in checkboxes — Tyler: \"we are going to add the ability to also offer the character cards from each of the vanilla characters via checkboxes\", clarified to whole-character granularity plus a 6th Colorless option (\"one per character, but an additional one for colorless cards\"). The 5 real vanilla playable characters (Ironclad, Silent, Defect, Necrobinder, Regent) are [VERIFIED via a real TypeDef sweep of the installed sts2.dll, round 139 — reflect-baselib's reflect-output.txt shows StrikeIronclad/StrikeSilent/StrikeDefect/StrikeNecrobinder/StrikeRegent and DefendIronclad/DefendSilent/DefendDefect/DefendNecrobinder/DefendRegent as real compiled MegaCrit.Sts2.Core.Models.Cards.* classes, confirming these are the 5 real playable characters and their card-pool naming convention (MegaCrit.Sts2.Core.Models.CardPools.<Name>CardPool, confirmed for IroncladCardPool via sts2.xml doc comments)]. What checking a box should actually DO at compile time — merge that vanilla character's real CardPoolModel.GenerateAllCards() output into this character's own pool, reference each card class individually, or something else — is UNRESEARCHED (GenerateAllCards() is protected, so its real card membership per character isn't readable from metadata alone); this field only captures the author's intent for now, same as cardFrames before its own art-only half compiled.",
+          "properties": {
+            "ironclad": { "type": "boolean", "default": false },
+            "silent": { "type": "boolean", "default": false },
+            "defect": { "type": "boolean", "default": false },
+            "necrobinder": { "type": "boolean", "default": false },
+            "regent": { "type": "boolean", "default": false },
+            "colorless": { "type": "boolean", "default": false, "description": "The shared colorless card pool every character can draw from (CardPoolModel.IsColorless, a real confirmed property) — not owned by any one of the 5 characters above." }
+          }
+        },
+        "cardKeywords": {
+          "type": "array",
+          "description": "[Round 139] Custom card keywords — Tyler: \"we will also add the ability to define card keywords. Typically one word, followed by a description of what it does. And a dropdown of whether this goes before or after the card text. Once a keyword is added, the player should see the option to add a keyword to any card they make (this will be in the card editor, not here).\" [VERIFIED real BaseLib mechanism via reflect-baselib round 139, direct TypeDef read of the installed BaseLib.dll] `BaseLib.Patches.Content.CustomEnumAttribute(string name = null)` and `BaseLib.Patches.Content.KeywordPropertiesAttribute(AutoKeywordPosition position, bool richKeyword = false)` are real attributes, and `BaseLib.Patches.Content.AutoKeywordPosition` is a real enum with exactly `None`/`Before`/`After` members — matching Tyler's before/after ask exactly. A real, working example was found on Tyler's own machine (Keywords/ModKeywords.cs, header comment: \"AUTO-GENERATED by STS2 Character Creator — do not edit manually\"): `[CustomEnum(null)] [KeywordProperties(AutoKeywordPosition.After)] public static CardKeyword Heavy;` — a static field BaseLib's GenEnumValues rewrites into a genuinely new CardKeyword value at ModelDb.Init, referenced elsewhere as `<Namespace>.Keywords.ModKeywords.Heavy` (NOT `CardKeyword.Heavy` — that enum member doesn't exist until GenEnumValues creates it). compiler.js's generateModKeywordsSource emits this file for real (see keywordExpr()). The DESCRIPTION text's actual delivery mechanism (that same file's comment: \"loc rows... written into card_keywords under '<MODID>-<NAME>'\") is [BEST EFFORT — not independently confirmed via reflection] — compiler.js writes a best-guess localization/eng/card_keywords.json alongside the real enum-registration file, but whether the game actually reads that exact path/shape is unconfirmed.",
+          "items": {
+            "type": "object",
+            "required": ["id", "word"],
+            "properties": {
+              "id": { "type": "string" },
+              "word": { "type": "string", "description": "One word, PascalCase (e.g. \"Heavy\") — becomes both the display label and the real generated C# identifier (BaseLib static field name). Must not collide, case-insensitively, with one of the 7 real built-in CardKeyword values (Exhaust/Ethereal/Innate/Retain/Unplayable/Sly/Eternal) or another custom keyword." },
+              "description": { "type": "string", "description": "The reminder text automatically added to a card's description wherever this keyword is used." },
+              "position": { "type": "string", "enum": ["Before", "After"], "default": "After", "description": "Matches the real BaseLib.Patches.Content.AutoKeywordPosition enum (None/Before/After, None unused here) — whether this keyword's text is inserted before or after the card's own description." }
+            }
+          }
+        },
+        "poseSheets": {
+          "type": "object",
+          "description": "[Round 121 — the 'Advanced' character/art sub-section Tyler scoped in round 95: \"There should be an option to add a sprite sheet for every possible pose in the game. If I attack, I should be able to upload a sprite sheet that shows a full attack animation. The FPS should be customizable, and the frame count should allow for as little as 1.\"] Seven named poses, each an optional sprite-sheet animation (see poseSheetEntry below), each fully independent — Tyler, round 121 follow-up: \"Lets just replace the idle sprite with the sprite sheet if they upload one. The other spritesheets should be ignored unless something is uploaded to them.\" Uploading idle simply replaces the character's resting look/animation (in place of the static Body sprite); every other pose is used only if its own sheet is uploaded, and is otherwise silently skipped — there is no dependency between poses any more. Uploading NO pose sheets at all leaves the character exactly as before (static Body sprite, no AnimationPlayer, no ShouldReceiveCombatHooks-driven overrides) — fully backward compatible. Uploading ANY pose sheet (idle or not) switches CreateCustomVisuals() (backend/compiler.js's generatePoseSheetVisuals()) to a real Godot AnimationPlayer/AnimationLibrary that frame-slices each uploaded sheet via AtlasTexture, mirroring Tyler's own hand-built, real, compiled-and-tested reference implementation in TheBurdenedNewCharacter's Characters/TheBurdened.cs (idle + attack poses, 50/7 frames respectively, 9 FPS — found via the device bridge, round 121). The resting/base look is resolved in priority order: the idle sheet if uploaded; else the existing Body sprite (bodySpriteAssetRef), exported and loaded as a plain static texture same as it always was; else, if neither is set but some other pose sheet is, that pose sheet's own first frame ([BEST EFFORT] fallback for the rare case of a character with no idle and no Body sprite at all). Each of the six non-idle poses (attack/heavyAttack/cast/hurt/death/victory) compiles to a real hook override on the generated character class (CharacterModel already extends AbstractModel and already has ShouldReceiveCombatHooks => true unconditionally — Character.cs.template) that reaches the live combat Creature straight off the hook's own parameter, navigates Creature.GetCreatureNode() (real, public, [VERIFIED via direct sts2.dll IL read, round 121]) -> NCreature.Visuals (real, public) -> the AnimationPlayer this same CreateCustomVisuals() call built, and plays that pose's animation if uploaded (HasAnimation guard — an un-uploaded pose is simply skipped, the character stays on whatever it was already playing). attack/heavyAttack/cast dispatch off AfterCardPlayed (CardType.Attack vs Skill/Power, heavyAttack further gated on the played card implementing the new IHeavyAttackCard marker — see card.advancedOptions.heavyAttackAnimation); hurt off AfterDamageReceived; death off BeforeDeath (stays on its last frame, does not auto-return to idle); victory off AfterCombatVictory (no Creature param on that real hook — resolved via room.CombatState.Players.FirstOrDefault().Creature, a real, already-established single-player-safe fallback pattern used elsewhere in this codebase for hooks with no bound Creature). When idle itself isn't uploaded, a non-held pose finishing returns the sprite to the resolved resting texture directly (Body sprite or fallback pose frame) rather than trying to play a nonexistent \"idle\" animation. [VERIFIED via direct sts2.dll/BaseLib.dll IL read, round 121 — Creature.GetCreatureNode(), NCreature.Visuals, CombatRoom.CombatState, CharacterModel/AbstractModel's real AfterCardPlayed/AfterDamageReceived/BeforeDeath/AfterCombatVictory virtuals, and CustomCharacterModel.CreateCustomVisuals() as a real override point already proven working by Tyler's own compiled TheBurdened.cs] NCreature.SetAnimationTrigger (the base game's own animation-trigger mechanism) was also checked and confirmed Spine-only (a no-op whenever _spineAnimator is null, which it always is for a plain-Sprite2D character) — this is why pose triggering is driven directly rather than relying on any base-game auto-trigger.",
+          "properties": {
+            "idle": { "$ref": "#/definitions/poseSheetEntry" },
+            "attack": { "$ref": "#/definitions/poseSheetEntry" },
+            "heavyAttack": { "$ref": "#/definitions/poseSheetEntry" },
+            "cast": { "$ref": "#/definitions/poseSheetEntry" },
+            "hurt": { "$ref": "#/definitions/poseSheetEntry" },
+            "death": { "$ref": "#/definitions/poseSheetEntry" },
+            "victory": { "$ref": "#/definitions/poseSheetEntry" }
+          }
+        },
+        "lore": {
+          "type": "array",
+          "description": "[DESIGN-TIME PREVIEW ONLY, not compiled] flavor text entries (voicelines, chronicle entries, etc.) \u2014 purely organizational, Forge doesn't generate real in-game text yet.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "orb": {
+          "type": "object",
+          "description": "The character's energy/HP orb ART config \u2014 NOT a gameplay Orb (see the top-level `orbs` array for those). [VERIFIED, EXPORTED into the compiled mod as of the 'fully functional' round, UNLESS mode is 'default' (Ironclad default) \u2014 there's no real art configured in that mode, so nothing is exported and no override is added, matching the live preview showing nothing too.] When exported, all 5 layers (bundled default art, or a custom upload per-layer) are written to pack/images/packed/energy_counters/<id>_layer_{1..5}.png and wired via the real EnergyCounterLayerPath/CustomEnergyCounter overrides (BaseLib.Abstracts.CustomEnergyCounter, confirmed shape: a Func<int,string> + 2 Godot.Color args; the override's return type is `CustomEnergyCounter?`, nullable \u2014 CS1715, a real build error Tyler hit on his first real dotnet build, fixed 2026-08-27) \u2014 confirmed via IL disassembly of Tyler's own compiled TheBurdenedNewCharacter.dll. The 2 Color arguments' real meaning is unconfirmed [BEST EFFORT], both currently default to character.color.",
+          "properties": {
+            "mode": {
+              "enum": [
+                "buildFromColor",
+                "customLayers",
+                "default"
+              ],
+              "default": "customLayers",
+              "description": "New characters default to 'customLayers' with layers[] pre-seeded to {assetRef:null, color:null} \u00d7 5 \u2014 i.e. every layer just shows Forge's bundled default placeholder art (ORB_LAYER_DEFAULT_ASSETS in frontend/index.html: Background/SpinA/SpinB/Middle/Front.png) with no tint, so a brand-new character's orb preview looks like Tyler's own Complete.png reference out of the box. These are REAL placeholder art Tyler uploaded directly (\"Those are all placeholder images that should be overlayed on top of each other to make the energy icon\"), replacing the previous color-only gradient approximation (IRONCLAD_PLACEHOLDER_LAYER_COLORS, now removed) that rendered 5 shrinking concentric circles instead of real per-layer shapes. The LAYER COUNT of 5 is CONFIRMED real (not a Forge guess) \u2014 verified via direct IL/metadata disassembly of Tyler's own TheBurdenedNewCharacter.dll and BaseLib.dll: BaseLib.Utils.NodeFactories.NEnergyCounterFactory.FromLegacy calls CustomEnergyCounter.LayerImagePath(i) exactly 5 times with literal 1-based indices 1-5, the only call site in either assembly. The per-layer ROLE mapping is confirmed too, from Tyler's own Layers.png reference tool: Background (outer shell/backdrop), Spin A/Spin B (2 independently-rotating elements), Middle (glow behind the number), Front (thin legibility plate behind the number). Spin A and Spin B now actually animate in the live preview \u2014 Tyler: \"If we really want spinA and spinB to spin in the app, that is fine, but spinB needs to spin at about half the speed of spinA\" \u2014 implemented as plain CSS rotation, Spin B's animation-duration exactly double Spin A's (see .orb-layer-spin-a/-spin-b in frontend/index.html). A rotation re-test on real in-game screenshots (TestEnergy1/2/3.png) still couldn't measure real rotation speed/direction from footage (inconclusive \u2014 see TOOLCHAIN_FINDINGS.md), so the exact real-world spin rate is still unknown; the 2x ratio is the one concrete data point Tyler gave directly. 'buildFromColor' also renders the same 5 bundled layer images (not a flat fill) but auto-derives each layer's tint from `character.color` via CSS-mask + HSL lightness shift (see autoLayerColors/autoMiddleGradient/shiftLightness in frontend/index.html), nothing stored on the character beyond `color` itself \u2014 Tyler: \"Build from colors should default to showing the placeholder energy that we created, but color shift each layer to be based off of their selected color. The Background should ideally attempt to be the color they have selected, with spinA being lighter, spin B being somewhere between the background and spinA, Middle should be a combination of dark and light highlights, and front should be darker than the background.\" Implemented exactly: Background = character.color as-is; Spin A = +26 lightness; Spin B = +13 lightness (between Background and Spin A); Front = -22 lightness (darker); Middle can't be a single flat tint since it needs BOTH a dark and a light highlight at once, so it's rendered as a radial-gradient mask instead (light highlight near one edge, base color in the middle, dark highlight opposite) \u2014 an interpretation call, flagged to Tyler, since \"a combination of dark and light highlights\" doesn't map to one CSS color. Spin A/Spin B still animate at the same 2x ratio in this mode. 'default' (Use Ironclad default) hides the ENTIRE preview row (badge + Show-stars checkbox) rather than showing anything \u2014 Tyler: \"if 'use ironclad default' is selected, don't bother showing the preview\", since Forge has no real Ironclad default art to show. See TOOLCHAIN_FINDINGS.md for the full trail."
+            },
+            "layers": {
+              "type": "array",
+              "maxItems": 5,
+              "description": "5 layer rows, numbered 1-5 by the real engine's LayerImagePath(1..5) call order \u2014 NOT their paint order. CORRECTED in Round 119 via full IL disassembly of BaseLib's NEnergyCounterFactory::FromLegacy/AddLayer against Tyler's own updated TheBurdenedNewCharacter.dll: the real bottom-to-top composite order is Backdrop (see orb.backdropAssetRef, a separate mechanism) \u2192 Layer 2 (Spin A) \u2192 Layer 3 (Spin B) \u2192 Layer 1 \u2192 Layer 4 (Middle) \u2192 Layer 5 (Front). Layer 1 therefore paints OVER the two spin layers, not below them as previously assumed \u2014 its bundled default was changed from an opaque shape to a blank/transparent placeholder so it no longer hides Spin A/B by default. Each row independently combines an image (bundled default or custom upload) with an optional flat color tint \u2014 Tyler: \"I want the user to be able to change the colors of each layer, but to still be able to replace each layer with their own image and see what it looks like in real-time.\" Replaces the old {mode:'color'|'image', color, assetRef} shape (formatVersion 8->9 migration in frontend/index.html) where color/image used to be mutually exclusive via a mode toggle \u2014 now both apply simultaneously. Replaces the even older flat layerAssetRefs[] (formatVersion 6->7 migration).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "assetRef": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "asset id, see assets[] (kind:'orbLayer'), exactly 256\u00d7256px, enforced on upload. null means \"show nothing (fully transparent) for this layer slot\" (see ORB_LAYER_DEFAULT_ASSETS in frontend/index.html) instead of a custom image. CHANGED in Round 119 follow-up: previously null fell back to Forge's own bundled placeholder art; Tyler asked to match slay.spencerstiles.com's own Energy Counter tool instead (\"Unused layers stay transparent\") \u2014 every layer is optional now, upload only the ones you want. The original placeholder shape art still exists on disk and is still used, but only as 'buildFromColor' mode's internal fallback (that mode has no assetRef of its own to leave unset \u2014 see orb.mode's description)."
+                  },
+                  "color": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Hex tint color, or null. null = show the image (bundled or custom) with its own native colors, no tint \u2014 this is what actually gets exported into the compiled mod too, exactly as shown. Set = the image's alpha channel becomes a CSS mask and the layer renders as a flat silhouette in that color instead \u2014 applied identically whether the underlying image is bundled default or a custom upload, so recolor and image-replace compose in the LIVE PREVIEW (see tintableVisualCss in frontend/index.html). CHANGED in Round 119: this tint IS now baked into the exported layer PNG for real (see writeCharacterArt's own comment in backend/compiler.js, and backend/lib/pngTint.js \u2014 a small, dependency-free PNG decode/tint/encode added specifically for this, after IL disassembly proved the game's own CustomEnergyCounter colors don't retint layer art at all, only the outline ring and burst VFX). The generated README.md flags this per-character when any layer has a tint set."
+                  }
+                }
+              }
+            },
+            "layerAssetRefs": {
+              "type": "array",
+              "maxItems": 5,
+              "description": "SUPERSEDED by layers[] above (kept only so an old saved package's shape is documented; the frontend migrates this away on load and never writes it again).",
+              "items": {
+                "type": "string",
+                "description": "asset id, see assets[]"
+              }
+            },
+            "backdropAssetRef": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "NEW in Round 119. asset id, see assets[] (kind:'orbBackdrop'), exactly 256×256px. This is NOT one of the 5 numbered layers[] above — it's a separate, real mechanism confirmed via full IL disassembly of Tyler's own updated TheBurdenedNewCharacter.dll: a Harmony [HarmonyPatch(typeof(NEnergyCounter),\"_Ready\")] postfix (class EnergyBackdrop) that inserts a TextureRect as the bottom-most (index 0) child of the orb's %Layers node at runtime — i.e. it paints UNDER everything else, including the two spin layers. null means \"show nothing (fully transparent)\" (ORB_BACKDROP_DEFAULT_ASSET in frontend/index.html — see orb.layers[].assetRef's own description for why this is blank rather than Forge's old opaque-shape placeholder, a Round 119 follow-up per Tyler's explicit \"match the reference site\" call). No color/tint parameter exists on the real patch, so unlike layers[].color there is no backdropColor field. Exported (when orb.mode !== 'default') as pack/images/packed/energy_counters/<id>_backdrop.png plus a generated Harmony patch class (see backend/templates/ForgeEnergyBackdrop.cs.template) replicating the confirmed mechanism exactly."
+            }
+          }
+        },
+        "starColor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Hex tint color for the star badge, or null. Same tint mechanism as orb.layers[].color \u2014 null shows the star image (bundled or custom) with its native colors (the bundled Star.png is already a real measured cyan, #42ccff-ish, sampled from Regent's real default star icon in an earlier round); set applies a flat CSS-mask silhouette tint instead. New in formatVersion 9. CHANGED in Round 119: like orb.layers[].color, this tint is now baked into the exported star PNG for real (backend/lib/pngTint.js); the generated README.md flags this per-character when set."
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/card"
+      }
+    },
+    "relics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/relic"
+      }
+    },
+    "mechanics": {
+      "type": "array",
+      "description": "Custom statuses/buffs/debuffs the character's cards and relics can reference.",
+      "items": {
+        "$ref": "#/definitions/mechanic"
+      }
+    },
+    "enchantments": {
+      "type": "array",
+      "description": "Round 95, Tyler: \"Enchantments/Afflictions need their own section after cards, we'll modify how it looks later, but it needs to be its own section.\" DATA-CAPTURE ONLY, same convention as pets below — whether/how a real STS2 character mod can define a custom card- or relic-granted run modifier is still genuinely unresearched (see claude/feature-backlog.md group C's own \"Enchantments section\" item: \"need to confirm whether 'Enchantments' is a real STS2 system at all before scoping it\"). Entries here are exported as a design doc (Enchantments/README.md, see compiler.js:buildEnchantmentAfflictionReadme) rather than compiled into any C#.",
+      "items": {
+        "$ref": "#/definitions/enchantment"
+      }
+    },
+    "afflictions": {
+      "type": "array",
+      "description": "The negative counterpart to enchantments above — same section, same DATA-CAPTURE-ONLY convention, same unresearched-mechanism caveat. Exported as Afflictions/README.md (compiler.js:buildEnchantmentAfflictionReadme).",
+      "items": {
+        "$ref": "#/definitions/affliction"
+      }
+    },
+    "pets": {
+      "type": "array",
+      "description": "Tyler's request: \"a section to the page to create custom pets\". DATA-CAPTURE ONLY \u2014 no reflect-baselib round has found any real, confirmed (or even plausibly-guessable) mechanism for a mod to define a custom pet/companion. The one confirmed real \"pet\" concept anywhere in this project is `Player.Osty` (see compiler.js:CONDITION_SUBJECTS) \u2014 a FIXED property every Player already has, not something a mod creates. Entries here are exported as a design doc (Pets/README.md in the compiled mod, see compiler.js:buildPetsReadme) rather than compiled into any C#, so nothing here can ever break a real build.",
+      "items": {
+        "$ref": "#/definitions/pet"
+      }
+    },
+    "orbs": {
+      "type": "array",
+      "description": "Tyler's request: \"a section to the page to create custom ... orbs\" (a Defect-style gameplay Orb \u2014 NOT the character's energy-orb art, see character.orb above). UPDATED after reflect-baselib rounds 11/12 found a REAL, WORKING example (TheBurdenedNewCharacter.Orbs.MoonOrb) \u2014 passiveValue/evokeValue now compile into a real BaseLib.Abstracts.CustomOrbModel subclass (see backend/templates/Orb.cs.template and definitions/orb below). What's still NOT compiled: passiveText/evokeText (what Passive()/Evoke() actually DO) \u2014 Forge has no effect editor for orb hooks yet, so those remain freeform design notes exported to Orbs/README.md (see compiler.js:buildOrbsReadme) alongside the real .cs file.",
+      "items": {
+        "$ref": "#/definitions/orb"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "description": "Base64-encoded images the user uploaded (body sprite, orb layers, card art) — [Round 151] plus, now, base64-encoded audio (selectSfx/deathSfx). Kept out of the main object above for readability but same array.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "dataUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "orbLayer",
+              "orbBackdrop",
+              "cardArt",
+              "relicIcon",
+              "star",
+              "handArt",
+              "bodySprite",
+              "hudIcon",
+              "selectScreenArt",
+              "selectScreenBackground",
+              "campfireArt",
+              "shopSprite",
+              "cardFrame",
+              "selectSfx",
+              "deathSfx"
+            ]
+          },
+          "dataUrl": {
+            "type": "string",
+            "description": "data:image/png;base64,... for every image kind above. [Round 151] data:audio/wav;base64,... or data:audio/mpeg;base64,... for selectSfx/deathSfx — whichever MIME the browser reported for the uploaded file, preserved as-is (see backend/compiler.js's writeCharacterSfx, which reads this same prefix back to pick the exported file's extension)."
+          },
+          "name": {
+            "type": "string",
+            "description": "[Round 151, selectSfx/deathSfx only] The uploaded file's own original filename (e.g. \"my-select-sound.wav\"), kept purely so the Forge UI can show the user what they uploaded next to its player — never read by backend/compiler.js and not meaningful for any image kind above (those show the image itself as their own \"name\")."
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "poseSheetEntry": {
+      "type": "object",
+      "description": "One uploaded sprite-sheet animation for character.poseSheets — see that field's own description for the full compile mechanism. No fixed pixel dimensions are enforced on upload (unlike every other character art slot) since a sheet's real size depends entirely on frameCount/columns — forcing a resize would corrupt the frame grid.",
+      "properties": {
+        "assetRef": {
+          "type": ["string", "null"],
+          "description": "asset id, see assets[] (kind:'poseSheet'). Uploaded as-is, no forced resize."
+        },
+        "fps": {
+          "type": "number",
+          "minimum": 1,
+          "default": 12,
+          "description": "Playback speed. Compiles to each frame's real Animation key spacing (1/fps seconds apart) — the exact mechanism Tyler's own reference TheBurdened.cs uses (idle: 50 frames @ 9 FPS)."
+        },
+        "frameCount": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Tyler: \"the frame count should allow for as little as 1.\" A frameCount of 1 compiles to a single static AtlasTexture frame — a valid, real, non-animated pose."
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Grid columns for slicing the sheet — 0 (or omitted) means the legacy single-row layout (every frame side by side, sheet height IS frame height), matching Tyler's own reference TheBurdened.cs's MakeAtlasFrame default. A grid divides both axes, keeping a long animation's individual frames sharp under the game's per-image upload width cap instead of one extremely wide single-row sheet."
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "cost",
+        "type",
+        "rarity",
+        "target",
+        "effects"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The card's fixed energy cost. NOT how X-cost cards are declared — see costsX below. [CORRECTED] An earlier round assumed the real game uses a -1 sentinel here (an STS1-style convention, never actually reflect-baselib-confirmed for STS2). Decompiling Tyler's own real, compiled, tested TheBurdenedNewCharacter.dll disproved that: its one real X-cost card (Retaliation) passes cost 0 to the base constructor, not -1 — X-cost-ness is declared by a SEPARATE override (costsX below), independent of this numeric field. cost must be exactly 0 when costsX is true (backend/validate.js) — the only value the one confirmed real example demonstrates."
+        },
+        "costsX": {
+          "type": "boolean",
+          "description": "Whether this card costs \"X\" (all remaining energy) — Tyler's X-cost-card ask. [VERIFIED via decompiling Tyler's own TheBurdenedNewCharacter.dll, a real compiled/tested mod] `CardModel.HasEnergyCostX` is a real, protected, virtual bool getter (default false, not abstract — confirmed by a DIFFERENT real card in the same mod, CostOfGlory, compiling fine WITHOUT overriding it); Retaliation (a real, working X-cost card in that mod) overrides it to return true. Optional; omitted/false = ordinary fixed-cost card (the common case). When true: `cost` must be 0 (see above), and this card's OnPlay effects can use \"Use X\" on an action's amount/hit count (actionsArray's amountIsX/hitCountIsX) to read the resolved X value via the companion real method `CardModel.ResolveEnergyXValue()` — same evidence trail, see actionsArray below."
+        },
+        "starCost": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional. Undefined/omitted = no star cost (the common case — most cards don't use stars at all). Must be 0 (or omitted) when costsStarX is true — see that field below. [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3's \"Star Cost Change\" card, round 59, plus a direct sts2.dll metadata read] The real mechanism turned out NOT to be `CardModel.BaseStarCost` (its setter is genuinely private — CS0200 on a real dotnet build proved that back on 2026-08-27) but a DIFFERENT member, `CardModel.CanonicalStarCost` — a real, public, overridable (non-abstract) virtual int property. This compiles for real — see backend/compiler.js's generateCanonicalStarCostOverride. The companion StarsRemaining CONDITION (a different thing — the player's current live star count, not this card's own cost) is unaffected and still compiles for real as of reflect-baselib round 14 — see the conditionsArray description below."
+        },
+        "costsStarX": {
+          "type": "boolean",
+          "description": "Whether this card costs \"X\" stars (all remaining stars) — Tyler's round-71 ask, mirroring costsX above but for stars. [VERIFIED via decompiling Tyler's own updated TheBurdenedNewCharacter.dll, round 73] `CardModel.HasStarCostX` is a real, protected, virtual bool getter; confirmed overridden by a real working X-star-cost card (\"X Star\", TheBurdenedNewCharacter.Cards.XStar) in that mod — same confirmation tier as costsX/HasEnergyCostX (Retaliation). Optional; omitted/false = ordinary star cost (or none at all, the common case). When true: `starCost` must be 0 or omitted (see above)."
+        },
+        "type": {
+          "enum": [
+            "Attack",
+            "Skill",
+            "Power",
+            "Status",
+            "Curse"
+          ]
+        },
+        "rarity": {
+          "enum": [
+            "Basic",
+            "Common",
+            "Uncommon",
+            "Rare",
+            "Ancient",
+            "Event",
+            "Token",
+            "Status",
+            "Curse",
+            "Quest"
+          ],
+          "description": "Matches the real MegaCrit.Sts2.Core.Entities.Cards.CardRarity enum exactly (confirmed via reflect-baselib round 6) \u2014 'Basic' is the real name for starting-deck cards like Strike/Defend (there is no 'Starter' or 'Special' card rarity in the real game)."
+        },
+        "target": {
+          "enum": [
+            "SingleEnemy",
+            "AllEnemies",
+            "Self",
+            "None"
+          ],
+          "description": "Forge's own target vocabulary (shared with effect actions' targets) \u2014 compiler.js maps these onto the real MegaCrit.Sts2.Core.Entities.Cards.TargetType enum members (e.g. SingleEnemy -> AnyEnemy) at generation time."
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Either one of the 7 real built-in MegaCrit.Sts2.Core.Entities.Cards.CardKeyword values (Exhaust/Ethereal/Innate/Retain/Unplayable/Sly/Eternal \u2014 confirmed via reflect-baselib round 1, applied via AddKeyword(CardKeyword.X)/CanonicalKeywords, a real confirmed override, round 2), or [Round 139] the `word` of one of this character's own cardKeywords[] entries \u2014 compiler.js's keywordExpr() resolves each value to the real CardKeyword.X enum member for a built-in, or to <Namespace>.Keywords.ModKeywords.X (see cardKeywords' own schema description) for a custom one; backend/validate.js accepts both against the same character's cardKeywords list. Replaced the old exhausts/innate/ethereal booleans (formatVersion 4->5 migration in frontend/index.html) so all 7 real keywords were selectable, not just 3, and no longer a closed enum now that custom keyword words are also valid. Sly ('if discarded during your turn, play it for free', per community wiki/guide docs \u2014 not reflection, behavior isn't visible to reflection, only the enum member name is) is Forge's real answer to a 'when discarded' trigger want that doesn't need a separate trigger at all."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "uniqueItems": true,
+          "description": "Forge-only organizational metadata \u2014 free-text labels the deck author assigns (e.g. \"combo piece\", \"early game\"), not a real MegaCrit/BaseLib concept (unlike keywords above, which map to the real CardKeyword enum). Powers the card section's tag-filter UI in frontend/index.html; compiler.js never reads this field, nothing here is exported into the compiled mod. NOT the same thing as gameplayTags below \u2014 that one DOES compile."
+        },
+        "gameplayTags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "uniqueItems": true,
+          "description": "TRUE custom tags \u2014 freeform, author-invented tag strings (e.g. \"hit\") that DO compile, unlike the purely organizational `tags` above. Every generated card implements a Forge-owned interface, IForgeTaggedCard (backend/templates/IForgeTaggedCard.cs.template), exposing these as a case-insensitive HashSet<string> \u2014 NOT BaseLib's real MegaCrit.Sts2.Core.Entities.Cards.CardTag enum, which reflect-baselib round 10 confirmed is a genuine, CLOSED enum (5 real members: Strike/Defend/Minion/OstyAttack/Shiv) a mod cannot add new members to at runtime, and whose extension mechanism ([CustomEnum]) has no working example anywhere reflected (not the base game, not a real installed mod) to safely replicate. Checked via a PlayedCardHasTag condition (see conditionsArray) on the OnAnyCardPlayed trigger \u2014 this is Forge's real, working answer to 'whenever a card marked X is played, this other card reacts'."
+        },
+        "baseCardTag": {
+          "enum": [
+            "None",
+            "Strike",
+            "Defend",
+            "Minion",
+            "OstyAttack",
+            "Shiv"
+          ],
+          "default": "None",
+          "description": "Tyler's item 15: \"tag for if card is strike or defend\". Unlike gameplayTags above, this maps to the REAL, closed BaseLib/game MegaCrit.Sts2.Core.Entities.Cards.CardTag enum [CONFIRMED via reflect-baselib round 10 \u2014 exactly these 5 non-None members exist, nothing else, a mod cannot add a 6th]. Compiles to a `protected override HashSet<CardTag> CanonicalTags` on the generated card [VERIFIED override pattern \u2014 same shape as the real, reflection-confirmed CanonicalKeywords], so this card is recognized by any base-game or other-mod logic that specifically checks BaseLib's CardTag (e.g. Strike-synergy relics/powers already in the base game) \u2014 a different, narrower use case than gameplayTags, which only Forge-generated cards understand. \"Strike\"/\"Defend\" cover Tyler's literal ask; Minion/OstyAttack/Shiv are included since they're part of the same real closed enum and cost nothing extra to expose, but are mainly relevant to summon/Osty-attack/Silent-shiv-style cards. \"None\" (the default) omits the override entirely, same as not tagging the card at all."
+        },
+        "artAssetRef": {
+          "type": "string",
+          "description": "asset id, see assets[] (kind:'cardArt'). [VERIFIED, EXPORTED into the compiled mod as of round 16 \u2014 BaseLib source access + decompiling TheBurdenedNewCharacter.dll] On compile, written to pack/images/packed/card_portraits/<modIdLower>/<cardIdLower>.png and wired via the real CustomPortraitPath override, confirmed at scale: all 71 of Tyler's own real cards use this exact PNG-path override (BaseLib's Abstracts/CustomCardModel.cs confirms it's a real, publicly-overridable `virtual string?` member, Harmony-patched via a real CustomCardPortraitPngPath hook). Null/unset means no card art \u2014 the card compiles fine without one, just with no CustomPortraitPath override (falls back to whatever the base game shows for a card with no portrait)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Freeform card description text — Tyler: \"an editable description box where the user can describe what the card does. If left blank, fill in the description with the closest approximation of what the card does.\" [VERIFIED, EXPORTED into the compiled mod as of round 16 — BaseLib source access + Tyler's own decompiled mod, description-redesign first pass, Tyler: \"everything, including a first pass at description redesign\"] Compiles to `public override List<(string, string)>? Localization => new CardLoc(title, description);` — reading BaseLib's real Abstracts/ILocalizationProvider.cs source directly confirms both `CustomCardModel.Localization` (a real, overridable `virtual List<(string,string)>?` member) and the real `CardLoc(string Title, string Description, ...)` record's exact implicit conversion. NO real card in the decompiled mod actually uses this path (all 71 rely on the base game auto-composing text from CanonicalVars instead — see actionsArray's CanonicalVars note), but CardLoc is BaseLib's real, confirmed mechanism for exactly this kind of freeform authored text, which is what this field is. When left blank, frontend/index.html's generateCardDescription() auto-fills a best-effort plain-English approximation from the card's own effects/keywords at save time (and shows a live preview of the same, marked as auto-generated) — NOT real STS2 tooltip copy, same honesty caveat as STATUS_DESCRIPTIONS elsewhere in the app; backend/compiler.js falls back to a plain \"See card effects.\" string if a package reaches export with this still completely empty (a defense-in-depth guard for hand-edited/imported packages, not a server-side port of generateCardDescription's logic — that stays frontend-only for this first pass)."
+        },
+        "effects": {
+          "type": "array",
+          "description": "Cards compile to real CustomCardModel overrides \u2014 one per distinct trigger used. \"OnPlay\" -> OnPlay(...) (the original, full action support). \"OnDiscard\" -> AfterCardDiscarded(...) and \"OnTurnEndInHand\" -> OnTurnEndInHand(...), both CONFIRMED real via reflect-baselib round 9's hook-shaped-member sweep of CustomCardModel (closing the exact gap the formatVersion-5 note above referenced) \u2014 see cardEffectBlock and compiler.js:CARD_TRIGGER_HOOKS. Any trigger outside this set is rejected by the app (frontend dropdown only offers these three; backend/validate.js rejects the rest) \u2014 this used to silently compile with the effect block dropped entirely for ANY non-OnPlay trigger, caught by a real stress test (a card with a \"Passive\" effect block compiled clean with that block just gone, no error anywhere).",
+          "items": {
+            "$ref": "#/definitions/cardEffectBlock"
+          }
+        },
+        "advancedOptions": {
+          "type": "object",
+          "description": "Advanced Options — a collapsible section below the description field, Tyler's follow-up ask: \"cost reduction triggers... the option to enable the card to glow when certain conditions are met... playability conditions... the ability to add effects that happen while the card is in your hand.\" See backend/compiler.js's own comments (costReductionTodoLines/generateGlowOverride/generateAdvancedOptionsNotes/generateCardSource) for the exact evidence trail behind each of the 4 sub-fields below. Three (costReductions, glow, whileInHand) are grounded in real evidence and compile for real: costReductions calls the real, confirmed CardEnergyCost.AddThisCombat/AddThisTurnOrUntilPlayed methods (round 24, re-verified 2026-09-07 — see costReductions' own description below); whileInHand compiles through the SAME already-real OnTurnEndInHand trigger any card.effects[] block on that trigger already uses; glow compiles for real (`ShouldGlowGoldInternal` override) since decompiling Tyler's own TheBurdenedNewCharacter.dll (EnergeticAttack, Eternal) found the real mechanism. Only playability remains genuinely UNRESEARCHED — no reflect-baselib round or decompiled example has ever surfaced a CanPlay/IsPlayable-shaped override — and still compiles to nothing but a descriptive comment.",
+          "properties": {
+            "costReductions": {
+              "type": "array",
+              "description": "\"reduce the cost of this card when you play a skill or any other of the possible triggers.\" Each entry adjusts THIS card's own cost when one of the card's own (already-real) triggers fires — by default lowering it (the field's own name/history), or raising it when `direction` is \"Increase\" (round 164). [BEST EFFORT, real codegen] — round 14c's IL scan of the base game's Enlightenment.OnPlay() first found the real-NAMED CardEnergyCost.SetThisCombat(...)/SetThisTurnOrUntilPlayed(...) call (Enlightenment reduces every OTHER card in hand, not itself), but without full parameter signatures; round 24 (2026-08-30) closed that gap with a direct sts2.dll read of CardEnergyCost's real method table, confirming AddThisCombat(int amount, bool reduceOnly)/AddThisTurnOrUntilPlayed(int amount, bool reduceOnly) — the additive siblings of Enlightenment's Set-variant calls, same class, same (int, bool) shape — reached through CardModel's real public EnergyCost property. Re-verified 2026-09-07 (both CardEnergyCost's full member list AND Enlightenment's real OnPlay IL disassembled fresh) after this description itself was found stale. Compiles to `this.EnergyCost.Add<Scope>(-amount, true)` for a Decrease. See backend/compiler.js:costReductionTodoLines — including that function's own comment on the separate, one-tier-lower evidence behind Increase's `reduceOnly:false`.",
+              "items": {
+                "type": "object",
+                "required": ["trigger", "amount"],
+                "properties": {
+                  "trigger": {
+                    "enum": ["OnPlay", "OnDiscard", "OnTurnEndInHand", "OnAnyCardPlayed", "OnRetained"],
+                    "description": "Same 5 triggers a card's own effects[] can use (see cardEffectBlock.trigger) — Tyler's \"or any other of the possible triggers.\""
+                  },
+                  "cardTypeFilter": {
+                    "enum": ["Attack", "Skill", "Power", "Status", "Curse"],
+                    "description": "Only meaningful (and only accepted by backend/validate.js) when trigger is \"OnAnyCardPlayed\" — Tyler's own example, \"when you play a skill.\" Same 5 real CardType values as card.type/conditionsArray's PlayedCardHasType. Independently optional from cardTagFilter below — when both are set they're ANDed together (compiles to a single `if (typeCheck && tagCheck)`)."
+                  },
+                  "cardTagFilter": {
+                    "type": "string",
+                    "maxLength": 40,
+                    "description": "[Round 165] Tyler: \"the 'whenever any card is played' trigger should also add in a tag filter option, not just type.\" Only meaningful (and only accepted by backend/validate.js) when trigger is \"OnAnyCardPlayed\", same restriction as cardTypeFilter above. Reuses the exact same real PlayedCardHasTag condition an effect block's own \"If\" section already offers — Forge's own IForgeTaggedCard mechanism (a TRUE custom tag, i.e. card.gameplayTags — NOT BaseLib's closed CardTag enum), [VERIFIED via reflect-baselib round 10]. Unlike cardTypeFilter this carries no extra evidence caveat of its own — it's fully Forge-owned generated code, not dependent on any base-game internals. backend/validate.js cross-checks this against every card.gameplayTags value used anywhere in the character (case-insensitive), same as PlayedCardHasTag's own condition validation, so a typo is caught instead of silently compiling to an always-false check. Independently optional from cardTypeFilter above — when both are set they're ANDed together."
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How much to adjust this card's cost by (always a positive magnitude — `direction` below supplies the sign) — compiles to a real CardEnergyCost.Add<Scope>(±amount, reduceOnly) call, see costReductions' own description above."
+                  },
+                  "direction": {
+                    "enum": ["Decrease", "Increase"],
+                    "default": "Decrease",
+                    "description": "[Round 164] Tyler: \"is there a way to increase the cost of the card as well?\" \"Decrease\" (the default — every entry before this field existed behaves exactly as before) compiles to `Add<Scope>(-amount, true)`, the original [BEST EFFORT] path. \"Increase\" compiles to `Add<Scope>(+amount, false)` — same confirmed (int, bool) overload, no compile risk, but `reduceOnly`'s own real semantics were never independently confirmed by a decompiled sample; `false` here is inferred from Enlightenment's real `SetThisCombat(1, true)` usage (always wants cost 1, still passes true — only sensible if true means \"only apply if this would actually lower the value\"), so an Increase keeps that guard OFF on purpose. One evidence tier below the Decrease path — see backend/compiler.js:costReductionTodoLines's own comment for the full reasoning."
+                  },
+                  "scope": {
+                    "enum": ["ThisCombat", "ThisTurnOrUntilPlayed"],
+                    "default": "ThisCombat",
+                    "description": "Mirrors the two real method names found in reflect-baselib round 14c's Enlightenment evidence (SetThisCombat/SetThisTurnOrUntilPlayed) — which real STS scope the adjustment should use (compiles to the additive Add<Scope> sibling, confirmed real — see costReductions' own description above). Optional; omitted defaults to ThisCombat."
+                  }
+                }
+              }
+            },
+            "glow": {
+              "type": "object",
+              "description": "\"the option to enable the card to glow when certain conditions are met.\" [WIRED FOR REAL — see backend/compiler.js:generateGlowOverride] Tyler pointed at two real cards in his own TheBurdenedNewCharacter.dll (EnergeticAttack, Eternal) that both do exactly this — decompiling them found the real mechanism: `CardModel.ShouldGlowGoldInternal`, a real, non-abstract `protected virtual bool` property getter, safely overridable (a real `protected override` in both cards, not a guess). Every condition ANDed together compiles to that override's body. [2026-09-07 update] Eight condition kinds now compile to real, working code here: HasStatusStacks, HpBelowPercent, HasBlock, DebuffStacksTotal, PetIsOut, CardsPlayedThisTurn, AttacksPlayedThisTurn, and CardPositionInHand — all reached via CardModel.Owner (a real, always-accessible instance property both EnergeticAttack and Eternal call directly) instead of a cardPlay-bound local, since ShouldGlowGoldInternal is a bare property getter with no cardPlay in scope. CardPositionInHand is [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3] Earthquake's own real IsPlayable override, reused here since glow and playability share the identical bare-getter shape. (HpBelowPercent/HasBlock/DebuffStacksTotal/PetIsOut were previously unguarded in this specific context — they'd generate a reference to a cardPlay-bound local that doesn't exist here, a hard C# compile failure, not a safe runtime throw; fixed by routing them through the same Owner-based resolution HasStatusStacks already used.) The remaining three kinds (EnergyRemaining/StarsRemaining/CardsInHand) have no real backing in THIS no-cardPlay context specifically — PileType.Hand.GetPile(Player).Cards etc. are real but still need a cardPlay.Player to reach — and safely fall back to ForgeActions.TodoCondition(...) per-condition, same as everywhere else those appear.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "conditions": {
+                  "$ref": "#/definitions/conditionsArray",
+                  "description": "Same condition-kind vocabulary as an effect block's conditions, EXCEPT PlayedCardHasKeyword/PlayedCardHasTag/PlayedCardHasType — those only make sense where a cardPlay is in scope (the OnAnyCardPlayed trigger), which a glow/playability check has no equivalent of. [2026-09-07 update] HasStatusStacks, HpBelowPercent, HasBlock, DebuffStacksTotal, PetIsOut, CardsPlayedThisTurn, AttacksPlayedThisTurn, and CardPositionInHand are the eight kinds [VERIFIED] real here specifically — see conditions[].subject's own description for the one restriction (no \"CardTarget\" subject in this context)."
+                }
+              }
+            },
+            "playability": {
+              "type": "object",
+              "description": "\"playability conditions, so the card is only playable when your actions have met a certain criteria.\" [2026-09-07 — WIRED FOR REAL, see backend/compiler.js:generatePlayabilityOverride] Decompiling Tyler's own TheBurdenedNewCharacter.dll v3 found the real mechanism: CardModel.IsPlayable, a real, non-abstract `protected virtual bool` property getter — Earthquake overrides it as `PileTypeExtensions.GetPile(PileType.Hand, Owner).Cards.FirstOrDefault() == this` (leftmost card in hand) — the exact same bare-getter, no-cardPlay, Owner-reachable shape glow's ShouldGlowGoldInternal already uses (Earthquake's own glow override is literally `return this.IsPlayable;`). Every condition ANDed together compiles to that override's body via the same ctx.glowContext codegen path glow uses, so every real glow condition kind is real here too.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "conditions": {
+                  "$ref": "#/definitions/conditionsArray",
+                  "description": "Identical real condition-kind support to card.advancedOptions.glow.properties.conditions (same eight kinds, same restrictions) — see that field's description for the full list and the CardTarget-subject exception."
+                }
+              }
+            },
+            "whileInHand": {
+              "type": "array",
+              "description": "\"the ability to add effects that happen while the card is in your hand.\" Each entry is cardEffectBlock-shaped (same conditions/actions/elseActions), always trigger \"OnTurnEndInHand\" — the closest real analog to a continuous while-in-hand hook (a TRUE continuous hook is an explicitly open research gap — see claude/feature-backlog.md group C). Compiled by folding into the SAME OnTurnEndInHand override any card.effects[] block on that trigger already uses (backend/compiler.js:generateCardSource) — same existing Todo-fallback caveat that trigger already carries (no confirmed player/target binding yet), not an extra layer of unverified-ness on top.",
+              "items": { "$ref": "#/definitions/cardEffectBlock" }
+            },
+            "heavyAttackAnimation": {
+              "type": "boolean",
+              "default": false,
+              "description": "[Round 121] Only meaningful on an Attack-type card. When true, playing this card compiles a marker (the generated `IHeavyAttackCard` interface — Card.cs.template) onto the card's class so the character's own AfterCardPlayed hook (see character.poseSheets) plays the heavyAttack pose instead of the plain attack pose for this specific card. Only affects animation selection — no gameplay/damage effect. backend/validate.js rejects this on a non-Attack card (there's no \"attack\" pose distinction to make for a Skill/Power)."
+            }
+          }
+        },
+        "upgrades": {
+          "type": "array",
+          "maxItems": 4,
+          "description": "One entry per unlocked upgrade tier — index 0 = Card+, 1 = Card++, 2 = Card+++, 3 = Card++++ (up to 4 tiers; see backend/compiler.js's MAX_UPGRADE_TIERS — a guess pending real confirmation of STS2's actual limit). Each entry is a diff applied at rest sites, same shape as effects plus an optional cost change, OR `null` — a `null` entry means that tier's tab exists in the editor (the user clicked \"+\" to add it) but it still live-mirrors the tier below it (or the base card's own effects, for index 0) rather than having diverged into its own independent data yet. Only valid on card types other than Status/Curse (no Card+ for those in real STS2) — enforced by backend/validate.js and hidden from the editor UI via isUpgradableCardType(). Replaces the older singular `upgrade` object (formatVersion 9 -> 10 migration in frontend/index.html wraps any old value into `upgrades: [oldValue]`).",
+          "items": {
+            "type": ["object", "null"],
+            "properties": {
+              "costDelta": {
+                "type": "integer"
+              },
+              "starCostDelta": {
+                "type": "integer",
+                "description": "Added 2026-08-27, Tyler: \"we need to add the option to modify the star cost\" (on an upgrade tier, alongside the existing energy costDelta). [UNVERIFIED] — same honesty tier as card.starCost itself: CardModel.BaseStarCost is real but read-only (a real dotnet build hit CS0200 the moment it was assigned directly — see card.starCost's own description), so there is no confirmed real mechanism to apply a star-cost delta on upgrade either. Optional, saves/previews in the editor, compiles to nothing yet (an honest comment in the generated OnUpgrade() switch, not a broken call) — see backend/compiler.js's generateUpgradeMethod. `UpgradeStarCostBy` (a real, unexplored member sitting in the same CardModel dump BaseStarCost came from, and a strong naming parallel to the already-confirmed `EnergyCost.UpgradeBy(int)` this tier's own costDelta compiles to) is the most promising real candidate to chase in a future round, but stacking an unverified delta on top of an already-uncompiled base star cost risks a silently WRONG in-game value rather than an honest no-op, so it isn't attempted yet."
+              },
+              "effects": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/cardEffectBlock"
+                }
+              }
+            }
+          }
+        },
+        "transformOnUpgrade": {
+          "type": ["object", "null"],
+          "description": "[Round 167] \"the creator should allow for one card to transform into another when upgraded\" (Tyler, citing his own Stomp -> Earthquake pair from TheBurdenedNewCharacter as the kind of thing he means — though direct decompilation of those two specific cards found no code link between them; this is a genuinely new capability, not a reproduction of something his mod already does). When set, this card's ONE upgrade fully replaces it with a different authored card from this same character, instead of applying a stat delta — mutually exclusive with `upgrades` (backend/validate.js rejects both being set on the same card), since a transformed card is a different CardModel instance entirely and the original's own tier list would have no meaning after it. Only valid on card types other than Status/Curse, same restriction `upgrades` already has. [BEST EFFORT] — real, solid evidence for the underlying mechanism (CardCmd.Transform/CardModel.IsTransformable/AfterTransformedFrom/AfterTransformedTo, all confirmed via direct sts2.dll IL reads), but no decompiled example of a card transforming itself on upgrade this exact way exists to confirm the full composition end-to-end (OnUpgrade is a real, confirmed-synchronous hook; CardCmd.Transform returns a Task, so it's fired without being awaited — see backend/compiler.js's generateTransformUpgradeMethod for the complete evidence trail) — see backend/compiler.js for the full writeup.",
+          "properties": {
+            "targetCardId": {
+              "type": "string",
+              "description": "The `id` of another card defined in this same character that this card becomes on upgrade. Must reference an existing card and cannot reference this card itself — enforced by backend/validate.js."
+            }
+          }
+        }
+      }
+    },
+    "relic": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "rarity",
+        "effects"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rarity": {
+          "enum": [
+            "Starter",
+            "Common",
+            "Uncommon",
+            "Rare",
+            "Shop",
+            "Event",
+            "Ancient"
+          ],
+          "description": "Matches the real MegaCrit.Sts2.Core.Entities.Relics.RelicRarity enum exactly (confirmed via reflect-baselib round 6) \u2014 there is no 'Boss' relic rarity in the real game."
+        },
+        "iconAssetRef": {
+          "type": "string"
+        },
+        "flavorText": {
+          "type": "string"
+        },
+        "effects": {
+          "type": "array",
+          "description": "\"OnPlay\" is NOT a valid trigger here \u2014 a relic isn't \"played\" (see hookEffectBlock). Caught by a real stress test: a relic with trigger \"OnPlay\" compiled (remapped internally to AfterCardPlayed, which fires for ANY card ANYONE plays \u2014 not something intrinsic to the relic), and its DealDamage-to-SingleEnemy action compiled against a target (cardPlay.Target) borrowed from whatever card happened to trigger the hook, not a target the relic itself defines \u2014 nullable, and not what \"target a single enemy with this relic\" actually means.",
+          "items": {
+            "$ref": "#/definitions/hookEffectBlock"
+          }
+        },
+        "modifiers": {
+          "type": "array",
+          "description": "Round 20 (2026-08-25) \u2014 Group B: real AbstractModel hooks that return/gate a VALUE (a boolean decision, a numeric amount, or a set/ref parameter) instead of firing an event like effects[] above. See modifierBlock and backend/compiler.js:MODIFIER_HOOKS/generateModifierOverrides for the full per-hook evidence and codegen shape. Distinct from effects[] on purpose \u2014 these compile to a DIFFERENT override shape (e.g. `public override bool ShouldDie(Creature creature)`, not an event handler with an action list) and always call `base.<Method>(...)` first so an author's modifier composes safely with the base game and other mods instead of silently replacing their behavior.",
+          "items": {
+            "$ref": "#/definitions/modifierBlock"
+          }
+        }
+      }
+    },
+    "mechanic": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "stackable"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "stackable": {
+          "type": "boolean"
+        },
+        "decaysPerTurn": {
+          "type": "boolean"
+        },
+        "iconAssetRef": {
+          "type": "string"
+        },
+        "isBuff": {
+          "type": "boolean",
+          "description": "cosmetic only \u2014 green vs red styling"
+        },
+        "hideIcon": {
+          "type": "boolean",
+          "default": false,
+          "description": "Round 94 \u2014 [VERIFIED against a real generated FatiguePower.cs from a different character creator tool] compiles to `protected override bool IsVisibleInternal => false;` on the generated CustomPowerModel subclass. Hides this status's icon entirely: no vanilla icon in the status row, no apply flash, and Artifact can't consume a charge from it (all three read this one flag). Independent of resourceBars below \u2014 a status can be hidden with no bar at all (pure bookkeeping), shown as a bar with the icon also visible, or hidden AND shown only as a bar. See claude/round94-hidden-status-tooltip-fix.md."
+        },
+        "effects": {
+          "type": "array",
+          "description": "NEW \u2014 what this mechanic actually DOES on trigger (e.g. a Poison-style \"OnTurnStart -> deal damage equal to stacks\"). Previously there was no way to define this at all: a mechanic compiled to a real CustomPowerModel with only its Type/StackType overrides, no behavior. Same trigger set as relics (hookEffectBlock) \u2014 \"OnPlay\" isn't valid here either, a power isn't \"played\".",
+          "items": {
+            "$ref": "#/definitions/hookEffectBlock"
+          }
+        },
+        "modifiers": {
+          "type": "array",
+          "description": "Round 20 \u2014 same Group B mechanism as relic.modifiers above (see that field's description and backend/compiler.js:MODIFIER_HOOKS).",
+          "items": {
+            "$ref": "#/definitions/modifierBlock"
+          }
+        }
+      }
+    },
+    "enchantment": {
+      "type": "object",
+      "required": ["id", "name"],
+      "description": "See the top-level `enchantments` property above for the full evidence review — captured for design purposes only, no C# is generated from this yet.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string", "description": "Flavor text." },
+        "effectText": { "type": "string", "description": "Freeform description of what this enchantment does — NOT wired to any real trigger/condition/action system yet." }
+      }
+    },
+    "affliction": {
+      "type": "object",
+      "required": ["id", "name"],
+      "description": "See the top-level `afflictions` property above for the full evidence review — captured for design purposes only, no C# is generated from this yet.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string", "description": "Flavor text." },
+        "effectText": { "type": "string", "description": "Freeform description of what this affliction does — NOT wired to any real trigger/condition/action system yet." }
+      }
+    },
+    "pet": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "See the top-level `pets` property above for the full evidence review \u2014 captured for design purposes only, no C# is generated from this yet.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "description": "Flavor text."
+        },
+        "abilityText": {
+          "type": "string",
+          "description": "Freeform description of what this pet does \u2014 NOT wired to any real trigger/condition/action system (unlike mechanic.effects/relic.effects/card.effects), since there's no reflected hook signature of any kind to wire it to."
+        }
+      }
+    },
+    "orb": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "UPDATED after reflect-baselib rounds 11/12 found a REAL, WORKING example \u2014 TheBurdenedNewCharacter.Orbs.MoonOrb \u2014 extending BaseLib.Abstracts.CustomOrbModel directly. Orbs now compile to a real CustomOrbModel subclass (see backend/templates/Orb.cs.template): passiveValue/evokeValue below are real, wired into a real PassiveVal/EvokeVal override, matching MoonOrb's exact confirmed shape. Behavior (what Passive()/Evoke() actually DO) is still NOT wired \u2014 passiveText/evokeText remain freeform design notes, exported to Orbs/README.md \u2014 since Forge has no effect editor for orb hooks yet. See the top-level `orbs` property above and TOOLCHAIN_FINDINGS.md for the full evidence review.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "description": "Flavor text."
+        },
+        "passiveText": {
+          "type": "string",
+          "description": "Freeform description of the passive effect (fires each turn while this orb sits in a slot). NOT compiled \u2014 no real effect-editor wiring for orb hooks yet (see passiveValue below for what IS compiled)."
+        },
+        "evokeText": {
+          "type": "string",
+          "description": "Freeform description of the evoke effect (fires when this orb is passed out of the last slot). NOT compiled, same as passiveText."
+        },
+        "passiveValue": {
+          "type": "number",
+          "description": "[VERIFIED via reflect-baselib rounds 11/12] Compiles into a real `public override decimal PassiveVal` on the generated CustomOrbModel subclass \u2014 confirmed against MoonOrb, a real working example that declares exactly this override. Falls back to `baseValue` (below) if unset, for characters saved before this field existed."
+        },
+        "evokeValue": {
+          "type": "number",
+          "description": "[VERIFIED via reflect-baselib rounds 11/12] Compiles into a real `public override decimal EvokeVal` \u2014 same confirmation as passiveValue. Falls back to `baseValue` if unset."
+        },
+        "baseValue": {
+          "type": "number",
+          "description": "SUPERSEDED by passiveValue/evokeValue above (kept for backward compat with characters saved before this round) \u2014 used as their fallback default when either is unset, since old entries only ever captured one shared magnitude."
+        },
+        "focusScales": {
+          "type": "boolean",
+          "description": "Whether Focus should scale this orb's passive/evoke magnitude. STILL data-only/freeform \u2014 no reflect-baselib round has found a dedicated OrbModel-level \"scales with Focus\" mechanism; FocusPower is confirmed to be an ordinary real built-in status (see BUILTIN_POWER_CLASS_MAP), so if this is ever wired it would most likely reuse the same GetStatusStacks<FocusPower> scaling primitive Task #8's amountScalesWithStatus uses, inside a real Passive()/Evoke() override \u2014 not a property on the orb itself. Exported to Orbs/README.md as a design note only, same as passiveText/evokeText."
+        }
+      }
+    },
+    "cardEffectBlock": {
+      "type": "object",
+      "description": "One (trigger -> conditions -> actions [-> elseActions]) rule on a CARD \u2014 \"If <conditions>, then <actions>, else <elseActions>\" (Tyler's request; see elseActions below). \"OnPlay\" has full action support (real player/target Creature binding, confirmed since round 5). \"OnDiscard\"/\"OnTurnEndInHand\" are real, confirmed-compiling triggers (round 9) but their real hook signatures don't expose a confirmed player/target Creature yet, so their actions currently compile to a runtime NotImplementedException (ForgeActions.Todo(...)) rather than real behavior, same pattern already used for several relic/mechanic hook triggers \u2014 see compiler.js:CARD_TRIGGER_HOOKS. \"OnAnyCardPlayed\" is also real (AfterCardPlayed, confirmed since round 2 but not wired up until now) and \u2014 unlike OnDiscard/OnTurnEndInHand \u2014 has FULL real action support, same CardPlay binding as OnPlay: it fires whenever ANY card is played by anyone (including this card's own play), which is the real mechanism for a 'whenever a card with X is played, this reacts' synergy. Pair it with a PlayedCardHasKeyword condition (real CardKeyword values only) or a PlayedCardHasTag condition (TRUE custom tags \u2014 see card.gameplayTags and conditionsArray) to scope it to specific cards. \"OnRetained\" [Round 95, VERIFIED via decompiling TheBurdenedNewCharacter.dll's real, shipped PatientStrike.cs AND TrainedAssault.cs \u2014 both override AfterFlush(PlayerChoiceContext, Player, IReadOnlyCollection<CardModel> flushedCards, IReadOnlyCollection<CardModel> retainedCards), gated identically on `player == base.Owner && retainedCards.Contains(this)`] fires once at end of turn if THIS card was retained by its own owner \u2014 same real fgPlayer/fgPet binding as OnDiscard/OnTurnEndInHand (via this.Owner), no real target Creature (nothing is targeted by being retained).",
+      "required": [
+        "trigger",
+        "actions"
+      ],
+      "properties": {
+        "trigger": {
+          "enum": [
+            "OnPlay",
+            "OnDiscard",
+            "OnTurnEndInHand",
+            "OnAnyCardPlayed",
+            "OnRetained"
+          ]
+        },
+        "conditions": {
+          "$ref": "#/definitions/conditionsArray"
+        },
+        "actions": {
+          "$ref": "#/definitions/actionsArray"
+        },
+        "elseActions": {
+          "$ref": "#/definitions/actionsArray",
+          "description": "OPTIONAL \u2014 runs INSTEAD of `actions` when `conditions` evaluates false (compiler.js emits a real C# `else` block). Only meaningful (and only accepted by backend/validate.js) when `conditions` has at least one entry \u2014 an else with nothing to be the opposite of is rejected. A character can stack several effect blocks under the same trigger (Tyler's 'multiple if/else statements' ask) \u2014 e.g. one block checking Strength with its own else, and a second, independent block checking Dexterity right after it, both under OnPlay."
+        }
+      }
+    },
+    "hookEffectBlock": {
+      "type": "object",
+      "description": "One (trigger -> conditions -> actions [-> elseActions]) rule on a RELIC or MECHANIC \u2014 both are hook-driven (react to combat events) rather than \"played\" like a card, so \"OnPlay\" is excluded here on purpose. \"OnAnyCardPlayed\" (AfterCardPlayed) IS included \u2014 a relic/power isn't itself played, but it can react to any card being played, with full real target binding (see compiler.js:TRIGGER_HOOKS). Pair it with PlayedCardHasKeyword or PlayedCardHasTag (see conditionsArray) the same way a card can, e.g. a relic that reacts whenever a card tagged \"hit\" is played by anyone. See cardEffectBlock.elseActions above \u2014 same optional if/else shape, same trigger set for OnAnyCardPlayed.",
+      "required": [
+        "trigger",
+        "actions"
+      ],
+      "properties": {
+        "trigger": {
+          "description": "Round 19 (2026-08-27) added 39 more real triggers, all [VERIFIED via direct sts2.dll read] against the real override surface MegaCrit.Sts2.Core.Models.AbstractModel (see claude/status.md's Round 19 section and backend/compiler.js:TRIGGER_HOOKS for each one's real params + player/target binding tier). Grouped by category for the frontend's trigger picker — see frontend/index.html:TRIGGER_CATEGORIES for the same grouping/colors.",
+          "enum": [
+            "OnTurnStart",
+            "OnTurnEnd",
+            "OnCombatStart",
+            "OnKillEnemy",
+            "OnTakeDamage",
+            "OnExhaust",
+            "OnDrawCard",
+            "Passive",
+            "OnAnyCardPlayed",
+            "AfterCardGeneratedForCombat",
+            "AfterModifyingCardPlayCount",
+            "AfterCardDiscarded",
+            "AfterAttack",
+            "AfterDamageGiven",
+            "BeforeDamageReceived",
+            "AfterBlockCleared",
+            "AfterBlockGained",
+            "AfterBlockBroken",
+            "AfterCreatureAddedToCombat",
+            "AfterCurrentHpChanged",
+            "BeforeDeath",
+            "AfterDiedToDoom",
+            "AfterPreventingDeath",
+            "AfterSummon",
+            "AfterPowerAmountChanged",
+            "AfterEnergyReset",
+            "AfterEnergySpent",
+            "AfterGoldGained",
+            "AfterStarsSpent",
+            "AfterStarsGained",
+            "BeforeHandDraw",
+            "AfterHandEmptied",
+            "AfterPreventingDraw",
+            "AfterShuffle",
+            "AfterActEntered",
+            "AfterCombatEnd",
+            "AfterCombatVictory",
+            "BeforeSideTurnStart",
+            "AfterPlayerTurnStart",
+            "AfterOrbChanneled",
+            "AfterOrbEvoked",
+            "AfterRestSiteHeal",
+            "AfterRestSiteSmith",
+            "BeforePotionUsed",
+            "AfterPotionUsed",
+            "AfterPotionDiscarded",
+            "AfterPotionProcured",
+            "AfterItemPurchased",
+            "AfterForge"
+          ]
+        },
+        "conditions": {
+          "$ref": "#/definitions/conditionsArray"
+        },
+        "actions": {
+          "$ref": "#/definitions/actionsArray"
+        },
+        "elseActions": {
+          "$ref": "#/definitions/actionsArray",
+          "description": "See cardEffectBlock.elseActions \u2014 identical shape/rules."
+        }
+      }
+    },
+    "modifierBlock": {
+      "type": "object",
+      "description": "Round 20 (2026-08-25) — Group B: one (hook -> conditions -> value) rule on a RELIC or MECHANIC, gating a real value-returning AbstractModel hook (a boolean gate, a numeric modifier, or a gate+modifier) instead of an event-style trigger. See backend/compiler.js:MODIFIER_HOOKS for the full real signature + evidence + shape per hook, and claude/round20-groupb-findings.md for the design writeup. `conditions` is optional — omitted/empty always applies (matches conditionsArray's own empty-means-unconditional convention elsewhere in this schema). Every shape's generated override calls the real `base.<Method>(...)` first (or falls through to it when conditions don't match) so a Forge-authored modifier composes safely alongside the base game and other mods instead of silently replacing their behavior — see each shape's own codegen in generateModifierOverrides.",
+      "required": [
+        "hook"
+      ],
+      "properties": {
+        "hook": {
+          "description": "Which real AbstractModel hook this modifier overrides — see backend/compiler.js:MODIFIER_HOOKS for the real params/return type/shape behind each one. 30 of these 37 compile to real, working code this round; the other 7 are real, verified hooks that need more research before they can do anything but an honest ForgeActions.Todo(...) stub (see MODIFIER_HOOKS' own `reason` on each) — the frontend flags those 7 clearly rather than letting them look fully wired.",
+          "enum": [
+            "ShouldPlay", "ShouldDie", "ShouldClearBlock", "ShouldDraw", "ShouldAllowHitting",
+            "ShouldPlayerResetEnergy", "ShouldPayExcessEnergyCostWithStars", "ShouldCreatureBeRemovedFromCombatAfterDeath",
+            "ModifyBlockAdditive", "ModifyBlockMultiplicative", "ModifyDamageAdditive", "ModifyDamageMultiplicative",
+            "ModifyDamageCap", "ModifyAttackHitCount", "ModifyCardPlayCount", "ModifyGoldGained", "ModifyHandDraw",
+            "ModifyHpLostBeforeOsty", "ModifyMaxEnergy", "ModifyOrbPassiveTriggerCounts", "ModifyOrbValue",
+            "ModifyPowerAmountGivenAdditive", "ModifyRestSiteHealAmount", "ModifySummonAmount", "ModifyXValue",
+            "TryModifyEnergyCostInCombat", "TryModifyEnergyCostInCombatLate", "TryModifyPowerAmountReceived", "TryModifyStarCost",
+            "TryModifyKeywordsInCombat",
+            "TryModifyCardBeingAddedToDeck", "TryModifyCardBeingAddedToDeckLate",
+            "TryModifyRestSiteHealRewards", "TryModifyRestSiteOptions",
+            "ModifyCardPlayResultLocation", "ModifyExtraRestSiteHealText", "ModifyShuffleOrder"
+          ]
+        },
+        "conditions": {
+          "$ref": "#/definitions/conditionsArray"
+        },
+        "gateValue": {
+          "type": "boolean",
+          "description": "Used only by the 8 'gate' hooks (ShouldPlay/ShouldDie/ShouldClearBlock/ShouldDraw/ShouldAllowHitting/ShouldPlayerResetEnergy/ShouldPayExcessEnergyCostWithStars/ShouldCreatureBeRemovedFromCombatAfterDeath) — the value to force-return when `conditions` match. Falls through to the real base game behavior (`base.<Method>(...)`) when they don't."
+        },
+        "numericMode": {
+          "enum": ["Add", "Multiply", "Set"],
+          "description": "Used only by the 17 'numeric' hooks. 4 of them (ModifyBlockAdditive/ModifyPowerAmountGivenAdditive — Add; ModifyBlockMultiplicative — Multiply; ModifyDamageAdditive — Add; ModifyDamageMultiplicative — Multiply) have this LOCKED by backend/compiler.js to match what the hook's own real name already promises (using the other operation there would contradict what the hook's name tells the base game/other mods it does) — the frontend disables this field for those and shows the locked operation instead. The other 13 accept any of the 3; omitted defaults to \"Add\"."
+        },
+        "numericValue": {
+          "type": "number",
+          "description": "Used only by the 17 'numeric' hooks — the amount to Add/Multiply/Set. Applied on top of `base.<Method>(...)`'s own real return value (so this composes with the base game/other mods), only when `conditions` match."
+        },
+        "setValue": {
+          "type": "number",
+          "description": "Used only by the 4 'tryRefNumeric' hooks (TryModifyEnergyCostInCombat/TryModifyEnergyCostInCombatLate/TryModifyPowerAmountReceived/TryModifyStarCost) — the value to set the hook's real `ref decimal` output parameter to when `conditions` match (and return true). Falls through to `base.<Method>(...)`'s own bool/ref result when they don't."
+        },
+        "keywordOp": {
+          "enum": ["Add", "Remove"],
+          "description": "Used only by TryModifyKeywordsInCombat — whether to add or remove `keyword` from the played card's real in-combat keyword set when `conditions` match."
+        },
+        "keyword": {
+          "type": "string",
+          "description": "Used only by TryModifyKeywordsInCombat — same real CardKeyword enum as card.keywords, either one of the 7 built-ins (Exhaust/Ethereal/Innate/Retain/Unplayable/Sly/Eternal) or [Round 139] this character's own cardKeywords[].word."
+        }
+      }
+    },
+    "conditionsArray": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "description": "Every kind requires \"kind\" plus its own fields: HasStatusStacks/HpBelowPercent/EnergyRemaining/StarsRemaining/CardsInHand/CardsPlayedThisTurn use comparator+value; PlayedCardHasKeyword uses `keyword` instead (a boolean has/has-not check on the card that triggered an OnAnyCardPlayed hook, not a numeric threshold), PlayedCardHasTag uses `tag` (same shape, but a freeform string instead of a fixed enum \u2014 see card.gameplayTags), and PlayedCardHasType uses `cardType` (same shape, one of the 5 real CardType values \u2014 see card.type) \u2014 all three only validate on the OnAnyCardPlayed trigger \u2014 see backend/validate.js. CardsPlayedThisTurn [VERIFIED via decompiling TheBurdenedNewCharacter.dll's Eternal] uses comparator+value like the others, no subject \u2014 counts how many cards this card's own owner has finished playing so far this turn (real CombatManager.Instance.History.CardPlaysFinished walk, no cardPlay local needed \u2014 valid on every trigger AND inside glow/playability). Originally shipped as a fixed \"< 1\" check named FirstCardPlayedThisTurn; generalized into this real comparator+value form per Tyler's follow-up (\"the glow condition should instead check if cards played this turn are <= an amount\") \u2014 an old saved FirstCardPlayedThisTurn condition migrates to CardsPlayedThisTurn with comparator \"lte\"/value 0 (formatVersion 13->14 in frontend/index.html), the exact equivalent of the old fixed check. EnergyRemaining/StarsRemaining [VERIFIED via reflect-baselib round 14a/14b]: Player.PlayerCombatState.Energy/.Stars are real, live, get/set int counts, reached via `cardPlay.Player` \u2014 compiles for real wherever a card's own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic's OnAnyCardPlayed hook. The one narrow exception is a relic/mechanic's OnTakeDamage hook, whose real params have no CardPlay to reach the player through \u2014 still falls back to ForgeActions.TodoCondition there specifically \u2014 see backend/compiler.js. DamageBrokeBlock (added 2026-08-26, Tyler's \"Flick\" lead \u2014 [VERIFIED via decompiling TheBurdenedNewCharacter.dll's Flick, same DLL as Eternal/Retaliation above]) takes NO comparator/value/subject at all \u2014 a plain boolean check on whether the LAST damage this card dealt broke its target's block (real CombatManager.Instance.History.Entries.OfType<DamageReceivedEntry>() walk, matching entries by CardSource == this and reading Result.WasBlockBroken \u2014 see backend/compiler.js:conditionToCSharp's DamageBrokeBlock case for the full writeup). Only valid on the OnPlay trigger, and only meaningful placed in a second effect block right after a Deal Damage effect on that same trigger \u2014 per Tyler's own instruction (\"if this damage broke their block is a conditional to the stun effect and not directly tied to it\"), this is a SEPARATE condition gating a later action (e.g. Stun Enemy), not a field bundled into the Deal Damage action itself. CardsInHand (2026-08-27, round 16 \u2014 BaseLib source access) is now [BEST EFFORT] real codegen, same tier and same restriction as EnergyRemaining/StarsRemaining above \u2014 MegaCrit.Sts2.Core.Models.PileType.Hand.GetPile(cardPlay.Player).Cards.Count() is a real, confirmed hand-pile access, reached the same way through cardPlay.Player.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "HasStatusStacks",
+              "HpBelowPercent",
+              "EnergyRemaining",
+              "StarsRemaining",
+              "CardsInHand",
+              "PlayedCardHasKeyword",
+              "PlayedCardHasTag",
+              "PlayedCardHasType",
+              "CardsPlayedThisTurn",
+              "DamageBrokeBlock",
+              "HasBlock",
+              "DebuffStacksTotal",
+              "PetIsOut",
+              "HandCardTypeCheck",
+              "AttacksPlayedThisTurn",
+              "OrbSlotCount",
+              "EnemyIntent",
+              "HasSpecificRelic",
+              "NoCopiesOfCardInHand",
+              "CardPositionInHand"
+            ],
+            "description": "2026-08-27 condition-kind expansion round (Tyler's FollowUp1-4 screenshots + \"lets go through all of the conditions expansions\") — 9 new kinds added after an exhaustive research pass (BaseLib source, sts2.dll/sts2.xml direct read, both real decompiled mods). Every one below has a confirmed real backing member; nothing here is a placeholder. \"HasBlock\" [VERIFIED via sts2.dll — Creature.Block] and \"DebuffStacksTotal\" [VERIFIED via sts2.dll — Creature.Powers + PowerType.Debuff] both use subject+comparator+value, same subject mechanism as HpBelowPercent (see subject below, and backend/compiler.js:SUBJECT_CAPABLE_CONDITION_KINDS). \"PetIsOut\" [VERIFIED via sts2.dll — Creature.Pets] uses subject only, boolean (does this creature have a pet out), same no-comparator shape as DamageBrokeBlock. \"HandCardTypeCheck\" [VERIFIED via sts2.dll — PileType.Hand.GetPile(Player).Cards] uses `mode` (Any/All) + `cardType` (reusing PlayedCardHasType's own cardType enum), cardPlayBound only (same restriction as CardsInHand). \"AttacksPlayedThisTurn\" [VERIFIED via sts2.dll — extends the same real CombatManager.Instance.History.CardPlaysFinished walk CardsPlayedThisTurn already uses, filtered to CardType.Attack] uses comparator+value, no subject, valid on every trigger AND inside glow/playability just like CardsPlayedThisTurn. \"OrbSlotCount\" [VERIFIED via sts2.dll — Player.BaseOrbSlotCount] uses comparator+value, cardPlayBound only. \"EnemyIntent\" [VERIFIED via sts2.dll — Monster.NextMove.Intents] uses `intentKind` (Attack/Defend only — the only two Intent subclasses confirmed via sts2.dll at this pass), cardPlayBound only, boolean (no comparator/value). \"HasSpecificRelic\" [VERIFIED — reuses the same real Player.Relics + ModelDb-class-identity pattern startingRelicId already uses] uses `relicRef` (a relic id from this character's own relics[]), cardPlayBound only, boolean. \"NoCopiesOfCardInHand\" [VERIFIED — same PileType.Hand.GetPile access as HandCardTypeCheck, same cardClassById identity pattern as HasSpecificRelic] uses `cardRef` (a card id from this character's own cards[]), cardPlayBound only, boolean. See claude/toolchain-findings.md's 2026-08-27 section for the full evidence trail on every kind above. [2026-09-07 update] CardPositionInHand [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — Earthquake's real IsPlayable override: PileTypeExtensions.GetPile(PileType.Hand, Owner).Cards.FirstOrDefault() == this] checks whether THIS card sits at a specific position in the player's hand, uses `edge` (Left/Right) + `position` (1-based int; 1 = the edge card itself), no comparator/value. Real in card.advancedOptions.glow and card.advancedOptions.playability (checks THIS card's LIVE hand position), and — as of round 54 — on a card's own OnPlay and OnAnyCardPlayed triggers too (requiresTrigger: 'glowOrPlayabilityOrCardPlayBound', see backend/validate.js and frontend/index.html:conditionKindAllowedForTrigger), which instead check a CAPTURED snapshot: [2026-09-08 round 53, VERIFIED via decompiling sts2.dll's CardModel.OnPlayWrapper/CardPileCmd.AddDuringManualCardPlay] a live check is unconditionally false on OnPlay/OnAnyCardPlayed since the card has already left the Hand pile by the time either trigger's conditions evaluate — but [2026-09-08 round 54, VERIFIED via decompiling TheBurdenedNewCharacter.dll v4] Tyler's own updated Strike card proves the real fix: a Harmony PREFIX patch on CardModel.OnPlayWrapper (his ModHandPositionPatch) captures the position BEFORE that removal happens. Generated/ForgeHandPositionTracker.cs reimplements that mechanism generically (see Generated/IForgeHandPosition.cs) so OnPlay (checks `this`) and OnAnyCardPlayed (checks `cardPlay.Card`, same pattern PlayedCardHasTag/Keyword/Type use) both compile for real now. [2026-09-08 round 56, VERIFIED via decompiling sts2.dll's CardCmd.DiscardAndDraw/CombatManager.DoTurnEndCards] OnDiscard and OnTurnEndInHand have the exact same \"already gone from Hand by the time the real hook fires\" problem OnPlay used to have (Discard moves the card into the Discard pile before Hook.AfterCardDiscarded; turn-end processing moves it into the Play pile, via AddTurnEndCardToPlayPileWithDelay, before CardModel.OnTurnEndInHandWrapper) — so two more Harmony prefixes, Generated/ForgeHandPositionDiscardTracker.cs and Generated/ForgeHandPositionTurnEndTracker.cs, now capture the position before THOSE removals too, the same technique round 54 proved for OnPlay. All 4 of a card's own triggers (OnPlay/OnDiscard/OnTurnEndInHand/OnAnyCardPlayed) are real now (requiresTrigger: 'glowOrPlayabilityOrCardTrigger', renamed from 'glowOrPlayabilityOrCardPlayBound' since it's no longer just the 2 card-play-bound triggers). A relic/mechanic modifier hook still has no card of its own to check, so it's still excluded. This round also gave the row a dedicated 'This card'/'That card' subject-style slot in the UI (see frontend/index.html:cardPositionInHandSubject) instead of folding the subject into the kind dropdown's own label text. See claude/round52-card-position-and-playability.md, claude/round53-hand-position-pile-timing.md, claude/round54-hand-position-bonus-damage.md, claude/round55-hand-position-wording.md, and claude/round56-hand-position-targets.md for the full evidence trail."
+          },
+          "statusKind": {
+            "enum": [
+              "vanilla",
+              "custom"
+            ],
+            "description": "used only by kind == HasStatusStacks \u2014 whether `builtinStatus` (a real, built-in game status) or `statusRef` (one of this character's own mechanics) is the status being checked. Mirrors the existing ApplyStatus (vanilla) vs. ApplyCustomStatus (custom) action-side split \u2014 added per Tyler's follow-up: \"the condition that checks for statuses should work on both vanilla as well as custom statuses. Currently it only works for custom.\" Optional; omitted/undefined is read as \"custom\" \u2014 the only kind this condition supported before this field existed, so packages saved before this round keep compiling to the exact same behavior."
+          },
+          "statusRef": {
+            "type": "string",
+            "description": "mechanic id, used by kind == HasStatusStacks when statusKind == \"custom\" (or omitted, for backward compatibility)."
+          },
+          "builtinStatus": {
+            "type": "string",
+            "description": "a real built-in status name (see actionsArray's builtinStatuses for the full 244-entry list \u2014 same BUILTIN_POWER_CLASS_MAP), used by kind == HasStatusStacks when statusKind == \"vanilla\". Compiles to ForgeActions.GetStatusStacks<T>() with T resolved from BUILTIN_POWER_CLASS_MAP, exactly like the ApplyStatus/RemoveStatus actions already do \u2014 see backend/compiler.js:conditionToCSharp's HasStatusStacks case."
+          },
+          "subject": {
+            "enum": [
+              "Self",
+              "CardTarget",
+              "Pet"
+            ],
+            "description": "used by kind == HasStatusStacks, HpBelowPercent, HasBlock, DebuffStacksTotal, or PetIsOut (see backend/compiler.js:SUBJECT_CAPABLE_CONDITION_KINDS, extended 2026-08-27 to add the latter three) \u2014 WHICH creature to check (Tyler's \"If <target> has <condition>\" ask, later extended to HpBelowPercent too: \"the hp below % condition should allow either yourself or pet or enemy to be the target of the check\"). Optional; omitted/undefined is read as \"Self\" \u2014 the only subject either condition ever checked before this field existed, so packages saved before this round keep compiling to the exact same behavior. \"Pet\" resolves to the real, [VERIFIED via reflect-baselib round 5] `Player.Osty` property \u2014 normally reached via `cardPlay.Player`, so only where that's reachable (the OnPlay and OnAnyCardPlayed triggers \u2014 backend/compiler.js:PET_SUPPORTED_TRIGGERS); backend/validate.js rejects \"Pet\" on any other real trigger, since it would reference an unbound local and fail to compile for real. Inside card.advancedOptions.glow specifically (no trigger, no cardPlay at all) \"Pet\" is ALSO allowed \u2014 [VERIFIED via decompiling TheBurdenedNewCharacter.dll] `Owner` is a real, directly-accessible CardModel property in that context too, so `Owner?.Osty` reaches the same real Player.Osty a different, equally real way (see backend/compiler.js:resolveGlowSubjectExpr). \"CardTarget\", by contrast, has NO glow-context equivalent \u2014 a card sitting in hand has no target yet \u2014 and is rejected there by backend/validate.js. [2026-09-07 update] HpBelowPercent is now fully real everywhere, including inside glow/playability (see backend/compiler.js:conditionToCSharpRaw's HpBelowPercent case and its glowContext branch) \u2014 this subject field is live in every context that offers HpBelowPercent, not inert."
+          },
+          "comparator": {
+            "enum": [
+              "lt",
+              "lte",
+              "eq",
+              "gte",
+              "gt"
+            ],
+            "description": "used by HasStatusStacks/HpBelowPercent/EnergyRemaining/StarsRemaining/CardsInHand/CardsPlayedThisTurn/HasBlock/DebuffStacksTotal/AttacksPlayedThisTurn/OrbSlotCount — NOT used by PlayedCardHasKeyword/PlayedCardHasTag/PlayedCardHasType/DamageBrokeBlock/PetIsOut/HandCardTypeCheck/EnemyIntent/HasSpecificRelic/NoCopiesOfCardInHand (all boolean/enum-only checks with no threshold)."
+          },
+          "value": {
+            "type": "number",
+            "description": "used by the same comparator-using kinds listed above."
+          },
+          "edge": {
+            "enum": [
+              "Left",
+              "Right"
+            ],
+            "description": "used only by kind == CardPositionInHand — which end of the hand `position` counts from. [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3] Earthquake checks position 1 from the Left (leftmost card). Optional; omitted/undefined defaults to Left."
+          },
+          "position": {
+            "type": "number",
+            "description": "used only by kind == CardPositionInHand — 1-based index from `edge` (1 = the edge card itself, 2 = one in from the edge, etc). Compiles to ForgeActions.IsCardAtHandPosition(this, fromRight, position) [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — PileTypeExtensions.GetPile(PileType.Hand, Owner).Cards indexed and compared to this]. Must be a positive integer; enforced by backend/validate.js."
+          },
+          "mode": {
+            "enum": [
+              "Any",
+              "All"
+            ],
+            "description": "used only by kind == HandCardTypeCheck — \"Any\" checks whether at least one card of `cardType` is in hand (.Cards.Any(...)), \"All\" checks whether every card in hand is that type (.Cards.All(...)). [VERIFIED via sts2.dll — PileType.Hand.GetPile(cardPlay.Player).Cards, same real hand-pile access CardsInHand already uses]. A distinct enum from actionsArray's own `mode` field (Add/Remove/Gain/Lose) — same field name, different definition, no collision since conditionsArray and actionsArray are separate item schemas."
+          },
+          "intentKind": {
+            "enum": [
+              "Attack",
+              "Defend"
+            ],
+            "description": "used only by kind == EnemyIntent — checks cardPlay.Target?.Monster?.NextMove?.Intents for an intent of this kind. [VERIFIED via sts2.dll — MegaCrit.Sts2.Core.MonsterMoves.Intents] Attack/Defend are the only two Intent subclasses confirmed at this research pass; other intent kinds (e.g. Buff/Debuff-flavored moves) were not found as distinct Intents classes and are NOT offered here rather than guessed at. cardPlayBound only (needs cardPlay.Target)."
+          },
+          "relicRef": {
+            "type": "string",
+            "description": "used only by kind == HasSpecificRelic — a relic id from this character's own relics[] (backend/validate.js cross-references it, same pattern as actionsArray's tokenRef against cards[]). Checks cardPlay.Player.Relics.Any(r => r is <the referenced relic's generated class>) — [VERIFIED, reuses the same real Player.Relics + ModelDb-class-identity pattern startingRelicId already relies on]. cardPlayBound only."
+          },
+          "cardRef": {
+            "type": "string",
+            "description": "used only by kind == NoCopiesOfCardInHand — a card id from this character's own cards[] (backend/validate.js cross-references it against cardIds, same pattern as actionsArray's tokenRef). Checks !PileType.Hand.GetPile(cardPlay.Player).Cards.Any(c => c is <the referenced card's generated class>) — [VERIFIED, same real hand-pile access as HandCardTypeCheck + same cardClassById identity pattern as HasSpecificRelic]. cardPlayBound only. NOTE: unrelated to actionsArray's own deprecated `cardRef` field (different definition, same name, no collision)."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "used only by kind == PlayedCardHasKeyword \u2014 checks cardPlay.Card.Keywords.Contains(CardKeyword.X) [VERIFIED real getter via reflect-baselib round 9], only valid where cardPlay is in scope (the OnAnyCardPlayed trigger). One of the 7 real built-in CardKeyword values, or [Round 139] this character's own cardKeywords[].word."
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "description": "used only by kind == PlayedCardHasTag \u2014 TRUE custom tags (author-invented, e.g. \"hit\"), checked via (cardPlay.Card as IForgeTaggedCard)?.ForgeTags.Contains(tag) == true [VERIFIED via reflect-baselib round 10 \u2014 see backend/templates/IForgeTaggedCard.cs.template]. Case-insensitive, matched against card.gameplayTags used anywhere in this character (backend/validate.js rejects a tag that doesn't match any card's gameplayTags \u2014 it would compile but always evaluate false)."
+          },
+          "cardType": {
+            "enum": [
+              "Attack",
+              "Skill",
+              "Power",
+              "Status",
+              "Curse"
+            ],
+            "description": "used by kind == PlayedCardHasType (checks the card that triggered an OnAnyCardPlayed hook) OR kind == HandCardTypeCheck (checks the cards currently in hand, per `mode` above) \u2014 same 5 real CardType values either way (same list as card.type). [VERIFIED via decompiling TheBurdenedNewCharacter.dll] \u2014 CardModel.Type is a real, public getter, seen directly filtering cards by type in real compiled code (PileType.Draw.GetPile(...).Cards.Where(c => c.Type == CardType.Attack)), confirming both the getter and its access level \u2014 compiles to a plain c.Type == CardType.X comparison (against cardPlay.Card for PlayedCardHasType, against each hand card for HandCardTypeCheck) \u2014 see backend/compiler.js:conditionToCSharp. Replaces the old single-type \"IsAttack\" condition kind."
+          }
+        }
+      }
+    },
+    "actionsArray": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "target"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "DealDamage",
+              "GainBlock",
+              "ModifyStatus",
+              "RemoveAllStatuses",
+              "DrawCard",
+              "ModifyEnergy",
+              "ModifyHp",
+              "ModifyGold",
+              "DiscardCard",
+              "ExhaustCard",
+              "CreateCard",
+              "ShuffleCardIntoDraw",
+              "StunEnemy",
+              "EndTurn",
+              "ModifyOrbSlots",
+              "ReturnToHand"
+            ],
+            "description": "2026-09-18 update (round 155 \u2014 Tyler: \"we should add a 'return this card to hand' effect for the pile triggers that arent in hand. There should also be a check box to 'retain the card this turn' if the return to hand is selected.\"): \"ReturnToHand\" is a brand-new action type this round, [BEST EFFORT] real codegen \u2014 the exact same MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(CardModel, PileType, CardPilePosition, AbstractModel, bool) call \"ShuffleCardIntoDraw\" already uses (direct sts2.dll read, real/public/static), just with PileType.Hand + CardPilePosition.Top instead of Draw/Random. Only ever offered/valid inside a card's own \"While in a pile\" effect (card.advancedOptions.whileInHand) whose own `pile` isn't \"Hand\" \u2014 a card can't return to a pile it's already sitting in \u2014 hard-enforced server-side in backend/validate.js (xContext.pile) and mirrored in the frontend's returnToHandEligibleNow()/hiddenActionTypesForTrigger. See the `retainThisTurn` property below for its companion checkbox. Round \u2014 Tyler: \"I would like to update all options with the more legibility change\" applied to the DATA MODEL, not just wording \u2014 retired 5 of the old 17 types in favor of merged, mode-driven ones (old value \u2192 new, migrated automatically by frontend/index.html:migrateLegacyStatusActions, formatVersion 11\u219212): ApplyStatus/RemoveStatus/ApplyCustomStatus/RemoveCustomStatus \u2192 \"ModifyStatus\" (see `mode`/`statusEntries` below \u2014 one combined vanilla+custom multi-select instead of 4 separate action types); LoseHp/HealHp \u2192 \"ModifyHp\" (`mode`: Gain/Lose); GainGold \u2192 \"ModifyGold\" (`mode`: Gain/Lose \u2014 Lose is a NEW capability, no real API evidence either way, same [UNVERIFIED] tier GainGold always was); CreateCardInHand/CreateCardInDrawPile \u2192 \"CreateCard\" (`destination`: Hand/DrawPile/Discard \u2014 Discard is new). \"RemoveAllStatuses\" strips every status (vanilla and custom alike) from the target via the real Creature.RemoveAllPowersInternalExcept(...) method \u2014 needs neither `mode` nor `statusEntries`, just a target. \"StunEnemy\"/\"EndTurn\" added 2026-08-25 \u2014 Tyler: \"we should add 2 more effects to the 'then' section. one that stuns the enemy, and one that ends the players turn.\" 2026-08-26 update: round 15 (tools/reflect-baselib) found real candidates for both, with different outcomes. \"EndTurn\" is now [BEST EFFORT] real codegen \u2014 MegaCrit.Sts2.Core.Commands.PlayerCmd.EndTurn(Player, bool, Func<Task>), a real static-public method (full signature AND access level confirmed) \u2014 whenever a real `cardPlay.Player` is in scope (a card's own OnPlay, or the OnAnyCardPlayed hook); everywhere else (e.g. a relic/mechanic hook with no cardPlay) it still falls back to an honest Todo() stub \u2014 see backend/compiler.js:actionToCSharp's EndTurn case for the full ctx-based reasoning. 2026-08-26 update #2: \"StunEnemy\" is now [VERIFIED] real codegen too \u2014 Tyler pointed at a real card in his own TheBurdenedNewCharacter.dll (\"Flick\", \"it deals damage and then stuns the enemy if that damage broke their block\"); decompiling its OnPlay shows a real, compiled, working call to \"MegaCrit.Sts2.Core.Commands.CreatureCmd.Stun(Creature creature, string nextMoveId)\", awaited, with nextMoveId passed null \u2014 this directly closes round 15b's access-level gap (calling from a separate mod assembly and compiling proves it's public, stronger evidence than reflection alone). Real STS2 \"Stun\" is genuinely monster-move-selection machinery, not a stacking status (consistent with it never appearing in the 244-status BUILTIN_STATUSES list) \u2014 CreatureCmd.Stun is the real, correct call regardless. See tools/reflect-baselib's round 15 (README.md) for the round-15b lead and compiler.js's own StunEnemy case comment for the full Flick decompile writeup. 2026-08-27 update (round 16 \u2014 BaseLib-StS2 source clone + Tyler's own decompiled mod source, both examined in full): \"GainEnergy\" and \"ModifyGold\" (Gain mode only) are now [BEST EFFORT]/real codegen \u2014 MegaCrit.Sts2.Core.Commands.PlayerCmd.GainEnergy(decimal, Player) and PlayerCmd.GainGold(decimal, Player) are real static-public methods, confirmed via BaseLib's own Utils/CommonActions.cs usage \u2014 same ctx.cardPlayBound gating as EndTurn/StunEnemy (falls back to an honest Todo() stub where no real cardPlay.Player is in scope). ModifyGold's Lose mode stays [UNVERIFIED] \u2014 no evidence either way, unchanged. \"EndTurn\" simplified from [BEST EFFORT] to [VERIFIED] and its call simplified from 3 args to 2 \u2014 the real call only ever needs (Player, bool); the 3rd optional Func<Task> parameter was never required by any real usage found, confirmed by BaseLib always omitting it. \"DealDamage\" and \"ModifyStatus\" (Add mode) now support target \"AllEnemies\" for real \u2014 see target's own description below for the resolving APIs. \"DiscardCard\" (non-random only) is now [VERIFIED] real codegen \u2014 CardCmd.Discard(choiceContext, await CardSelectCmd.FromHandForDiscard(choiceContext, Player, new CardSelectorPrefs(CardSelectorPrefs.DiscardSelectionPrompt, N), null, sourceCard)) is the exact real call chain, confirmed used 4/4 times across TheBurdenedNewCharacter's real discard cards; `random` mode has no real evidence and stays an honest stub. \"ExhaustCard\" stays [UNVERIFIED] \u2014 a real CardCmd.Exhaust(...) call was found, but only ever exhausting a filtered/automatic list, never an amount+random player choice matching this action's shape. 2026-09-07 update (round 59 \u2014 Tyler's \"Star Cost Change\"/\"Double Energy\"/\"Exhaust\"/\"Discard\"/\"Orbit\" cards in TheBurdenedNewCharacter.dll v3): \"GainEnergy\"'s doubleEnergy mode is now real \u2014 PlayerCmd.GainEnergy((decimal)Owner.PlayerCombatState.Energy, Owner), i.e. gain energy equal to current energy, not a dedicated \"double\" API. \"DiscardCard\"/\"ExhaustCard\"'s `random` mode is now real too \u2014 Player.RunState.Rng.CombatCardSelection.NextItem(IEnumerable<CardModel>) is a real, public instance method, confirmed via both cards' decompiled discardRandom/exhaustRandomCard effects. \"GainOrbSlots\" is a brand-new action type this round \u2014 OrbCmd.AddSlots(Player, int) is real, public, static, confirmed via Orbit's gainOrbSlots effect and a direct sts2.dll read. 2026-09-18 update (round 159 \u2014 Tyler asked whether a negative \"Gain Energy\" amount reduces energy; direct sts2.dll IL read showed PlayerCmd.GainEnergy is a complete no-op whenever the resolved amount is <= 0, both before and after modifier resolution, and turned up a real, public, static, non-async sibling method PlayerCmd.LoseEnergy(decimal amount, Player player) [VERIFIED] that was never wired up. Tyler: \"instead of gain/lose energy, lets do a modify energy like the rest. And if the number is negative, it will call lose energy, positive will gain energy.\"): \"GainEnergy\" is retired in favor of \"ModifyEnergy\" (migrated automatically by frontend/index.html:migrateLegacyStatusActions, a straight rename \u2014 no other fields change). Unlike ModifyHp/ModifyGold, ModifyEnergy has NO `mode` field \u2014 the SIGN of the resolved `amount` decides Gain vs Lose at runtime (checked in the generated C#, not at compile time, since amount can be a dynamic expression): negative calls PlayerCmd.LoseEnergy with the magnitude negated back to positive (LoseEnergy expects a positive \"how much to lose\", and itself no-ops on <= 0), non-negative calls the existing PlayerCmd.GainEnergy path unchanged. `doubleEnergy` (below) is unaffected \u2014 it always computes a genuine gain and keeps calling GainEnergy directly. 2026-09-18 update #2 (round 160 \u2014 Tyler: \"can we also do a modify orb slots? for adding and removing\"; asked to choose between a sign-based amount (round 159's original ModifyEnergy design) or a mode dropdown for this brand-new action, Tyler picked the mode dropdown and added: \"can we also apply that to the energy?\"): round 159's sign-based ModifyEnergy is SUPERSEDED \u2014 \"ModifyEnergy\" now reads `mode` (Gain/Lose) exactly like ModifyHp/ModifyGold, `amount` is always a positive magnitude the author enters, and there is no runtime sign check at all. \"GainOrbSlots\" is retired in favor of \"ModifyOrbSlots\" (migrated by frontend/index.html:migrateLegacyStatusActions, mode defaults to \"Add\"), which reads `mode` (Add/Remove) the same way. A direct sts2.dll read confirmed a real, public, static `OrbCmd.RemoveSlots(Player, int)` \u2014 [VERIFIED] \u2014 the exact structural mirror of AddSlots (same clamp-against-capacity body shape) but returning `void` rather than `Task`, so Remove mode's generated call has no `await`, unlike every sibling mode-dropdown action. See compiler.js's ModifyEnergy/ModifyOrbSlots cases for the full evidence trail."
+          },
+          "target": {
+            "enum": [
+              "SingleEnemy",
+              "AllEnemies",
+              "Self",
+              "RandomEnemy"
+            ],
+            "description": "Restricted per action `type` at validation time (backend/validate.js) and in the frontend's target dropdown (compiler.js:validTargetsForAction), not expressible as a plain enum here since it depends on the sibling `type` field. Player/hand/deck-level action types (DrawCard, ModifyEnergy, ModifyGold, DiscardCard, ExhaustCard, CreateCard, ShuffleCardIntoDraw, EndTurn, ModifyOrbSlots) only accept \"Self\" \u2014 there is no \"exhaust a card from an enemy\" concept in STS2 (and no \"end an enemy's turn\" concept either \u2014 EndTurn joined this list 2026-08-25). \"GainBlock\" ALSO only accepts \"Self\" as of this round \u2014 Tyler: \"Gain block should only ever be for yourself\" \u2014 even though it's a real Creature-targeted call (ForgeActions.GainBlock(Creature,int)), not a player-only stub like the others (see compiler.js:SELF_ONLY_ACTIONS, kept separate from PLAYER_ONLY_ACTIONS since the underlying reasoning differs). \"StunEnemy\" (added 2026-08-25) is NOT restricted this way \u2014 it accepts the full SingleEnemy/AllEnemies/Self/RandomEnemy set, same as DealDamage/RemoveAllStatuses, since stunning yourself isn't inherently nonsensical the way exhausting a card from an enemy is. Caught by a real stress test: ExhaustCard targeting AllEnemies compiled with no error before this was enforced. 2026-08-27 update (round 16): \"AllEnemies\" was already schema-valid for DealDamage/ModifyStatus(Add) but unresolved at the codegen layer until now \u2014 AttackCommand.TargetingAllOpponents(ICombatState) (real builder method, confirmed via TheBurdenedNewCharacter.dll's Stomp using DamageCmd.Attack(...).FromCard(...).TargetingAllOpponents(base.CombatState)...) now resolves DealDamage's AllEnemies target for real, and PowerCmd.Apply<TPower>(PlayerChoiceContext, IEnumerable<Creature>, decimal, Creature, CardModel?) (same Stomp, applying Weak/Vulnerable to base.CombatState.HittableEnemies) resolves ModifyStatus(Add)'s AllEnemies target for real \u2014 see backend/compiler.js's DealDamage/ModifyStatus cases and backend/templates/ForgeActions.cs.template's DealDamageAllEnemies/ApplyStatusAllEnemies<T> helpers. ModifyStatus(Remove)/RemoveAllStatuses's AllEnemies is now real too (round 59 fix, round 58 audit finding #4) \u2014 stale as of round 24-25's generic RandomEnemy/AllEnemies wrapper in actionToCSharp (see backend/compiler.js), which covers every action type AllEnemies/RandomEnemy is a legal target for EXCEPT DealDamage and ModifyStatus's Add mode (those two have their own dedicated multi-target APIs, exempted via allEnemiesHandledInline) by recursively wrapping the single-target codegen in a foreach over fgPlayer.CombatState.HittableEnemies \u2014 RemoveAllStatuses and ModifyStatus's Remove mode were always covered by that wrapper, this description just hadn't been updated to say so. Description-redesign first pass (round 16, same as card.description above): a card's own literal (non-X, non-per-stack-scaling) DealDamage/GainBlock/DrawCard/ModifyStatus(Add) OnPlay amounts are ALSO mirrored into a declarative `CanonicalVars` override (DamageVar/BlockVar/CardsVar/PowerVar<T> \u2014 all real, confirmed constructors, see backend/compiler.js's generateCanonicalVars) \u2014 [BEST EFFORT], declared-only for this first pass: OnPlay/OnUpgrade still execute their own separately-generated literal amounts rather than reading back through this declaration, unlike real cards' `base.DynamicVars.X.BaseValue` pattern. Amounts using amountIsX/per-stack scaling are silently skipped from CanonicalVars \u2014 an incomplete declaration is honest here, matching real cards that sometimes declare none at all."
+          },
+          "mode": {
+            "enum": [
+              "Add",
+              "Remove",
+              "Gain",
+              "Lose"
+            ],
+            "description": "The inline sentence dropdown Tyler asked for on the newly-merged action types \u2014 \"lets present a box in the easy to read sentence for [add/remove]\" (ModifyStatus, and as of round 160 ModifyOrbSlots: Add/Remove) and \"a dropdown in the sentence for 'gain' or 'lose'\" (ModifyHp, ModifyGold, and as of round 160 ModifyEnergy: Gain/Lose). Only ONE pair is ever valid for a given `type` (ModifyStatus/ModifyOrbSlots read Add/Remove; ModifyHp/ModifyGold/ModifyEnergy read Gain/Lose) \u2014 enforced in backend/validate.js, not expressible as a per-type enum here since it depends on the sibling `type` field, same reasoning as `target` above. Not used by any other action type. Round 160: ModifyEnergy previously (round 159) had NO mode field at all \u2014 the sign of a single amount decided Gain vs Lose at runtime. Tyler reconsidered after choosing this mode-dropdown pattern for the brand-new ModifyOrbSlots, and asked for it on Energy too; see the `type` enum's own description for the full trail."
+          },
+          "statusEntries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "ref"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "vanilla",
+                    "custom"
+                  ],
+                  "description": "\"vanilla\" = a real built-in game status (`ref` is a name from backend/compiler.js's BUILTIN_STATUSES, e.g. \"Vulnerable\"); \"custom\" = one of this character's own mechanics (`ref` is a mechanic id)."
+                },
+                "ref": {
+                  "type": "string",
+                  "description": "the built-in status name or mechanic id, per `kind` above."
+                },
+                "amount": {
+                  "type": "number",
+                  "description": "only meaningful when the action's `mode` is \"Add\" (Remove never used an amount, matching the old RemoveStatus/RemoveCustomStatus behavior) \u2014 stacks to apply for THIS entry specifically. Missing/undefined falls back to 1 (backend/compiler.js:resolveStatusEntryAmountExpr), same fallback chain the old statusAmounts/refAmounts maps used."
+                }
+              }
+            },
+            "description": "type == \"ModifyStatus\" only \u2014 required (non-empty). Replaces the old separate builtinStatuses[]/statusRefs[] + statusAmounts{}/refAmounts{} \u2014 ONE combined list (Tyler: \"we can use the combined vanilla+custom status list so we can get rid of the custom options\") so a single ModifyStatus action can add/remove a mix of real statuses and custom mechanics together (e.g. Vulnerable + your own \"Ember\" mechanic in one action), each entry with its own amount when adding. One ForgeActions call is generated per entry, sharing this action's target and `mode`."
+          },
+          "amount": {
+            "type": "number",
+            "description": "used directly by single-target action types (DealDamage, GainBlock, ModifyHp, DrawCard, ModifyGold, DiscardCard, ExhaustCard, CreateCard, ModifyOrbSlots). \"ModifyStatus\" doesn't use this at all \u2014 each selected entry has its own amount, see statusEntries[].amount above. RemoveAllStatuses never uses amount. ModifyEnergy uses it only when doubleEnergy isn't set (see doubleEnergy below). As of round 160, ModifyEnergy/ModifyOrbSlots's `amount` is always a positive magnitude \u2014 like ModifyHp/ModifyGold, the sibling `mode` field (not the amount's sign) decides direction (see `mode`/`type` above). Round 159 briefly had ModifyEnergy read its sign instead; superseded this round."
+          },
+          "amountIsX": {
+            "type": "boolean",
+            "description": "When true, this action's amount is the card's own resolved X value instead of the literal `amount` field — Tyler's \"deal X damage\" / \"apply X <status>\" ask. [VERIFIED via decompiling Tyler's own TheBurdenedNewCharacter.dll, a real compiled/tested mod] `CardModel.ResolveEnergyXValue()` is a real, concrete, zero-argument instance method returning int, confirmed used exactly this way by a real working card (Retaliation) to scale a real AttackCommand call. Only valid on a card whose own `costsX` is true, inside that SAME card's own OnPlay effect block (the only trigger the confirmed example uses it in — enforced in backend/validate.js). Takes priority over amount/amountScalesWith* when set; for ApplyStatus/ApplyCustomStatus with multiple selected statuses, X is used for every selected entry in the action (no per-entry override). Mutually exclusive with amountIsStarX below (backend/validate.js rejects both true at once) — they're alternate sources for the same amount, not stackable."
+          },
+          "amountIsStarX": {
+            "type": "boolean",
+            "description": "Round 74, Tyler: \"lets go ahead and build that in.\" Star counterpart of amountIsX above — when true, this action's amount is the card's own resolved STAR-X value instead of the literal `amount` field. [VERIFIED via decompiling Tyler's own updated TheBurdenedNewCharacter.dll, round 73/74] `CardModel.ResolveStarXValue()` is a real, concrete, zero-argument instance method, confirmed used exactly this way by a real working X-star-cost card (\"X Star\", TheBurdenedNewCharacter.Cards.XStar) to scale a real AttackCommand call's damage amount. Only valid on a card whose own `costsStarX` is true, inside that SAME card's own OnPlay effect block — same restriction as amountIsX, enforced in backend/validate.js. No hit-count counterpart (hitCountIsX stays energy-only) — the real example scales HIT COUNT with energy-X on a separate attack, not star-X, so there's no confirmed \"deal damage X star times\" mechanism to expose."
+          },
+          "amountScalesWithStatusKind": {
+            "enum": [
+              "vanilla",
+              "custom"
+            ],
+            "description": "used only when amountScalesWithStatus or amountScalesWithBuiltinStatus is set \u2014 whether the scaling status is one of this character's own mechanics (\"custom\") or a real built-in game status (\"vanilla\", e.g. Poison). Optional; omitted/undefined is read as \"custom\" \u2014 the only kind this field supported before Tyler's follow-up (\"status needs a 'do this thing equal to the number of stacks of the status I have' like poison\") added vanilla support."
+          },
+          "amountScalesWithStatus": {
+            "type": "string",
+            "description": "mechanic id \u2014 amount becomes 'X per stack' of this custom mechanic, whose stacks are read off amountScalesWithSubject (default Self, the acting player \u2014 the only subject this ever checked before that field existed), if amountScalesWithStatusKind is \"custom\" (or omitted)."
+          },
+          "amountScalesWithBuiltinStatus": {
+            "type": "string",
+            "description": "a real built-in status name (see actionsArray's builtinStatuses for the full list) \u2014 amount becomes 'X per stack' of this real status, whose stacks are read off amountScalesWithSubject (default Self), if amountScalesWithStatusKind is \"vanilla\". E.g. amount=1 with this set to \"Poison\" and subject Self means \"deal damage equal to your own Poison stacks\" \u2014 Tyler's original ask."
+          },
+          "amountScalesWithSubject": {
+            "enum": [
+              "Target",
+              "Self",
+              "AllEnemies"
+            ],
+            "description": "used only when per-stack scaling is on (amountScalesWithStatus/amountScalesWithBuiltinStatus set) \u2014 whose stacks of that status/mechanic to count. \"Self\" (the acting player) is the default and the ONLY subject this ever checked before this field existed, so an omitted/undefined value reads as \"Self\" and every package saved before this field existed keeps compiling to the exact same behavior it always had. \"Target\" reuses this action's OWN resolved target (whichever creature it's already affecting) \u2014 real and grounded, since by the time this is read the action's target has already been confirmed resolvable (backend/compiler.js's actionToCSharp falls back to an honest Todo stub for the WHOLE action before ever reaching the amount otherwise). \"AllEnemies\" has NO confirmed enumerable \"every enemy\" API anywhere in this codebase \u2014 same gap resolveTargetExpr's own AllEnemies case already has \u2014 so it compiles to a new ForgeActions.TodoAmount(...) stub (throws at runtime) rather than guessing at one; shown in the UI anyway per this project's established \"compiles but throws is better than might not compile\" convention, with an honest inline warning."
+          },
+          "statusRef": {
+            "type": "string",
+            "description": "mechanic id, if kind == HasStatusStacks (see conditionsArray) \u2014 NOT used by actions at all (see conditionsArray's own HasStatusStacks statusRef); kept here only historically, never read by actionsArray codegen."
+          },
+          "statusRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DEPRECATED as of this round \u2014 ApplyCustomStatus/RemoveCustomStatus (the only types that read this) were retired in favor of \"ModifyStatus\"'s combined statusEntries[] above (frontend/index.html:migrateLegacyStatusActions migrates any package that still has this on load). Kept only as a migration source field, no longer read by backend/compiler.js codegen."
+          },
+          "refAmounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "DEPRECATED as of this round \u2014 see statusRefs above; migrated into statusEntries[].amount. No longer read by backend/compiler.js codegen."
+          },
+          "builtinStatus": {
+            "type": "string",
+            "description": "DEPRECATED single-value form, kept only as a migration fallback \u2014 see builtinStatuses below."
+          },
+          "builtinStatuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DEPRECATED as of this round \u2014 ApplyStatus/RemoveStatus (the only types that read this) were retired in favor of \"ModifyStatus\"'s combined statusEntries[] above (frontend/index.html:migrateLegacyStatusActions migrates any package that still has this on load). Kept only as a migration source field, no longer read by backend/compiler.js codegen. Valid values were always backend/compiler.js's BUILTIN_STATUSES (derived from BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247 real classes deriving PowerModel directly)."
+          },
+          "statusAmounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "DEPRECATED as of this round \u2014 see builtinStatuses above; migrated into statusEntries[].amount. No longer read by backend/compiler.js codegen."
+          },
+          "drawNextTurn": {
+            "type": "boolean",
+            "description": "type == \"DrawCard\" only. Tyler: \"Draw card should also show a check box for 'Next turn' if the user wants the card to make you draw a number of cards next turn.\" [UNVERIFIED] \u2014 same honesty tier DrawCard already had (a Todo stub either way); this just captures WHICH stub text to emit (backend/compiler.js differentiates \"DrawCard\" vs \"DrawCard (next turn)\" in the Todo message) so the intent survives even though neither variant has a confirmed real API yet. Optional; omitted/false = draw immediately (unchanged behavior)."
+          },
+          "doubleEnergy": {
+            "type": "boolean",
+            "description": "type == \"ModifyEnergy\" only (was \"GainEnergy\" before round 159's rename \u2014 see `type` above). Tyler: \"Gain energy should have a check box for double energy which doubles the user's current energy.\" A fundamentally different (multiplicative, not additive) mechanic from the plain `amount` field \u2014 when true, `amount`/amountIsX are ignored entirely (the UI hides them), and the sign-based Gain/Lose dispatch is skipped since doubling current energy can never be negative. [VERIFIED] round 59 \u2014 PlayerCmd.GainEnergy((decimal)Owner.PlayerCombatState.Energy, Owner), decompiled from TheBurdenedNewCharacter.dll v3's \"Double Energy\" card. Optional; omitted/false = use the literal `amount` (unchanged behavior)."
+          },
+          "random": {
+            "type": "boolean",
+            "description": "type == \"DiscardCard\"/\"ExhaustCard\" only. Tyler: \"Discard and exhaust should get an option to make them randomly selected.\" [UNVERIFIED] \u2014 same honesty tier these already had (a Todo stub either way); captures whether the card(s) affected should be chosen at random vs. left for the player to pick, so that distinction survives even though neither variant has a confirmed real API yet. Optional; omitted/false = unspecified selection (unchanged behavior \u2014 this project has never had grounding for either direction)."
+          },
+          "retainThisTurn": {
+            "type": "boolean",
+            "description": "type == \"ReturnToHand\" only. Tyler's companion checkbox: \"There should also be a check box to 'retain the card this turn' if the return to hand is selected.\" [VERIFIED via direct sts2.dll IL read] CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — its IL body is exactly `ldarg.0; ldc.i4.1; call set_HasSingleTurnRetain; ret`, and CardModel.ShouldRetainThisTurn's own real getter reads that same private flag back (`get_Keywords().Contains(<Retain keyword enum>) ? true : get_HasSingleTurnRetain()`) — i.e. a genuine, real one-turn-only version of the static Retain keyword, not an invented stand-in. When true, backend/compiler.js emits `this.GiveSingleTurnRetain();` immediately after the CardPileCmd.Add(...) return-to-hand call. Optional; omitted/false = no retain (unchanged behavior)."
+          },
+          "destination": {
+            "enum": [
+              "Hand",
+              "DrawPile",
+              "Discard"
+            ],
+            "description": "type == \"CreateCard\" only. Tyler: \"Create card in hand and draw pile should be 'Create Card' ... [x] copies of [token] to your [draw pile,hand,discard].\" Replaces the old separate CreateCardInHand/CreateCardInDrawPile action types \u2014 \"Discard\" is a new destination option neither of those covered. [UNVERIFIED] \u2014 no confirmed real API for creating a card into any of the three piles mid-combat; this only decides which honest Todo stub text backend/compiler.js emits."
+          },
+          "tokenRefKind": {
+            "enum": [
+              "custom",
+              "vanilla"
+            ],
+            "description": "type == \"CreateCard\" only. Same vanilla/custom split convention as statusEntries[].kind above \u2014 \"custom\" means tokenRef is one of THIS character's own cards (backend/compiler.js can reference it for real via the same ModelDb.Card<T>() mechanism startingDeckCardIds already uses \u2014 grounded, not a guess); \"vanilla\" means tokenVanillaRef is one of a small [UNVERIFIED, NOT reflect-baselib-confirmed] guess list of well-known base-game token/curse card names (backend/compiler.js:VANILLA_TOKEN_CARDS) \u2014 Tyler: \"as well as the vanilla status cards if possible,\" hedged with \"if possible\" because this project has zero real evidence of STS2's actual class names for these; included per this project's \"compiles but throws is better than might not compile\" convention, but flagged clearly rather than presented as confirmed."
+          },
+          "tokenRef": {
+            "type": "string",
+            "description": "card id (from this character's own cards \u2014 the frontend's picker specifically offers rarity==\"Token\" cards, Tyler's \"user's created token cards\"), used when type == \"CreateCard\" and tokenRefKind == \"custom\"."
+          },
+          "tokenVanillaRef": {
+            "type": "string",
+            "description": "id from backend/compiler.js's VANILLA_TOKEN_CARDS guess list (e.g. \"Wound\", \"Dazed\", \"Slimed\", \"Burn\") \u2014 used when type == \"CreateCard\" and tokenRefKind == \"vanilla\". [UNVERIFIED, NOT reflect-baselib-confirmed] \u2014 see tokenRefKind above."
+          },
+          "cardRef": {
+            "type": "string",
+            "description": "DEPRECATED as of the CreateCard/ModifyStatus/ModifyHp/ModifyGold consolidation round — the old CreateCardInHand/CreateCardInDrawPile/ShuffleCardIntoDraw action types read this; the new CreateCard type reads tokenRef/tokenRefKind/tokenVanillaRef instead, and the new ShuffleCardIntoDraw always refers to \"this card\" (no reference field needed at all — Tyler: \"only allowing the card that is being played to go back into draw\"). Kept in the schema as migration-source shape only, no longer read by backend/compiler.js."
+          },
+          "hitCount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "DealDamage only. Number of times to hit the target. [VERIFIED via decompiling Tyler's own TheBurdenedNewCharacter.dll] real AttackCommand.WithHitCount(int) — confirmed used by a real working card (Retaliation) to hit multiple times off a single Attack build. Optional; omitted/1 = a single hit (unchanged behavior from before this field existed)."
+          },
+          "hitCountIsX": {
+            "type": "boolean",
+            "description": "DealDamage only. When true, hit count is the card's own resolved X value instead of the literal hitCount — Tyler's \"deal damage X times\" ask, confirmed by the exact same Retaliation example (WithHitCount(ResolveEnergyXValue())). Same costsX + this-card's-own-OnPlay-only restriction as amountIsX (see above), enforced in backend/validate.js. Mutually exclusive with hitCountIsStarX below (backend/validate.js rejects both true at once)."
+          },
+          "hitCountIsStarX": {
+            "type": "boolean",
+            "description": "Round 76, Tyler explicitly asked for this by symmetry with hitCountIsX/amountIsStarX (\"there should be 4 boxes when both x energy and x stars are checked\"). DealDamage only. When true, hit count is the card's own resolved STAR-X value instead of the literal hitCount. [VERIFIED, round 77 — via decompiling Tyler's own uploaded TheBurdenedNewCharacter.dll's \"NEW X STAR\" card] Shipped as [BEST EFFORT] in round 76 (Tyler asked for it by symmetry before any real card demonstrated it); now confirmed for real. NEWXSTAR's own OnPlay does exactly DamageCmd.Attack(DynamicVars.Damage.BaseValue).WithHitCount(this.ResolveStarXValue()) — a single attack, fixed base damage amount, hit count scaled by star-X. Same costsStarX + this-card's-own-OnPlay-only restriction as amountIsStarX, enforced in backend/validate.js. Mutually exclusive with hitCountScalesWith* below — hit count can only have one source (backend/validate.js rejects combining them)."
+          },
+          "hitCountScalesWithStatusKind": {
+            "enum": [
+              "vanilla",
+              "custom"
+            ],
+            "description": "Round 80, Tyler: \"what if I want to deal x damage, 1 time per stack? meaning i hit based on how many stacks i have?\" Hit-count counterpart of amountScalesWithStatusKind above, reusing the exact same real ForgeActions.GetStatusStacks<T> mechanism amount scaling already uses — just applied to hitCount instead of amount, and DealDamage only (hitCount doesn't exist on any other action type). Used only when hitCountScalesWithStatus or hitCountScalesWithBuiltinStatus is set. Optional; omitted/undefined is read as \"custom\", same default amountScalesWithStatusKind uses. Independent of amountIsX/amountIsStarX — Tyler's own example scales the AMOUNT with X and the HIT COUNT with stacks at the same time — but mutually exclusive with hitCountIsX/hitCountIsStarX (backend/validate.js rejects combining them; hit count can only have one source, same one-source-per-field rule amountIsX/amountIsStarX/amountScalesWith* already follow)."
+          },
+          "hitCountScalesWithStatus": {
+            "type": "string",
+            "description": "mechanic id — hit count becomes 'N per stack' of this custom mechanic (N = the literal hitCount field, acting as a multiplier — hitCount=1 means exactly your stacks, hitCount=2 means double your stacks, same semantic amountScalesWithStatus already uses for amount), whose stacks are read off hitCountScalesWithSubject (default Self), if hitCountScalesWithStatusKind is \"custom\" (or omitted)."
+          },
+          "hitCountScalesWithBuiltinStatus": {
+            "type": "string",
+            "description": "a real built-in status name (see actionsArray's builtinStatuses for the full list) — hit count becomes 'N per stack' of this real status (N = the literal hitCount field, same multiplier semantic as amountScalesWithBuiltinStatus), whose stacks are read off hitCountScalesWithSubject (default Self), if hitCountScalesWithStatusKind is \"vanilla\". E.g. hitCount=1 with this set to \"Poison\" and subject Self means \"hit once per your own Poison stack\" — Tyler's own example."
+          },
+          "hitCountScalesWithSubject": {
+            "enum": [
+              "Target",
+              "Self",
+              "AllEnemies"
+            ],
+            "description": "used only when hit-count per-stack scaling is on (hitCountScalesWithStatus/hitCountScalesWithBuiltinStatus set) — whose stacks of that status/mechanic to count. Same 3 options, same defaults/fallbacks, and same AllEnemies TodoAmount-stub honesty caveat as amountScalesWithSubject above — see that field's own description for the full reasoning, all of which applies identically here."
+          },
+          "followUp": {
+            "type": "object",
+            "properties": {
+              "trigger": {
+                "enum": [
+                  "BrokeBlock",
+                  "KilledTarget",
+                  "FullyBlocked",
+                  "UnblockedAmount"
+                ],
+                "description": "Added 2026-08-27, Tyler: \"add an optional 'follow up' below each added 'then' section on card effects... like 'deal 6 damage to target' follow up -> 'if this damage kills/breaks block/any other triggers' [do something else]\". \"BrokeBlock\" [VERIFIED via decompiling TheBurdenedNewCharacter.dll's \"Flick\"] reads the SAME real DamageResult.WasBlockBroken field the existing standalone \"DamageBrokeBlock\" condition kind already uses (see conditionsArray/CONDITION_KINDS), via the identical CombatManager.Instance.History.Entries.OfType<DamageReceivedEntry>() walk. \"KilledTarget\" [BEST EFFORT] reads DamageResult.WasTargetKilled — a real field on the exact same DamageResult type (confirmed via TemperedStrength's real usage, which reads it through AttackCommand.Results instead of the History walk; both access paths return the identical DamageResult type, confirmed independently via BaseLib's own AttackCommandExtensions.ExecuteAndCheckFatal helper — so reading WasTargetKilled through the History-walk path specifically is a same-type, different-field extension, not directly observed in exactly this form, hence BEST EFFORT rather than VERIFIED). \"FullyBlocked\" and \"UnblockedAmount\" added 2026-08-27 in the condition-kind expansion round — both [VERIFIED via sts2.dll], reading the same DamageResult record's WasFullyBlocked and UnblockedDamage fields respectively, through the identical History-walk access path as BrokeBlock/DamageBrokeBlock. \"UnblockedAmount\" additionally needs `comparator`+`value` below (e.g. \"unblocked damage >= 10\"); the other three triggers are plain booleans and ignore comparator/value. Unlike the standalone DamageBrokeBlock condition (which requires the author to manually place a second effect block immediately after a Deal Damage effect, with no way for Forge to check they did), nesting this directly under the Deal Damage action that causes it removes that whole misuse class — the codegen always emits the check immediately after this exact action, in the same method body, so there's no separate placement discipline required. Valid on any trigger this Deal Damage action itself can be used on — the underlying History walk needs no cardPlay-bound context (matches DamageBrokeBlock's own \"no ctx branching needed\" reasoning)."
+              },
+              "comparator": {
+                "enum": [
+                  "lt",
+                  "lte",
+                  "eq",
+                  "gte",
+                  "gt"
+                ],
+                "description": "used only when `trigger` above is \"UnblockedAmount\" — compares DamageResult.UnblockedDamage against `value` below. Ignored (and not required) for the other 3 boolean triggers."
+              },
+              "value": {
+                "type": "number",
+                "description": "used only when `trigger` above is \"UnblockedAmount\" — the threshold `comparator` compares DamageResult.UnblockedDamage against. Ignored (and not required) for the other 3 boolean triggers."
+              },
+              "actions": {
+                "$ref": "#/definitions/actionsArray",
+                "description": "The action(s) to run only when `trigger` above was true for the damage this Deal Damage action just dealt. Same actionsArray shape as any other action list (effect.actions/elseActions) — can itself contain another DealDamage action with its own nested followUp, though that's an unusual, untested combination."
+              }
+            },
+            "description": "DealDamage only. Optional — Tyler's \"follow up\" ask: an action (or actions) that only run if this specific damage instance broke the target's block or killed the target. Omitted/absent = no follow-up (unchanged behavior). See `trigger` above for the full evidence writeup."
+          }
+        }
+      }
+    }
+  }
+}

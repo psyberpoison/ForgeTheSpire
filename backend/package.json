@@ -1,0 +1,17 @@
+{
+  "name": "sts2-forge-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateless compile backend for the STS2 character builder (Forge).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "archiver": "^7.0.1"
+  },
+  "overrides": {
+    "glob": "^13.0.0"
+  }
+}

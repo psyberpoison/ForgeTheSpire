@@ -1,0 +1,29 @@
+# Dependencies — reinstallable from package-lock.json, never committed.
+node_modules/
+
+# electron-builder output (installers/zips/blockmaps for a release build).
+electron/dist/
+electron/out/
+
+# dotnet build artifacts from tools/reflect-baselib's throwaway reflection project.
+tools/reflect-baselib/bin/
+tools/reflect-baselib/obj/
+
+# Python bytecode cache from tools/sts2tools' decompile scripts.
+tools/sts2tools/__pycache__/
+**/__pycache__/
+*.pyc
+
+# OS cruft.
+.DS_Store
+Thumbs.db
+
+# Editor/IDE.
+.vscode/
+.idea/
+
+# Never commit a real GitHub token or any other credential — electron-builder's
+# publish step reads GH_TOKEN from the environment at release time (see
+# electron/RELEASING.md), never from a file in this repo.
+.env
+*.pem

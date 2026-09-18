@@ -1,0 +1,168 @@
+<!--
+  VERIFIED baseline: modeled directly on the real, working
+  https://github.com/lamali292/sts2_example_mod/blob/main/ExampleMod.csproj
+  (fetched and reproduced in TOOLCHAIN_FINDINGS.md), not a guess like the
+  previous version of this file.
+
+  [VERIFIED, Round 28 ground-up audit] Cross-checked directly against the
+  REAL official template repo, https://github.com/Alchyr/ModTemplate-StS2
+  (specifically its packaged content/ModTemplate/ModTemplate.csproj,
+  Sts2PathDiscovery.props, project.godot, and export_presets.cfg — all
+  fetched verbatim, see TOOLCHAIN_FINDINGS.md). That audit found two real,
+  structural mismatches severe enough that they are the leading suspects
+  for the "game fails to launch entirely" crash once has_pck/has_dll made
+  the game actually try to load a Forge-built PCK for the first time:
+    - export_presets.cfg's `binary_format/architecture` was "x86_64";
+      the real template's own generated preset (and Godot.NET.Sdk's own
+      code comment: "mods are ideally built for all platforms (MSIL) while
+      your local StS2 version will be for your specific platform") uses
+      "msil" — now fixed.
+    - Generated project.godot had no [rendering] section at all (implicit
+      default renderer) and a "Forward Plus" features tag; the real
+      template's project.godot explicitly sets
+      renderer/rendering_method="mobile" and tags features as
+      ("4.5", "C#", "Mobile") — now matched exactly. A resource pack built
+      under a different rendering method than the main game's own renderer
+      is a very plausible native-crash cause on merge.
+  Full evidence and file-by-file diff: TOOLCHAIN_FINDINGS.md's "Round 28
+  ground-up audit against the real Alchyr.Sts2.Templates package" section.
+
+  Differences from that example, both deliberate:
+    1. GameDataDir is its own overridable property instead of being derived
+       from STS2GamePath\data_sts2_windows_x86_64, because gameLocator.js
+       already resolves the OS-correct data dir (Windows/macOS/Linux folder
+       names differ) — we pass it straight in via -p:GameDataDir=... rather
+       than re-deriving a Windows-only path here.
+    2. Adds a PackageReference to BaseLib, which the example mod doesn't use
+       (it hand-rolls a plain RelicModel) but every character mod does, per
+       both installed mods in your STS2/mods folder and the manifest
+       "dependencies" field they carry ({ "id": "BaseLib", "min_version": ... }).
+       Confirm the pinned version below still matches BaseLib's latest
+       release before a real build — see TOOLCHAIN_FINDINGS.md.
+
+  Every $(Property) here can be overridden from the `dotnet build` command
+  line with -p:PropertyName=value; server.js does exactly that instead of
+  writing a local.props file, since MSBuild command-line/global properties
+  take precedence over both the Condition-guarded defaults below and any
+  later plain assignment (like ModsOutputDir) in this same file.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <ModName>{{modName}}</ModName>
+    <ModDisplayName>{{modDisplayName}}</ModDisplayName>
+    <ModAuthor>{{modAuthor}}</ModAuthor>
+    <ModVersion>{{modVersion}}</ModVersion>
+
+    <AssemblyName>$(ModName)</AssemblyName>
+    <Version>$(ModVersion)</Version>
+
+    <!-- Fallback defaults, only used if server.js somehow doesn't pass -p: overrides -->
+    <STS2GamePath Condition="'$(STS2GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2</STS2GamePath>
+    <GameDataDir Condition="'$(GameDataDir)' == ''">$(STS2GamePath)\data_sts2_windows_x86_64</GameDataDir>
+    <GodotExePath Condition="'$(GodotExePath)' == ''">godot</GodotExePath>
+
+    <!-- Where the built .dll/.pck/.json land. Left as a plain assignment
+         (matching the verified example) so a -p:ModsOutputDir=... override
+         from server.js always wins when we want to build into a scratch
+         dir instead of the user's live mods folder. -->
+    <ModsOutputDir>$(STS2GamePath)\mods\$(ModName)</ModsOutputDir>
+    <PackProject>$(ProjectDir)pack</PackProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDataDir)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(GameDataDir)\GodotSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="sts2">
+      <HintPath>$(GameDataDir)\sts2.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <!-- [VERIFIED] preferred path: reference the BaseLib.dll already sitting in
+       the user's own STS2 mods folder (BaseLib installs like any other mod —
+       <modsDir>/BaseLib/BaseLib.dll). server.js passes -p:BaseLibDllPath=...
+       whenever gameLocator.js finds it there, which sidesteps the NuGet
+       package-id uncertainty below entirely, and guarantees the build-time
+       reference matches whatever BaseLib version is actually installed
+       (confirmed v3.4.1 against a real install — see TOOLCHAIN_FINDINGS.md). -->
+  <ItemGroup Condition="'$(BaseLibDllPath)' != ''">
+    <Reference Include="BaseLib">
+      <HintPath>$(BaseLibDllPath)</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <!-- BEST EFFORT fallback, only used if BaseLibDllPath wasn't supplied
+       (i.e. the user hasn't installed BaseLib as a mod yet): package id/
+       version summarized from BaseLib-StS2's README, not from a real
+       restore. If this id is wrong, dotnet restore will fail loudly
+       (NU1101) rather than silently — that's an easy signal to fix here. -->
+  <ItemGroup Condition="'$(BaseLibDllPath)' == ''">
+    <PackageReference Include="Alchyr.Sts2.BaseLib" Version="{{baseLibVersion}}" />
+  </ItemGroup>
+
+  <!-- No explicit <Compile Include> ItemGroup here on purpose: Microsoft.NET.Sdk
+       already auto-includes every .cs file under the project directory by
+       default (excluding bin/obj) — that's exactly what the real, verified
+       ExampleMod.csproj relies on too, with no Compile items of its own.
+       An earlier version of this template added one anyway "to be explicit",
+       which double-included every file and failed a real build with
+       NETSDK1022 ("Duplicate 'Compile' items were included") — caught via
+       Tyler's own test export. Left this note so nobody re-adds it. -->
+
+  <!-- Generate project.godot before build — verified pattern, the pack/
+       project doesn't need a hand-written project.godot checked in. -->
+  <Target Name="GenerateProjectGodot" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <ProjectGodotPath>$(PackProject)\project.godot</ProjectGodotPath>
+      <ProjectGodotContent>config_version=5
+
+[application]
+config/name="$(ModName)"
+config/features=PackedStringArray("4.5", "C#", "Mobile")
+
+[dotnet]
+project/assembly_name="$(ModName)"
+
+[rendering]
+renderer/rendering_method="mobile"
+</ProjectGodotContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(ProjectGodotPath)" Lines="$(ProjectGodotContent)" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+
+  <!-- Generate the mod manifest before build. BEST EFFORT shape — see
+       TOOLCHAIN_FINDINGS.md's "The manifest" section for the has_pck/
+       has_dll uncertainty; we omit those two fields and let the game
+       compute them, since the minimal example mod's source manifest
+       never included them either. -->
+  <Target Name="GenerateModManifest" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <ModManifestPath>$(PackProject)\mod_manifest.json</ModManifestPath>
+      <ModManifestContent>{{manifestJson}}</ModManifestContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(ModManifestPath)" Lines="$(ModManifestContent)" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+
+  <Target Name="PostBuild" AfterTargets="Build">
+    <MakeDir Directories="$(ModsOutputDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsOutputDir)" />
+    <Exec Command="&quot;$(GodotExePath)&quot; --headless --path &quot;$(PackProject)&quot; --export-pack &quot;Windows Desktop&quot; &quot;$(ModsOutputDir)\$(ModName).pck&quot;" />
+    <!--
+      NOT in the verified example (it never carries a BaseLib dependency, so
+      never checked what a fully-installed manifest looks like). Added here
+      because both real installed mods in your STS2/mods folder have a flat
+      <ModName>.json next to the .dll/.pck, matching pack/mod_manifest.json's
+      content — [BEST EFFORT] that a plain copy is all that's needed; if the
+      game doesn't pick it up, some other build step is populating that file.
+    -->
+    <Copy SourceFiles="$(PackProject)\mod_manifest.json" DestinationFiles="$(ModsOutputDir)\$(ModName).json" />
+  </Target>
+</Project>
