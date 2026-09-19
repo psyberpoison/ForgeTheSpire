@@ -5175,8 +5175,11 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     const validTargetBits = [];
     if (vtTypeBits.length && vtTypeBits.length < 3) validTargetBits.push(`types: ${vtTypeBits.join(', ')}`);
     if (vt.excludeXCost) validTargetBits.push('excludes X-cost cards');
-    if (Array.isArray(vt.baseCardTags) && vt.baseCardTags.length) validTargetBits.push(`base tags: ${vt.baseCardTags.join(', ')}`);
-    if (Array.isArray(vt.gameplayTags) && vt.gameplayTags.length) validTargetBits.push(`custom tags: ${vt.gameplayTags.join(', ')}`);
+    const vtTags = Array.isArray(vt.tags) ? vt.tags : [];
+    const vtBaseTags = vtTags.filter(t => t && t.kind === 'base').map(t => t.ref);
+    const vtCustomTags = vtTags.filter(t => t && t.kind === 'custom').map(t => t.ref);
+    if (vtBaseTags.length) validTargetBits.push(`base tags: ${vtBaseTags.join(', ')}`);
+    if (vtCustomTags.length) validTargetBits.push(`custom tags: ${vtCustomTags.join(', ')}`);
     if (validTargetBits.length) { lines.push(`**Valid targets:** ${validTargetBits.join('; ')}`); lines.push(''); }
 
     const mo = e.modifiers || {};

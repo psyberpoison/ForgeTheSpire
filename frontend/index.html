@@ -875,6 +875,9 @@
   .a-status-picker .picker-list{max-height:140px; padding:4px;}
   .a-status-picker .picker-option{padding:3px 5px; font-size:12.5px; gap:6px;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
+  /* Enchantment/Affliction "Valid targets" merged base+custom tag picker
+     (renderEnchTagPicker, round 171) reuses .a-status-picker's sizing
+     wholesale — see that function's own comment for why. */
 
   /* [Round 103] Resource-bar preview — Tyler: "create some kind of preview
      in the status section for the 3 bars above energy and the 1 below
@@ -13209,9 +13212,11 @@ function newRichEnchantmentEntity(idPrefix, singular){
     whilePile: { triggersText: '' },
     validTargets: {
       types: { attack: true, skill: true, power: true },
-      baseCardTags: [],
-      gameplayTags: [],
       excludeXCost: false,
+      // [{kind:'base'|'custom', ref:'Strike'}, ...] — 'base' entries are
+      // real BaseLib CardTag values, 'custom' entries are one of this
+      // character's own gameplay tags. See renderEnchTagPicker.
+      tags: [],
     },
     icon: null,
     cardFrames: { enchanted: null, attack: null, skill: null, power: null },
@@ -13248,10 +13253,20 @@ function ensureRichEnchantmentDefaults(e){
   else {
     if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
     else for(const k in d.validTargets.types) if(e.validTargets.types[k]===undefined) e.validTargets.types[k]=d.validTargets.types[k];
-    if(!Array.isArray(e.validTargets.baseCardTags)) e.validTargets.baseCardTags = [];
-    if(!Array.isArray(e.validTargets.gameplayTags)) e.validTargets.gameplayTags = [];
     if(e.validTargets.excludeXCost===undefined) e.validTargets.excludeXCost = false;
-    delete e.validTargets.cardTags; // [round 170] replaced by the two checkbox lists above — stray field from the prior round's freeform version, dropped rather than migrated (never shipped/saved anywhere real).
+    if(!Array.isArray(e.validTargets.tags)){
+      // [round 171] migrate the prior two-checkbox-list shape
+      // (baseCardTags/gameplayTags, round 170) into the merged
+      // {kind,ref} list the new single picker uses. Neither prior shape
+      // ever shipped/saved anywhere real, but migrating costs nothing.
+      const migrated = [];
+      (e.validTargets.baseCardTags||[]).forEach(v=>migrated.push({kind:'base', ref:v}));
+      (e.validTargets.gameplayTags||[]).forEach(v=>migrated.push({kind:'custom', ref:v}));
+      e.validTargets.tags = migrated;
+    }
+    delete e.validTargets.baseCardTags;
+    delete e.validTargets.gameplayTags;
+    delete e.validTargets.cardTags; // [round 170] even-older freeform text-field shape.
   }
   if(e.icon === undefined) e.icon = null;
   if(!e.cardFrames) e.cardFrames = d.cardFrames;
@@ -13281,18 +13296,99 @@ function enchKeywordCheckboxes(name, selected){
     </label>`).join('');
 }
 
-// Generic version of the above for a plain string list rather than
-// {id,hint} objects — used by the Enchantment/Affliction "Valid targets"
-// section for both the fixed BASE_CARD_TAGS list and the dynamic
-// allGameplayTags() list. `emptyText` renders in place of the checkboxes
-// when `options` is empty (same dim-hint convention as .panel-desc)
-// instead of silently showing nothing.
-function checkboxChipList(name, options, selected, emptyText){
-  if(!options.length) return `<div class="panel-desc" style="margin:2px 0 0">${escapeHtml(emptyText || 'None yet.')}</div>`;
-  return options.map(v=>`
-    <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
-      <input type="checkbox" class="${name}" value="${escapeAttr(v)}" ${selected.includes(v)?'checked':''}> ${escapeHtml(v)}
-    </label>`).join('');
+// Merged "base game tag + custom gameplay tag" picker for the
+// Enchantment/Affliction "Valid targets" section — same search-filter +
+// checkbox-list + chip-row shape as renderStatusPicker (ModifyStatus's
+// combined vanilla+custom picker) further down this file, minus the
+// per-entry amount inputs that picker also has. Tyler: "we should just
+// add a selector that functions like the status selectors we have
+// implemented. for there to be a search bar that shows all base game
+// tags, but also any custom tags. the user should be able to click on
+// any of them to add those tags to the valid target list." `selected` is
+// a flat array of {kind:'base'|'custom', ref:'Strike'} entries, mutated
+// in place — same "array IS the live state" convention renderStatusPicker
+// uses for act.statusEntries, so no separate save-on-close step is
+// needed for it. Returns the built DOM node to insert into a slot.
+function renderEnchTagPicker(selected){
+  const options = [
+    ...BASE_CARD_TAGS.filter(t=>t!=='None').map(v=>({kind:'base', value:v, label:v, tooltip:'Real BaseLib base-game card tag.'})),
+    ...allGameplayTags().map(v=>({kind:'custom', value:v, label:v, tooltip:'Your own custom gameplay tag.'})),
+  ];
+  const findEntry = (kind, ref) => selected.find(e=>e.kind===kind && e.ref===ref);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'a-status-picker ench-tag-picker';
+  wrap.innerHTML = `
+    <div class="chip-row"></div>
+    <div class="picker-wrap">
+      <input type="text" class="picker-filter" autocomplete="off" placeholder="Click to browse ${options.length} tags…">
+      <div class="picker-list"></div>
+    </div>
+    <div class="hint-small">Click to browse, or type to search. Click any tag to add it. Leave none selected for no restriction.</div>
+  `;
+  const chipRow = wrap.querySelector('.chip-row');
+  const pickerWrap = wrap.querySelector('.picker-wrap');
+  const listEl = wrap.querySelector('.picker-list');
+  const filterInput = wrap.querySelector('.picker-filter');
+
+  function renderChips(){
+    if(!selected.length){
+      chipRow.innerHTML = `<span class="chip-empty">no restriction — every tag counts as valid</span>`;
+      return;
+    }
+    chipRow.innerHTML = selected.map(entry=>{
+      const opt = options.find(o=>o.kind===entry.kind && o.value===entry.ref);
+      const label = opt ? opt.label : entry.ref;
+      return `<span class="chip">${escapeHtml(label)}${entry.kind==='base' ? ' (base)' : ' (custom)'} <span class="chip-x" data-kind="${escapeAttr(entry.kind)}" data-value="${escapeAttr(entry.ref)}">✕</span></span>`;
+    }).join('');
+  }
+
+  function renderList(){
+    if(!options.length){ listEl.innerHTML = `<div class="empty">— no tags available —</div>`; return; }
+    listEl.innerHTML = options.map(o=>{
+      const checked = !!findEntry(o.kind, o.value);
+      return `
+      <label class="picker-option${checked?' checked':''}" title="${escapeAttr(o.tooltip)}">
+        <input type="checkbox" data-kind="${escapeAttr(o.kind)}" value="${escapeAttr(o.value)}" ${checked?'checked':''}>
+        <span>${escapeHtml(o.label)}${o.kind==='custom'?' (custom)':' (base)'}</span>
+      </label>`;
+    }).join('');
+  }
+
+  renderChips();
+  renderList();
+
+  filterInput.addEventListener('focus', ()=> pickerWrap.classList.add('open'));
+  filterInput.addEventListener('input', ()=>{
+    const q = filterInput.value.toLowerCase();
+    listEl.querySelectorAll('.picker-option').forEach(row=>{
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  listEl.addEventListener('change', e=>{
+    const box = e.target.closest('input[type="checkbox"]');
+    if(!box) return;
+    const kind = box.dataset.kind, v = box.value;
+    const idx = selected.findIndex(e2=>e2.kind===kind && e2.ref===v);
+    if(box.checked && idx === -1) selected.push({kind, ref: v});
+    else if(!box.checked && idx !== -1) selected.splice(idx, 1);
+    box.closest('.picker-option').classList.toggle('checked', box.checked);
+    renderChips();
+  });
+
+  chipRow.addEventListener('click', e=>{
+    const x = e.target.closest('.chip-x');
+    if(!x) return;
+    const kind = x.getAttribute('data-kind'), v = x.getAttribute('data-value');
+    const idx = selected.findIndex(e2=>e2.kind===kind && e2.ref===v);
+    if(idx !== -1) selected.splice(idx, 1);
+    renderChips();
+    const box = Array.from(listEl.querySelectorAll('input[type="checkbox"]')).find(cb=>cb.dataset.kind===kind && cb.value===v);
+    if(box){ box.checked = false; box.closest('.picker-option').classList.remove('checked'); }
+  });
+
+  return wrap;
 }
 
 function makeRichEntitySection(opts){
@@ -13436,17 +13532,14 @@ function makeRichEntitySection(opts){
         ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
         <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
 
-        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave types all checked and every tag unchecked for no restriction.`, 'margin-top:20px')}
+        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave types all checked and no tags selected for no restriction.`, 'margin-top:20px')}
         <div class="row" style="gap:14px; flex-wrap:wrap">
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
         </div>
-        ${fieldHead('Base game tags', 'The real base-game card tag. Check any that should count as a valid target.', 'margin-top:8px')}
-        <div>${checkboxChipList(`${idPrefix}-vt-basetag`, BASE_CARD_TAGS.filter(t=>t!=='None'), vt.baseCardTags)}</div>
-        ${fieldHead('Custom tags', 'Your own gameplay tags (the "Tag" chips on a card). Check any that should count as a valid target.', 'margin-top:8px')}
-        <div>${checkboxChipList(`${idPrefix}-vt-customtag`, allGameplayTags(), vt.gameplayTags, '— no custom tags created yet — add one from a card’s editor —')}</div>
+        <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
 
         ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:10px 16px">
@@ -13545,6 +13638,11 @@ function makeRichEntitySection(opts){
 
     wireIcon(e);
     wireFrameGrid(e);
+    // renderEnchTagPicker wires all of its own interaction (checkbox
+    // toggling, chip removal, filter-reveal-on-focus) and mutates
+    // vt.tags directly, so no further wiring is needed for it in the
+    // save handler below.
+    document.getElementById(`${idPrefix}-vt-tags-slot`).appendChild(renderEnchTagPicker(vt.tags));
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
@@ -13556,8 +13654,7 @@ function makeRichEntitySection(opts){
       vt.types.skill = document.getElementById(`${idPrefix}-vt-skill`).checked;
       vt.types.power = document.getElementById(`${idPrefix}-vt-power`).checked;
       vt.excludeXCost = document.getElementById(`${idPrefix}-vt-excludex`).checked;
-      vt.baseCardTags = Array.from(document.querySelectorAll(`.${idPrefix}-vt-basetag:checked`)).map(cb=>cb.value);
-      vt.gameplayTags = Array.from(document.querySelectorAll(`.${idPrefix}-vt-customtag:checked`)).map(cb=>cb.value);
+      // vt.tags is mutated live by renderEnchTagPicker above — nothing to read back here.
 
       const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
       mo.extraDamage = num(`${idPrefix}-mo-extradmg`);
