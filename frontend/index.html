@@ -13683,15 +13683,21 @@ function makeRichEntitySection(opts){
 
         ${fieldHead('Basic Information', `Name, icon, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
         <div class="ench-field-box">
-          <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-          <label class="ench-flush" style="margin-top:16px">Icon</label>
-          <div style="display:flex; align-items:center; gap:12px; margin-top:6px">
-            <div class="art-box" id="${idPrefix}-icon-box" style="width:56px; height:56px; border:1px dashed var(--border-soft); border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative;">
-              <img id="${idPrefix}-icon-img" style="display:none; max-width:100%; max-height:100%;">
-              <div id="${idPrefix}-icon-ph" class="art-placeholder" style="font-size:9px; text-align:center;">Upload</div>
+          <div style="display:flex; align-items:flex-start; gap:20px;">
+            <div style="flex:0 0 50%;">
+              <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
             </div>
-            <input type="file" id="${idPrefix}-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
-            <button type="button" class="ghost" id="${idPrefix}-icon-clear" style="display:none">Remove</button>
+            <div>
+              <label class="ench-flush" style="margin-top:0">Icon</label>
+              <div style="display:flex; align-items:center; gap:12px; margin-top:6px">
+                <div class="art-box" id="${idPrefix}-icon-box" style="width:56px; height:56px; border:1px dashed var(--border-soft); border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative;">
+                  <img id="${idPrefix}-icon-img" style="display:none; max-width:100%; max-height:100%;">
+                  <div id="${idPrefix}-icon-ph" class="art-placeholder" style="font-size:9px; text-align:center;">Upload</div>
+                </div>
+                <input type="file" id="${idPrefix}-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+                <button type="button" class="ghost" id="${idPrefix}-icon-clear" style="display:none">Remove</button>
+              </div>
+            </div>
           </div>
           ${fieldHead('Description', 'Leave blank and the game shows the modifiers below, written out.', 'margin-top:16px')}
           <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
