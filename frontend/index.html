@@ -13683,7 +13683,7 @@ function makeRichEntitySection(opts){
 
         ${fieldHead('Basic Information', `Name, icon, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
         <div class="ench-field-box">
-          <div style="display:flex; align-items:flex-start; gap:20px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:20px;">
             <div style="flex:0 0 50%;">
               <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
             </div>
