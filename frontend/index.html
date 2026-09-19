@@ -925,6 +925,27 @@
      others are a single control and don't have this grouping ambiguity. */
   .ench-field-box{padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--stone-2); margin-top:8px;}
 
+  /* Round 182 — Tyler: "group all of these in their own section called
+     'Basic Information'", pointing at Name/Description/Line added to the
+     card/Valid targets/Stacking. Unlike the earlier 3 boxes, this one
+     needs to hold several already-titled sub-groups (fieldHead() always
+     stamps its <label> with .ench-flush), not just bare inputs. .ench-flush
+     normally pulls a label 16px left to sit flush against the modal's own
+     wall (see .ench-modal-body .ench-flush below) — right for a title
+     sitting directly in the modal body, wrong once that title is nested
+     inside this box's own 16px padding, where it would get pulled back
+     out past the box's left edge. This override cancels that pull for any
+     .ench-flush title that ends up inside a box — first tried it at
+     ".ench-field-box .ench-flush" (2 classes, same specificity as the
+     modal-body rule below), but that only wins on source order and the
+     modal-body rule comes later in the sheet, so it kept losing; the
+     3-class selector here (".ench-modal-body .ench-field-box .ench-flush")
+     outranks the 2-class modal-body rule outright regardless of order —
+     letting Basic Information's box hold its own titled sub-sections
+     (Description, Line added to the card, Valid targets, Stacking) without
+     their titles escaping the box. */
+  .ench-modal-body .ench-field-box .ench-flush{margin-left:0;}
+
   /* Enchantment/Affliction editor — Tyler: "lets change the contents of
      each section to be indented slightly to show more of a contrast
      between the title/description and the contents." Scoped to this one
@@ -13660,25 +13681,28 @@ function makeRichEntitySection(opts){
           Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Ready to wire up for real once STS2's own card-enchantment mechanism is confirmed.
         </div>
 
-        <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-        ${fieldHead('Description', 'Leave blank and the game shows the modifiers below, written out.')}
-        <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
-        ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
-        <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
+        ${fieldHead('Basic Information', `Name, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
+        <div class="ench-field-box">
+          <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
+          ${fieldHead('Description', 'Leave blank and the game shows the modifiers below, written out.')}
+          <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
+          ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
+          <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
 
-        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave types all checked and no tags selected for no restriction.`, 'margin-top:20px')}
-        <div class="row" style="gap:14px; flex-wrap:wrap">
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
-        </div>
-        <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
+          ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave types all checked and no tags selected for no restriction.`, 'margin-top:20px')}
+          <div class="row" style="gap:14px; flex-wrap:wrap">
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
+          </div>
+          <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
 
-        ${fieldHead('Stacking', `Whether this ${noun} can apply more than once, and whether the stack count shows on the card.`, 'margin-top:20px')}
-        <div class="row" style="gap:14px; flex-wrap:wrap">
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number of stacks on the card</label>
+          ${fieldHead('Stacking', `Whether this ${noun} can apply more than once, and whether the stack count shows on the card.`, 'margin-top:20px')}
+          <div class="row" style="gap:14px; flex-wrap:wrap">
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number of stacks on the card</label>
+          </div>
         </div>
 
         ${fieldHead('What it changes', `Leave a field blank and the card isn't asked about it at all. Check Per Stack to multiply these by how many times this ${noun} has been applied.`, 'margin-top:20px')}
