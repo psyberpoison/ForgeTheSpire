@@ -13706,7 +13706,7 @@ function makeRichEntitySection(opts){
 
         ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
         <div class="ench-field-box">
-          <div class="row" style="flex-wrap:wrap; gap:4px 16px">
+          <div style="display:flex; flex-direction:column; gap:6px">
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
