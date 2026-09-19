@@ -910,14 +910,18 @@
   /* "What it changes" / "When the card is played" grouping box (round 177)
      — Tyler circled both sections in a screenshot and said their several
      fields need to visibly fall under one category, i.e. a boxed area
-     around all of a section's inputs. Reuses the same boxed-subsection
-     look .adv-section already established for Advanced Options (dark
-     --ink fill against the modal's lighter --stone background, --border
-     outline) rather than inventing a new visual language for the same
-     idea. Applied only to the two sections Tyler pointed at, not every
-     fieldHead()'d section in this modal — most of the others are a single
-     control and don't have this ambiguity. */
-  .ench-field-box{padding:14px 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--ink); margin-top:8px;}
+     around all of a section's inputs. Originally reused .adv-section's
+     dark --ink fill + the shared 3px --radius, but Tyler asked for the
+     background lighter and the corners more rounded — bumped to --stone-2
+     (lighter than both --ink and the modal's own --stone background, so
+     it still reads as its own panel rather than blending into the modal)
+     and a fixed 10px radius (not the shared --radius var, which stays 3px
+     everywhere else in the app; this box wanted noticeably rounder
+     corners than the rest of the UI, not a global change). Applied only
+     to the two sections Tyler pointed at, not every fieldHead()'d section
+     in this modal — most of the others are a single control and don't
+     have this grouping ambiguity. */
+  .ench-field-box{padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--stone-2); margin-top:8px;}
 
   /* Enchantment/Affliction editor — Tyler: "lets change the contents of
      each section to be indented slightly to show more of a contrast
