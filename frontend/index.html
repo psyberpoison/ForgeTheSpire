@@ -879,6 +879,21 @@
      (renderEnchTagPicker, round 171) reuses .a-status-picker's sizing
      wholesale — see that function's own comment for why. */
 
+  /* Enchantment/Affliction editor — Tyler: "lets change the contents of
+     each section to be indented slightly to show more of a contrast
+     between the title/description and the contents." Scoped to this one
+     modal (ench-modal-body, added alongside the shared .modal-body class
+     on just this editor's modal-body div) rather than changing
+     .modal-body itself, which every other editor in the app also uses.
+     Every section's title (fieldHead()'s own <label>, plus the 3
+     standalone title-only labels — Name/Icon/Position after shuffling —
+     and the top red "not yet compiled" notice) is pulled back out to the
+     modal's normal left edge via .ench-flush's matching negative margin;
+     everything else (inputs, textareas, rows, grids) just inherits the
+     indent from the padding below, no per-section wrapper divs needed. */
+  .ench-modal-body{padding-left:16px;}
+  .ench-modal-body .ench-flush{margin-left:-16px;}
+
   /* [Round 103] Resource-bar preview — Tyler: "create some kind of preview
      in the status section for the 3 bars above energy and the 1 below
      health so that the user can see their bars as they create them."
@@ -13286,7 +13301,7 @@ function ensureRichEnchantmentDefaults(e){
 function fieldHead(title, desc, style){
   const styleAttr = style ? ` style="${style}"` : '';
   const hint = desc ? ` — <span style="font-weight:normal; text-transform:none; letter-spacing:normal; font-size:12.5px;">${desc}</span>` : '';
-  return `<label${styleAttr}><strong>${title}</strong>${hint}</label>`;
+  return `<label class="ench-flush"${styleAttr}><strong>${title}</strong>${hint}</label>`;
 }
 
 function enchKeywordCheckboxes(name, selected){
@@ -13521,12 +13536,12 @@ function makeRichEntitySection(opts){
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
-      <div class="modal-body" style="max-height:82vh">
-        <div class="panel-desc" style="margin-top:0; color:var(--danger-bright)">
+      <div class="modal-body ench-modal-body" style="max-height:82vh">
+        <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
           Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Ready to wire up for real once STS2's own card-enchantment mechanism is confirmed.
         </div>
 
-        <label style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
+        <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
         ${fieldHead('Description', 'Leave blank and the game shows the modifiers below, written out.')}
         <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
         ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
@@ -13593,14 +13608,14 @@ function makeRichEntitySection(opts){
         ${fieldHead('While left in hand', 'Reductions accumulate until the card is played, then reset.', 'margin-top:20px')}
         <div><label>Energy reduction each turn left in hand</label><input type="number" id="${idPrefix}-wh-energy" style="width:100px" value="${wh.energyReductionPerTurn ?? ''}"></div>
 
-        <label style="margin-top:20px">Position after shuffling</label>
+        <label class="ench-flush" style="margin-top:20px">Position after shuffling</label>
         <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
         <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
 
         ${fieldHead('While the card waits in a pile', `Freeform — fires while a card carrying this ${noun} sits in hand/draw/discard/exhaust without being played.`, 'margin-top:20px')}
         <textarea id="${idPrefix}-wp-triggers">${escapeHtml(wp.triggersText||'')}</textarea>
 
-        <label style="margin-top:20px">Icon</label>
+        <label class="ench-flush" style="margin-top:20px">Icon</label>
         <div style="display:flex; align-items:center; gap:12px; margin-top:6px">
           <div class="art-box" id="${idPrefix}-icon-box" style="width:56px; height:56px; border:1px dashed var(--border-soft); border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative;">
             <img id="${idPrefix}-icon-img" style="display:none; max-width:100%; max-height:100%;">
