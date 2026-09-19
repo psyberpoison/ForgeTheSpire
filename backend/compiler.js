@@ -5133,6 +5133,13 @@ function buildPetsReadme(pets) {
 // README.md (same shape as buildPetsReadme just above, just parameterized
 // by the noun/heading since the two entities are structurally identical —
 // see character.schema.json's enchantment/affliction definitions).
+// [Round 168] Rewritten for the much richer field set the editor now
+// captures (Tyler pointed at slay.spencerstiles.com's own Enchantments
+// editor as the reference shape — see frontend/index.html's own header
+// comment on this section for the full context). Still a pure design-doc
+// export — nothing here is [VERIFIED]/[BEST EFFORT] compiled behavior,
+// same honesty convention as before; only non-blank/non-default fields
+// are printed so an entry with just a name+description still reads clean.
 function buildEnchantmentAfflictionReadme(heading, entries) {
   const lines = [];
   lines.push(`# ${heading} — captured, not yet compiled`);
@@ -5144,11 +5151,102 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
   lines.push('doc so they\'re ready the moment a future round confirms one — this file is');
   lines.push('not read by the compiled mod at runtime.');
   lines.push('');
+  lines.push('[Round 168] Roughed out against the fuller field set a similar community');
+  lines.push('tool (slay.spencerstiles.com) uses for its own card-enchantment editor —');
+  lines.push('every field below is captured the same design-doc-only way as before, just');
+  lines.push('a richer shape. Fields left blank in the editor are omitted below.');
+  lines.push('');
+
+  const has = (n) => n !== null && n !== undefined && n !== '';
+
   entries.forEach(e => {
     lines.push(`## ${e.name || 'Untitled'}`);
     lines.push('');
-    if (e.description) { lines.push(e.description); lines.push(''); }
-    if (e.effectText) { lines.push('**What it does:** ' + e.effectText); lines.push(''); }
+    if (e.category) lines.push(`**Category:** ${e.category}`);
+    if (e.description) { lines.push(''); lines.push(e.description); }
+    if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
+    lines.push('');
+
+    const el = e.eligibility || {};
+    const goesOnBits = [];
+    if (el.onlyBlockGrantingCards) goesOnBits.push('only cards that grant Block');
+    if (el.onlyBasicCards) goesOnBits.push('only Basic cards');
+    if (el.mustHaveExhaustKeyword) goesOnBits.push("must have its own Exhaust keyword");
+    if (el.excludeUnplayable) goesOnBits.push('excludes Unplayable cards');
+    if (el.excludeXCost) goesOnBits.push('excludes X-cost cards');
+    if (el.cardTag) goesOnBits.push(`card tag: ${el.cardTag}`);
+    const types = el.types || {};
+    const typeBits = [];
+    if (types.attack) typeBits.push('Attack');
+    if (types.skill) typeBits.push('Skill');
+    if (types.power) typeBits.push('Power');
+    if (typeBits.length && typeBits.length < 3) goesOnBits.push(`types: ${typeBits.join(', ')}`);
+    if (goesOnBits.length) { lines.push(`**Goes on:** ${goesOnBits.join('; ')}`); lines.push(''); }
+
+    const mo = e.modifiers || {};
+    const moBits = [];
+    if (has(mo.extraDamage)) moBits.push(`+${mo.extraDamage} damage`);
+    if (has(mo.damageBonusPct)) moBits.push(`+${mo.damageBonusPct}% damage`);
+    if (has(mo.extraBlock)) moBits.push(`+${mo.extraBlock} Block`);
+    if (has(mo.blockBonusPct)) moBits.push(`+${mo.blockBonusPct}% Block`);
+    if (has(mo.extraPlays)) moBits.push(`+${mo.extraPlays} extra play(s)`);
+    if (mo.canStack) moBits.push('stacks (applying again raises the amount)');
+    if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
+    if (moBits.length) { lines.push(`**Modifiers (× stacks applied):** ${moBits.join(', ')}`); lines.push(''); }
+
+    const lk = e.lock || {};
+    if (lk.locksPlayWhileCounting || has(lk.countFallsPerTurn)) {
+      const lkBits = [];
+      if (lk.locksPlayWhileCounting) lkBits.push('card is unplayable while counting down');
+      if (has(lk.countFallsPerTurn)) lkBits.push(`count falls ${lk.countFallsPerTurn}/turn`);
+      if (lk.keywordWhileLocked && lk.keywordWhileLocked !== 'None') lkBits.push(`carries ${lk.keywordWhileLocked} while locked`);
+      if ((lk.tagsWhileLocked || []).length) lkBits.push(`tags while locked: ${lk.tagsWhileLocked.join(', ')}`);
+      lines.push(`**Locking/countdown:** ${lkBits.join('; ')}`);
+      lines.push('');
+    }
+
+    const oa = e.onApply || {};
+    const oaBits = [];
+    if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
+    if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')}`);
+    if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
+    if (has(oa.flatBlockAdjustment)) oaBits.push(`${oa.flatBlockAdjustment} flat Block adjustment`);
+    if (has(oa.stacksGainedPerPlay)) oaBits.push(`+${oa.stacksGainedPerPlay} stack(s) per play`);
+    if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
+
+    const op = e.onPlay || {};
+    const opBits = [];
+    if (op.onceOnlyPerCombat) opBits.push('once per combat only');
+    if (op.multiplyFlatDamageByStacks) opBits.push('flat damage bonus × stacks');
+    if (op.firstPlayOnly) opBits.push('damage bonuses apply first play this combat only');
+    if (has(op.damageGrowthPerStack)) opBits.push(`damage grows by ${op.damageGrowthPerStack} per stack per play`);
+    if (has(op.cardsDrawnPerStack)) opBits.push(`draws ${op.cardsDrawnPerStack} card(s) per stack`);
+    if (op.randomizeEnergyOnDraw) opBits.push('randomizes Energy cost on draw');
+    if (has(op.energyPerStack)) opBits.push(`+${op.energyPerStack} Energy per stack`);
+    if (has(op.blockPerStack)) opBits.push(`+${op.blockPerStack} Block per stack`);
+    if (opBits.length) { lines.push(`**On play:** ${opBits.join('; ')}`); lines.push(''); }
+    if (op.extraEffectsText) { lines.push(`**Extra effects (freeform):** ${op.extraEffectsText}`); lines.push(''); }
+    else if (e.effectText) { lines.push(`**What it does:** ${e.effectText}`); lines.push(''); }
+
+    const wh = e.whileInHand || {};
+    if (has(wh.energyReductionPerTurn)) { lines.push(`**While in hand:** -${wh.energyReductionPerTurn} Energy per turn left in hand (accumulates until played)`); lines.push(''); }
+
+    const sh = e.shuffle || {};
+    if (sh.startAtBottomOfDraw || (sh.shuffleOrder && sh.shuffleOrder !== 'normal')) {
+      const shBits = [];
+      if (sh.startAtBottomOfDraw) shBits.push('starts at the bottom of the draw pile');
+      if (sh.shuffleOrder && sh.shuffleOrder !== 'normal') shBits.push(`shuffle order: ${sh.shuffleOrder}`);
+      lines.push(`**Shuffling:** ${shBits.join('; ')}`);
+      lines.push('');
+    }
+
+    const wp = e.whilePile || {};
+    if (wp.triggersText) { lines.push(`**While waiting in a pile (freeform):** ${wp.triggersText}`); lines.push(''); }
+
+    if (e.icon) lines.push('_Has a custom icon._');
+    const cf = e.cardFrames || {};
+    if (cf.enchanted || cf.attack || cf.skill || cf.power) lines.push('_Has custom enchanted card frame art._');
+    lines.push('');
   });
   return lines.join('\n');
 }

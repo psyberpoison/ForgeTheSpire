@@ -13108,27 +13108,170 @@ function openPetEditor(petId){
 }
 
 /* ---------- ENCHANTMENTS / AFFLICTIONS ---------- */
-// Round 95, Tyler: "Enchantments/Afflictions need their own section after
-// cards, we'll modify how it looks later, but it needs to be its own
-// section." Same DATA-CAPTURE-ONLY convention as Pets above — group C's
-// own "Enchantments section" backlog item is still genuinely unresearched
-// ("need to confirm whether 'Enchantments' is a real STS2 system at all
-// before scoping it"), so this captures name/description/effectText as a
-// design doc (Enchantments/README.md, Afflictions/README.md — see
-// compiler.js:buildEnchantmentsReadme/buildAfflictionsReadme) rather than
-// implying a compiled mechanism that hasn't been confirmed real. One
-// shared render/editor factory, not two hand-duplicated copies — the two
-// entities are structurally identical (Tyler grouped them into one
-// section, not two), so this is copy-paste risk with no real benefit.
-function makeCaptureOnlyEntitySection(opts){
+// Round 95 shipped this section as a 3-field (name/description/
+// effectText) placeholder — group C's own backlog item ("need to confirm
+// whether 'Enchantments' is a real STS2 system at all") was still
+// genuinely unresearched, so that round deliberately kept it minimal.
+//
+// [Round 168] Tyler's ask: "lets get all of the big sections down before
+// we push v1" / "move on to the other sections and then come back and
+// clean them up after roughing out what the sections should be" — then,
+// for this specific section, pointed at slay.spencerstiles.com's own
+// Enchantments editor (a reference/competitor tool) as the shape to rough
+// out against, showing its full page (Properties/eligibility, numeric
+// modifiers, lock-and-countdown, on-apply keyword changes, on-play
+// behavior, while-in-hand, shuffle position, while-in-pile, icon, and 4
+// card-frame uploads). This is that rough pass: the full field set,
+// captured honestly — STILL DATA-CAPTURE-ONLY. The STS2 "card
+// enchantment" attachment mechanism itself is still unconfirmed (same
+// backlog gap as before), so none of this claims [VERIFIED]/[BEST
+// EFFORT] compiled behavior the way a real Forge feature does — every
+// field exports into the design-doc README only (see compiler.js's
+// buildEnchantmentsReadme/buildAfflictionsReadme). Two fields
+// (onPlay.extraEffectsText, whilePile.triggersText) are deliberately
+// freeform text rather than wired into Forge's real trigger/condition/
+// action editor (the machinery cards/relics/mechanics already compile
+// for real) — reusing that machinery here would be the natural "clean
+// up" pass once/if a real attachment point is confirmed, not part of
+// this rough-shape pass.
+//
+// One shared render/editor factory for both entities — Enchantments and
+// Afflictions are structurally identical (Tyler grouped them into one
+// section, not two; here they're just positive/negative framing of the
+// same shape), so this is copy-paste risk with no real benefit.
+
+const ENCHANTMENT_LOCK_KEYWORD_OPTIONS = ['None', ...CARD_KEYWORD_VALUES];
+const ENCHANTMENT_SHUFFLE_ORDER_OPTIONS = [
+  { id:'normal', label:'Normal shuffle order' },
+  { id:'top', label:'Always shuffles to the top' },
+  { id:'bottom', label:'Always shuffles to the bottom' },
+  { id:'random', label:'Random position each shuffle' },
+];
+const ENCHANTMENT_FRAME_WIDTH = 598;
+const ENCHANTMENT_FRAME_HEIGHT = 844;
+const ENCHANTMENT_FRAME_SLOTS = [
+  { id:'enchanted', label:'Enchanted Frame', fallback:null },
+  { id:'attack', label:'Enchanted Attack Frame', fallback:'enchanted' },
+  { id:'skill', label:'Enchanted Skill Frame', fallback:'enchanted' },
+  { id:'power', label:'Enchanted Power Frame', fallback:'enchanted' },
+];
+
+function newRichEnchantmentEntity(idPrefix, singular){
+  return {
+    id: uid(idPrefix),
+    name: `New ${singular}`,
+    category: '',
+    description: '',
+    cardLineText: '',
+    eligibility: {
+      onlyBlockGrantingCards: false,
+      onlyBasicCards: false,
+      mustHaveExhaustKeyword: false,
+      excludeUnplayable: false,
+      excludeXCost: false,
+      cardTag: '',
+      types: { attack:true, skill:true, power:true },
+    },
+    modifiers: {
+      extraDamage: null, damageBonusPct: null,
+      extraBlock: null, blockBonusPct: null,
+      extraPlays: null,
+      canStack: false, showNumberOnCard: true,
+    },
+    lock: {
+      locksPlayWhileCounting: false,
+      countFallsPerTurn: null,
+      keywordWhileLocked: 'None',
+      tagsWhileLocked: [],
+    },
+    onApply: {
+      addKeywords: [], removeKeywords: [],
+      zeroEnergyCostOnApply: false,
+      flatBlockAdjustment: null,
+      stacksGainedPerPlay: null,
+    },
+    onPlay: {
+      onceOnlyPerCombat: false,
+      multiplyFlatDamageByStacks: false,
+      firstPlayOnly: false,
+      damageGrowthPerStack: null,
+      cardsDrawnPerStack: null,
+      randomizeEnergyOnDraw: false,
+      energyPerStack: null,
+      blockPerStack: null,
+      extraEffectsText: '',
+    },
+    whileInHand: { energyReductionPerTurn: null },
+    shuffle: { startAtBottomOfDraw: false, shuffleOrder: 'normal' },
+    whilePile: { triggersText: '' },
+    icon: null,
+    cardFrames: { enchanted: null, attack: null, skill: null, power: null },
+  };
+}
+
+// "Migrate on touch" — same convention as poseSheetEntry/
+// ensureAdvancedOptionsDefaults elsewhere in this file. A project saved
+// under round 95's flat {name,description,effectText} shape (or any
+// partial mid-round save) gets every new nested object backfilled here,
+// in place, without discarding whatever the old fields already held.
+function ensureRichEnchantmentDefaults(e){
+  const d = newRichEnchantmentEntity('tmp','X');
+  if(e.category === undefined) e.category = d.category;
+  if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
+  if(!e.eligibility) e.eligibility = d.eligibility;
+  else {
+    for(const k in d.eligibility) if(e.eligibility[k]===undefined) e.eligibility[k]=d.eligibility[k];
+    if(!e.eligibility.types) e.eligibility.types = { ...d.eligibility.types };
+  }
+  if(!e.modifiers) e.modifiers = d.modifiers;
+  else for(const k in d.modifiers) if(e.modifiers[k]===undefined) e.modifiers[k]=d.modifiers[k];
+  if(!e.lock) e.lock = d.lock;
+  else {
+    for(const k in d.lock) if(e.lock[k]===undefined) e.lock[k]=d.lock[k];
+    if(!Array.isArray(e.lock.tagsWhileLocked)) e.lock.tagsWhileLocked = [];
+  }
+  if(!e.onApply) e.onApply = d.onApply;
+  else {
+    for(const k in d.onApply) if(e.onApply[k]===undefined) e.onApply[k]=d.onApply[k];
+    if(!Array.isArray(e.onApply.addKeywords)) e.onApply.addKeywords = [];
+    if(!Array.isArray(e.onApply.removeKeywords)) e.onApply.removeKeywords = [];
+  }
+  if(!e.onPlay) e.onPlay = d.onPlay;
+  else for(const k in d.onPlay) if(e.onPlay[k]===undefined) e.onPlay[k]=d.onPlay[k];
+  if(!e.whileInHand) e.whileInHand = d.whileInHand;
+  if(!e.shuffle) e.shuffle = d.shuffle;
+  if(!e.whilePile) e.whilePile = d.whilePile;
+  if(e.icon === undefined) e.icon = null;
+  if(!e.cardFrames) e.cardFrames = d.cardFrames;
+  else for(const k in d.cardFrames) if(e.cardFrames[k]===undefined) e.cardFrames[k]=d.cardFrames[k];
+  // Legacy round-95 fields stay on the object (effectText especially —
+  // still shown, folded into the new "on play extra effects" box below,
+  // rather than silently dropping whatever Tyler already typed there).
+  return e;
+}
+
+function enchKeywordCheckboxes(name, selected){
+  return CARD_KEYWORDS.map(k=>`
+    <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
+      <input type="checkbox" class="${name}" value="${escapeAttr(k.id)}" ${selected.includes(k.id)?'checked':''}> ${k.id}
+    </label>`).join('');
+}
+
+function makeRichEntitySection(opts){
   const { stateKey, gridId, countId, singular, idPrefix, noun } = opts;
   const grid = document.getElementById(gridId);
+
   function render(){
     grid.innerHTML = '';
     state[stateKey].forEach(e=>{
+      ensureRichEnchantmentDefaults(e);
+      const iconUrl = findAssetDataUrl(e.icon, 'enchantmentIcon');
       const t = document.createElement('div');
       t.className = 'tile';
-      t.innerHTML = `<div class="t-name">${escapeHtml(e.name||'Untitled')}</div><div class="t-meta">${noun} — not yet compiled</div>`;
+      t.innerHTML = `
+        ${iconUrl ? `<img src="${iconUrl}" style="width:26px;height:26px;object-fit:contain;display:block;margin-bottom:4px;">` : ''}
+        <div class="t-name">${escapeHtml(e.name||'Untitled')}</div>
+        <div class="t-meta">${escapeHtml(e.category) || noun} — not yet compiled</div>`;
       t.onclick = ()=> openEditor(e.id);
       grid.appendChild(t);
     });
@@ -13136,7 +13279,7 @@ function makeCaptureOnlyEntitySection(opts){
     addTile.className = 'tile add-tile';
     addTile.textContent = '+';
     addTile.onclick = ()=>{
-      const e = { id: uid(idPrefix), name:`New ${singular}`, description:'', effectText:'' };
+      const e = newRichEnchantmentEntity(idPrefix, singular);
       state[stateKey].push(e);
       save(); render();
       openEditor(e.id);
@@ -13145,36 +13288,305 @@ function makeCaptureOnlyEntitySection(opts){
     const countEl = document.getElementById(countId);
     if(countEl) countEl.textContent = String(state[stateKey].length);
   }
+
+  function renderFramePreview(e, slotId){
+    const slot = ENCHANTMENT_FRAME_SLOTS.find(s=>s.id===slotId);
+    const url = findAssetDataUrl(e.cardFrames[slotId], 'enchantmentFrame');
+    const img = document.getElementById(`${idPrefix}-cf-img-${slotId}`);
+    const ph = document.getElementById(`${idPrefix}-cf-ph-${slotId}`);
+    const clearBtn = document.querySelector(`.${idPrefix}-cf-clear[data-slot="${slotId}"]`);
+    const fallbackNote = document.getElementById(`${idPrefix}-cf-fallback-${slotId}`);
+    if(!img || !ph) return;
+    if(url){ img.src = url; img.style.display=''; ph.style.display='none'; }
+    else { img.style.display='none'; img.removeAttribute('src'); ph.style.display=''; }
+    if(clearBtn) clearBtn.style.display = url ? '' : 'none';
+    if(fallbackNote) fallbackNote.style.display = (!url && slot.fallback) ? '' : 'none';
+  }
+
+  function wireFrameGrid(e){
+    const gridEl = document.getElementById(`${idPrefix}-cf-grid`);
+    if(!gridEl) return;
+    gridEl.querySelectorAll('.enchf-frame').forEach(frame=>{
+      frame.addEventListener('click', ()=>{
+        const slot = frame.dataset.slot;
+        const inp = gridEl.querySelector(`.${idPrefix}-cf-upload[data-slot="${slot}"]`);
+        if(inp) inp.click();
+      });
+    });
+    gridEl.querySelectorAll(`.${idPrefix}-cf-upload`).forEach(inp=>{
+      inp.addEventListener('change', ev=>{
+        const slot = inp.dataset.slot;
+        const file = ev.target.files[0];
+        if(!file) return;
+        const errEl = document.getElementById(`${idPrefix}-cf-error-${slot}`);
+        if(errEl) errEl.style.display = 'none';
+        readFileAsDataUrl(file).then(dataUrl=>
+          resizeDataUrlToExact(dataUrl, ENCHANTMENT_FRAME_WIDTH, ENCHANTMENT_FRAME_HEIGHT)
+        ).then(result=>{
+          if(result.resized && errEl){
+            errEl.style.color = 'var(--accent-bright)';
+            errEl.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px.`;
+            errEl.style.display = 'block';
+          }
+          e.cardFrames[slot] = commitAsset(result.dataUrl, e.cardFrames[slot], 'enchantmentFrame');
+          save();
+          renderFramePreview(e, slot);
+        }).catch(err=>{
+          if(errEl){ errEl.style.color='var(--danger-bright)'; errEl.textContent = err.message || "Couldn't read that image file."; errEl.style.display='block'; }
+          inp.value = '';
+        });
+      });
+    });
+    gridEl.querySelectorAll(`.${idPrefix}-cf-clear`).forEach(btn=>{
+      btn.onclick = (ev)=>{
+        ev.stopPropagation();
+        const slot = btn.dataset.slot;
+        e.cardFrames[slot] = commitAsset(null, e.cardFrames[slot], 'enchantmentFrame');
+        const upload = gridEl.querySelector(`.${idPrefix}-cf-upload[data-slot="${slot}"]`);
+        if(upload) upload.value = '';
+        save();
+        renderFramePreview(e, slot);
+      };
+    });
+    ENCHANTMENT_FRAME_SLOTS.forEach(s=> renderFramePreview(e, s.id));
+  }
+
+  function wireIcon(e){
+    const box = document.getElementById(`${idPrefix}-icon-box`);
+    const input = document.getElementById(`${idPrefix}-icon-upload`);
+    const img = document.getElementById(`${idPrefix}-icon-img`);
+    const ph = document.getElementById(`${idPrefix}-icon-ph`);
+    const clearBtn = document.getElementById(`${idPrefix}-icon-clear`);
+    function refresh(){
+      const url = findAssetDataUrl(e.icon, 'enchantmentIcon');
+      if(url){ img.src = url; img.style.display=''; ph.style.display='none'; clearBtn.style.display=''; }
+      else { img.style.display='none'; img.removeAttribute('src'); ph.style.display=''; clearBtn.style.display='none'; }
+    }
+    if(box) box.onclick = ()=> input.click();
+    if(input) input.onchange = ()=>{
+      const file = input.files[0];
+      if(!file) return;
+      readFileAsDataUrl(file).then(dataUrl=>{
+        e.icon = commitAsset(dataUrl, e.icon, 'enchantmentIcon');
+        save(); refresh();
+      });
+    };
+    if(clearBtn) clearBtn.onclick = (ev)=>{
+      ev.stopPropagation();
+      e.icon = commitAsset(null, e.icon, 'enchantmentIcon');
+      if(input) input.value = '';
+      save(); refresh();
+    };
+    refresh();
+  }
+
   function openEditor(entId){
     const e = state[stateKey].find(x=>x.id===entId);
+    ensureRichEnchantmentDefaults(e);
+    const el = e.eligibility, mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile;
+
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
       <div class="modal-body">
         <div class="panel-desc" style="margin-top:0; color:var(--danger-bright)">
-          Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md) so it's ready once a real mechanism is confirmed.
+          Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Ready to wire up for real once STS2's own card-enchantment mechanism is confirmed.
         </div>
-        <label>Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-        <label>Description / flavor text</label><textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
-        <label>What it does (freeform — no wired effects yet)</label>
-        <textarea id="${idPrefix}-effect">${escapeHtml(e.effectText||'')}</textarea>
+
+        <label style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
+        <label>Category</label><input type="text" id="${idPrefix}-category" placeholder="Uncategorized" value="${escapeAttr(e.category)}">
+        <label>Description</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Leave blank and the game shows the modifiers below, written out.</div>
+        <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
+        <label>Line added to the card</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Shown on the card itself, under its own text. Leave blank and the card says nothing extra.</div>
+        <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
+
+        <label style="margin-top:20px">Goes on</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Which cards can carry it. Leave all three types ticked for any card.</div>
+        <div class="row" style="flex-wrap:wrap; gap:4px 14px">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-block" ${el.onlyBlockGrantingCards?'checked':''}> Only cards that grant Block</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-basic" ${el.onlyBasicCards?'checked':''}> Only Basic cards</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-exhaust" ${el.mustHaveExhaustKeyword?'checked':''}> Must have its own Exhaust keyword</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-excludeunplay" ${el.excludeUnplayable?'checked':''}> Exclude Unplayable cards</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-excludex" ${el.excludeXCost?'checked':''}> Exclude X-cost cards</label>
+        </div>
+        <div class="row" style="margin-top:8px; align-items:center; gap:8px">
+          <label style="margin:0">Card tag</label>
+          <input type="text" id="${idPrefix}-el-tag" style="flex:0 0 160px" placeholder="Any" value="${escapeAttr(el.cardTag)}">
+        </div>
+        <div class="row" style="margin-top:8px; gap:4px 14px">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-attack" ${el.types.attack?'checked':''}> Attack</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-skill" ${el.types.skill?'checked':''}> Skill</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-power" ${el.types.power?'checked':''}> Power</label>
+        </div>
+
+        <label style="margin-top:20px">What it changes</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.</div>
+        <div class="row" style="flex-wrap:wrap; gap:10px 16px">
+          <div><label>Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px" value="${mo.extraDamage ?? ''}"></div>
+          <div><label>Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px" value="${mo.damageBonusPct ?? ''}"></div>
+          <div><label>Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px" value="${mo.extraBlock ?? ''}"></div>
+          <div><label>Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px" value="${mo.blockBonusPct ?? ''}"></div>
+          <div><label>Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px" value="${mo.extraPlays ?? ''}"></div>
+        </div>
+        <div class="row" style="margin-top:8px; gap:14px">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
+        </div>
+
+        <label style="margin-top:20px">Locking and counting down</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Together these make a freeze: the card can't be played, the count falls each turn, and when it runs out the card is free.</div>
+        <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-lk-locks" ${lk.locksPlayWhileCounting?'checked':''}> Card cannot be played while the count is above 0</label>
+        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px; align-items:flex-end">
+          <div><label>Count falls per turn</label><input type="number" id="${idPrefix}-lk-falls" style="width:100px" value="${lk.countFallsPerTurn ?? ''}"></div>
+          <div><label>Keyword while the count lasts</label><select id="${idPrefix}-lk-keyword">${optList(ENCHANTMENT_LOCK_KEYWORD_OPTIONS, lk.keywordWhileLocked)}</select></div>
+        </div>
+        <label style="margin-top:8px">Tags while the count lasts</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Comma-separated — other cards can then scale on "cards with tag" while this is counting down.</div>
+        <input type="text" id="${idPrefix}-lk-tags" value="${escapeAttr((lk.tagsWhileLocked||[]).join(', '))}">
+
+        <label style="margin-top:20px">When the ${noun} is applied</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">These change the card itself and remain after the ${noun} is removed.</div>
+        <div class="row" style="gap:20px; flex-wrap:wrap">
+          <div><label style="margin:0">Add keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-add`, oa.addKeywords)}</div></div>
+          <div><label style="margin:0">Remove keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-remove`, oa.removeKeywords)}</div></div>
+        </div>
+        <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
+        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
+          <div><label>Flat Block adjustment</label><input type="number" id="${idPrefix}-oa-flatblock" style="width:100px" value="${oa.flatBlockAdjustment ?? ''}"></div>
+          <div><label>Stacks gained after each play</label><input type="number" id="${idPrefix}-oa-stackgain" style="width:100px" value="${oa.stacksGainedPerPlay ?? ''}"></div>
+        </div>
+
+        <label style="margin-top:20px">When the card is played</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Extra effects, on top of whatever the card already does.</div>
+        <div class="row" style="flex-wrap:wrap; gap:4px 16px">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
+        </div>
+        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
+          <div><label>Damage growth per stack</label><input type="number" id="${idPrefix}-op-dmggrowth" style="width:100px" value="${op.damageGrowthPerStack ?? ''}"></div>
+          <div><label>Cards drawn per stack</label><input type="number" id="${idPrefix}-op-carddraw" style="width:100px" value="${op.cardsDrawnPerStack ?? ''}"></div>
+          <div><label>Energy per stack</label><input type="number" id="${idPrefix}-op-energy" style="width:100px" value="${op.energyPerStack ?? ''}"></div>
+          <div><label>Block per stack</label><input type="number" id="${idPrefix}-op-block" style="width:100px" value="${op.blockPerStack ?? ''}"></div>
+        </div>
+        <label style="margin:8px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-op-randenergy" ${op.randomizeEnergyOnDraw?'checked':''}> Randomize Energy cost whenever this card is drawn</label>
+        <label style="margin-top:10px">Extra effects (freeform — not yet wired to real triggers/conditions/actions)</label>
+        <textarea id="${idPrefix}-op-effects">${escapeHtml(op.extraEffectsText || e.effectText || '')}</textarea>
+
+        <label style="margin-top:20px">While left in hand</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Reductions accumulate until the card is played, then reset.</div>
+        <div><label>Energy reduction each turn left in hand</label><input type="number" id="${idPrefix}-wh-energy" style="width:100px" value="${wh.energyReductionPerTurn ?? ''}"></div>
+
+        <label style="margin-top:20px">Position after shuffling</label>
+        <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
+        <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
+
+        <label style="margin-top:20px">While the card waits in a pile</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">Freeform — fires while a card carrying this ${noun} sits in hand/draw/discard/exhaust without being played.</div>
+        <textarea id="${idPrefix}-wp-triggers">${escapeHtml(wp.triggersText||'')}</textarea>
+
+        <label style="margin-top:20px">Icon</label>
+        <div style="display:flex; align-items:center; gap:12px; margin-top:6px">
+          <div class="art-box" id="${idPrefix}-icon-box" style="width:56px; height:56px; border:1px dashed var(--border-soft); border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative;">
+            <img id="${idPrefix}-icon-img" style="display:none; max-width:100%; max-height:100%;">
+            <div id="${idPrefix}-icon-ph" class="art-placeholder" style="font-size:9px; text-align:center;">Upload</div>
+          </div>
+          <input type="file" id="${idPrefix}-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <button type="button" class="ghost" id="${idPrefix}-icon-clear" style="display:none">Remove</button>
+        </div>
+
+        <label style="margin-top:20px">Card frame</label>
+        <div class="panel-desc" style="margin:-4px 0 6px">${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.</div>
+        <div class="card-frame-grid" id="${idPrefix}-cf-grid">
+          ${ENCHANTMENT_FRAME_SLOTS.map(s=>`
+            <div class="card-frame-slot">
+              <div class="card-frame-frame enchf-frame" data-slot="${s.id}" id="${idPrefix}-cf-frame-${s.id}">
+                <img id="${idPrefix}-cf-img-${s.id}" style="display:none">
+                <div class="art-placeholder" id="${idPrefix}-cf-ph-${s.id}" style="font-size:8px; padding:4px;">${s.label}</div>
+                <div class="art-click-hint" style="font-size:7px; padding:2px;">Click to change</div>
+                <div class="art-icon-overlay art-icon-overlay--tile">
+                  <button type="button" class="ghost icon-btn icon-btn-danger ${idPrefix}-cf-clear" data-slot="${s.id}" title="Remove" style="display:none;">×</button>
+                </div>
+              </div>
+              <label>${s.label}</label>
+              <input type="file" class="${idPrefix}-cf-upload" data-slot="${s.id}" accept="image/png,image/jpeg,image/webp" style="display:none">
+              ${s.fallback ? `<div class="card-frame-fallback-note" id="${idPrefix}-cf-fallback-${s.id}" style="display:none">Uses "${ENCHANTMENT_FRAME_SLOTS.find(x=>x.id===s.fallback).label}"</div>` : ''}
+              <div class="hint-small ${idPrefix}-cf-error" id="${idPrefix}-cf-error-${s.id}" style="display:none; color:var(--danger-bright); font-size:8px;"></div>
+            </div>
+          `).join('')}
+        </div>
       </div>
       <div class="modal-foot">
         <button class="danger" id="delete-${idPrefix}">Delete</button>
         <button id="save-${idPrefix}">Done</button>
       </div>
     `);
+
+    wireIcon(e);
+    wireFrameGrid(e);
+
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
+      e.category = document.getElementById(`${idPrefix}-category`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
-      e.effectText = document.getElementById(`${idPrefix}-effect`).value;
+      e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
+
+      el.onlyBlockGrantingCards = document.getElementById(`${idPrefix}-el-block`).checked;
+      el.onlyBasicCards = document.getElementById(`${idPrefix}-el-basic`).checked;
+      el.mustHaveExhaustKeyword = document.getElementById(`${idPrefix}-el-exhaust`).checked;
+      el.excludeUnplayable = document.getElementById(`${idPrefix}-el-excludeunplay`).checked;
+      el.excludeXCost = document.getElementById(`${idPrefix}-el-excludex`).checked;
+      el.cardTag = document.getElementById(`${idPrefix}-el-tag`).value;
+      el.types.attack = document.getElementById(`${idPrefix}-el-attack`).checked;
+      el.types.skill = document.getElementById(`${idPrefix}-el-skill`).checked;
+      el.types.power = document.getElementById(`${idPrefix}-el-power`).checked;
+
+      const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
+      mo.extraDamage = num(`${idPrefix}-mo-extradmg`);
+      mo.damageBonusPct = num(`${idPrefix}-mo-dmgpct`);
+      mo.extraBlock = num(`${idPrefix}-mo-extrablock`);
+      mo.blockBonusPct = num(`${idPrefix}-mo-blockpct`);
+      mo.extraPlays = num(`${idPrefix}-mo-extraplays`);
+      mo.canStack = document.getElementById(`${idPrefix}-mo-stack`).checked;
+      mo.showNumberOnCard = document.getElementById(`${idPrefix}-mo-shownum`).checked;
+
+      lk.locksPlayWhileCounting = document.getElementById(`${idPrefix}-lk-locks`).checked;
+      lk.countFallsPerTurn = num(`${idPrefix}-lk-falls`);
+      lk.keywordWhileLocked = document.getElementById(`${idPrefix}-lk-keyword`).value;
+      lk.tagsWhileLocked = document.getElementById(`${idPrefix}-lk-tags`).value.split(',').map(s=>s.trim()).filter(Boolean);
+
+      oa.addKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-add:checked`)).map(cb=>cb.value);
+      oa.removeKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-remove:checked`)).map(cb=>cb.value);
+      oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
+      oa.flatBlockAdjustment = num(`${idPrefix}-oa-flatblock`);
+      oa.stacksGainedPerPlay = num(`${idPrefix}-oa-stackgain`);
+
+      op.onceOnlyPerCombat = document.getElementById(`${idPrefix}-op-once`).checked;
+      op.multiplyFlatDamageByStacks = document.getElementById(`${idPrefix}-op-multiply`).checked;
+      op.firstPlayOnly = document.getElementById(`${idPrefix}-op-firstplay`).checked;
+      op.damageGrowthPerStack = num(`${idPrefix}-op-dmggrowth`);
+      op.cardsDrawnPerStack = num(`${idPrefix}-op-carddraw`);
+      op.randomizeEnergyOnDraw = document.getElementById(`${idPrefix}-op-randenergy`).checked;
+      op.energyPerStack = num(`${idPrefix}-op-energy`);
+      op.blockPerStack = num(`${idPrefix}-op-block`);
+      op.extraEffectsText = document.getElementById(`${idPrefix}-op-effects`).value;
+
+      wh.energyReductionPerTurn = num(`${idPrefix}-wh-energy`);
+
+      sh.startAtBottomOfDraw = document.getElementById(`${idPrefix}-sh-bottom`).checked;
+      sh.shuffleOrder = document.getElementById(`${idPrefix}-sh-order`).value;
+
+      wp.triggersText = document.getElementById(`${idPrefix}-wp-triggers`).value;
+
       save(); render(); closeModal();
     };
   }
   return { render };
 }
-const enchantmentSection = makeCaptureOnlyEntitySection({ stateKey:'enchantments', gridId:'enchantments-grid', countId:'enchantment-count', singular:'Enchantment', idPrefix:'ench', noun:'enchantment' });
-const afflictionSection = makeCaptureOnlyEntitySection({ stateKey:'afflictions', gridId:'afflictions-grid', countId:'affliction-count', singular:'Affliction', idPrefix:'affl', noun:'affliction' });
+const enchantmentSection = makeRichEntitySection({ stateKey:'enchantments', gridId:'enchantments-grid', countId:'enchantment-count', singular:'Enchantment', idPrefix:'ench', noun:'enchantment' });
+const afflictionSection = makeRichEntitySection({ stateKey:'afflictions', gridId:'afflictions-grid', countId:'affliction-count', singular:'Affliction', idPrefix:'affl', noun:'affliction' });
 function renderEnchantments(){ enchantmentSection.render(); }
 function renderAfflictions(){ afflictionSection.render(); }
 
