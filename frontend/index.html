@@ -885,13 +885,16 @@
      modal (ench-modal-body, added alongside the shared .modal-body class
      on just this editor's modal-body div) rather than changing
      .modal-body itself, which every other editor in the app also uses.
-     Every section's title (fieldHead()'s own <label>, plus the 3
-     standalone title-only labels — Name/Icon/Position after shuffling —
-     and the top red "not yet compiled" notice) is pulled back out to the
-     modal's normal left edge via .ench-flush's matching negative margin;
-     everything else (inputs, textareas, rows, grids) just inherits the
-     indent from the padding below, no per-section wrapper divs needed. */
-  .ench-modal-body{padding-left:16px;}
+     .modal-body's own left padding is 24px (see its rule above) — this
+     adds 16px more on top for content, and .ench-flush's matching
+     negative margin pulls section titles (fieldHead()'s own <label>, the
+     3 standalone title-only labels — Name/Icon/Position after shuffling
+     — and the top red "not yet compiled" notice) back down to that
+     original 24px, not all the way to the modal's actual wall (a first
+     pass here wrongly zeroed the padding out entirely instead of adding
+     to it, leaving titles touching the edge — Tyler: "there is no
+     padding between the titles and the left side"). */
+  .ench-modal-body{padding-left:40px;}
   .ench-modal-body .ench-flush{margin-left:-16px;}
 
   /* [Round 103] Resource-bar preview — Tyler: "create some kind of preview
