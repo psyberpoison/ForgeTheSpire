@@ -13296,11 +13296,92 @@ function fieldHead(title, desc, style){
   return `<label class="ench-flush"${styleAttr}><strong>${title}</strong>${hint}</label>`;
 }
 
-function enchKeywordCheckboxes(name, selected){
-  return CARD_KEYWORDS.map(k=>`
-    <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
-      <input type="checkbox" class="${name}" value="${escapeAttr(k.id)}" ${selected.includes(k.id)?'checked':''}> ${k.id}
-    </label>`).join('');
+// Single-list version of renderEnchTagPicker below, for the "When the
+// enchantment is applied" Add/Remove keywords fields — Tyler: "there are
+// way too many checkboxes here. lets swap it out for another status bar
+// type selector." Replaces the old 7-checkbox enchKeywordCheckboxes()
+// grid (shown twice, once per field) with the same search-filter +
+// checkbox-list + chip-row picker used elsewhere in this editor, just
+// over CARD_KEYWORDS (a flat {id,hint} list, no base/custom split
+// needed here) instead of tags. `selected` is a flat array of keyword id
+// strings, mutated in place — same "array IS the live state" convention
+// as renderEnchTagPicker's `selected`. Two independent instances are
+// used (Add keywords, Remove keywords), each over its own array.
+function renderEnchKeywordPicker(selected){
+  const options = CARD_KEYWORDS;
+  const findEntry = id => selected.includes(id);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'a-status-picker ench-tag-picker';
+  wrap.innerHTML = `
+    <div class="chip-row"></div>
+    <div class="picker-wrap">
+      <input type="text" class="picker-filter" autocomplete="off" placeholder="Click to browse ${options.length} keywords…">
+      <div class="picker-list"></div>
+    </div>
+    <div class="hint-small">Click to browse, or type to search. Click any keyword to add it.</div>
+  `;
+  const chipRow = wrap.querySelector('.chip-row');
+  const pickerWrap = wrap.querySelector('.picker-wrap');
+  const listEl = wrap.querySelector('.picker-list');
+  const filterInput = wrap.querySelector('.picker-filter');
+
+  function renderChips(){
+    if(!selected.length){
+      chipRow.innerHTML = `<span class="chip-empty">none selected</span>`;
+      return;
+    }
+    chipRow.innerHTML = selected.map(id=>{
+      const opt = options.find(o=>o.id===id);
+      return `<span class="chip" title="${escapeAttr(opt ? opt.hint : '')}">${escapeHtml(id)} <span class="chip-x" data-value="${escapeAttr(id)}">✕</span></span>`;
+    }).join('');
+  }
+
+  function renderList(){
+    listEl.innerHTML = options.map(o=>{
+      const checked = findEntry(o.id);
+      return `
+      <label class="picker-option${checked?' checked':''}" title="${escapeAttr(o.hint)}">
+        <input type="checkbox" value="${escapeAttr(o.id)}" ${checked?'checked':''}>
+        <span>${escapeHtml(o.id)}</span>
+      </label>`;
+    }).join('');
+  }
+
+  renderChips();
+  renderList();
+
+  filterInput.addEventListener('focus', ()=> pickerWrap.classList.add('open'));
+  filterInput.addEventListener('input', ()=>{
+    const q = filterInput.value.toLowerCase();
+    listEl.querySelectorAll('.picker-option').forEach(row=>{
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  listEl.addEventListener('change', e=>{
+    const box = e.target.closest('input[type="checkbox"]');
+    if(!box) return;
+    const v = box.value;
+    const idx = selected.indexOf(v);
+    if(box.checked && idx === -1) selected.push(v);
+    else if(!box.checked && idx !== -1) selected.splice(idx, 1);
+    box.closest('.picker-option').classList.toggle('checked', box.checked);
+    renderChips();
+  });
+
+  chipRow.addEventListener('click', e=>{
+    const x = e.target.closest('.chip-x');
+    if(!x) return;
+    const v = x.getAttribute('data-value');
+    const idx = selected.indexOf(v);
+    if(idx !== -1) selected.splice(idx, 1);
+    renderChips();
+    const box = Array.from(listEl.querySelectorAll('input[type="checkbox"]')).find(cb=>cb.value===v);
+    if(box){ box.checked = false; box.closest('.picker-option').classList.remove('checked'); }
+  });
+
+  return wrap;
 }
 
 // Merged "base game tag + custom gameplay tag" picker for the
@@ -13562,9 +13643,15 @@ function makeRichEntitySection(opts){
         </div>
 
         ${fieldHead(`When the ${noun} is applied`, `These change the card itself and remain after the ${noun} is removed.`, 'margin-top:20px')}
-        <div class="row" style="gap:20px; flex-wrap:wrap">
-          <div><label style="margin:0">Add keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-add`, oa.addKeywords)}</div></div>
-          <div><label style="margin:0">Remove keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-remove`, oa.removeKeywords)}</div></div>
+        <div class="row" style="gap:24px; flex-wrap:wrap; align-items:flex-start">
+          <div style="flex:1 1 280px; min-width:220px;">
+            <label style="margin:0">Add keywords</label>
+            <div id="${idPrefix}-oa-add-slot" style="margin-top:4px"></div>
+          </div>
+          <div style="flex:1 1 280px; min-width:220px;">
+            <label style="margin:0">Remove keywords</label>
+            <div id="${idPrefix}-oa-remove-slot" style="margin-top:4px"></div>
+          </div>
         </div>
         <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
         <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
@@ -13636,11 +13723,13 @@ function makeRichEntitySection(opts){
 
     wireIcon(e);
     wireFrameGrid(e);
-    // renderEnchTagPicker wires all of its own interaction (checkbox
-    // toggling, chip removal, filter-reveal-on-focus) and mutates
-    // vt.tags directly, so no further wiring is needed for it in the
-    // save handler below.
+    // renderEnchTagPicker/renderEnchKeywordPicker wire all of their own
+    // interaction (checkbox toggling, chip removal, filter-reveal-on-
+    // focus) and mutate their arrays directly, so no further wiring is
+    // needed for any of them in the save handler below.
     document.getElementById(`${idPrefix}-vt-tags-slot`).appendChild(renderEnchTagPicker(vt.tags));
+    document.getElementById(`${idPrefix}-oa-add-slot`).appendChild(renderEnchKeywordPicker(oa.addKeywords));
+    document.getElementById(`${idPrefix}-oa-remove-slot`).appendChild(renderEnchKeywordPicker(oa.removeKeywords));
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
@@ -13663,8 +13752,7 @@ function makeRichEntitySection(opts){
       mo.canStack = document.getElementById(`${idPrefix}-mo-stack`).checked;
       mo.showNumberOnCard = document.getElementById(`${idPrefix}-mo-shownum`).checked;
 
-      oa.addKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-add:checked`)).map(cb=>cb.value);
-      oa.removeKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-remove:checked`)).map(cb=>cb.value);
+      // oa.addKeywords/removeKeywords are mutated live by renderEnchKeywordPicker above — nothing to read back here.
       oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
       oa.flatBlockAdjustment = num(`${idPrefix}-oa-flatblock`);
       oa.stacksGainedPerPlay = num(`${idPrefix}-oa-stackgain`);
