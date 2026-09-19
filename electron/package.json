@@ -20,21 +20,38 @@
     "productName": "Forge",
     "files": [
       "main.js",
-      "preload.js",
-      "../backend/**/*",
-      "../frontend/**/*",
-      "!../backend/node_modules/.cache"
+      "preload.js"
     ],
     "extraMetadata": {
       "main": "main.js"
     },
-    "mac": { "target": "dmg" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" },
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
     "publish": {
       "provider": "github",
       "owner": "psyberpoison",
       "repo": "ForgeTheSpire"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!node_modules/.cache/**"
+        ]
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend"
+      }
+    ]
   }
 }
