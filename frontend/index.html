@@ -13759,7 +13759,7 @@ function makeRichEntitySection(opts){
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
           </div>
-          <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
+          <div style="display:grid; grid-template-columns:repeat(2, auto); column-gap:24px; row-gap:10px; width:max-content; margin-top:8px;">
             <div><label>Damage growth per stack</label><input type="number" id="${idPrefix}-op-dmggrowth" style="width:100px" value="${op.damageGrowthPerStack ?? ''}"></div>
             <div><label>Cards drawn per stack</label><input type="number" id="${idPrefix}-op-carddraw" style="width:100px" value="${op.cardsDrawnPerStack ?? ''}"></div>
             <div><label>Energy per stack</label><input type="number" id="${idPrefix}-op-energy" style="width:100px" value="${op.energyPerStack ?? ''}"></div>
