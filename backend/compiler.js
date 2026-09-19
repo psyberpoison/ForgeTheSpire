@@ -5189,9 +5189,10 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (has(mo.extraBlock)) moBits.push(`+${mo.extraBlock} Block`);
     if (has(mo.blockBonusPct)) moBits.push(`+${mo.blockBonusPct}% Block`);
     if (has(mo.extraPlays)) moBits.push(`+${mo.extraPlays} extra play(s)`);
+    if (mo.perStack) moBits.push('multiplied by stacks applied');
     if (mo.canStack) moBits.push('stacks (applying again raises the amount)');
     if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
-    if (moBits.length) { lines.push(`**Modifiers (× stacks applied):** ${moBits.join(', ')}`); lines.push(''); }
+    if (moBits.length) { lines.push(`**Modifiers:** ${moBits.join(', ')}`); lines.push(''); }
 
     const oa = e.onApply || {};
     const oaBits = [];

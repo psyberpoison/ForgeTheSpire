@@ -13245,6 +13245,7 @@ function newRichEnchantmentEntity(idPrefix, singular){
       extraDamage: null, damageBonusPct: null,
       extraBlock: null, blockBonusPct: null,
       extraPlays: null,
+      perStack: false,
       canStack: false, showNumberOnCard: true,
     },
     onApply: {
@@ -13674,7 +13675,13 @@ function makeRichEntitySection(opts){
         </div>
         <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
 
-        ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
+        ${fieldHead('Stacking', `Whether this ${noun} can apply more than once, and whether the stack count shows on the card.`, 'margin-top:20px')}
+        <div class="row" style="gap:14px; flex-wrap:wrap">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number of stacks on the card</label>
+        </div>
+
+        ${fieldHead('What it changes', `Leave a field blank and the card isn't asked about it at all. Check Per Stack to multiply these by how many times this ${noun} has been applied.`, 'margin-top:20px')}
         <div class="ench-field-box">
           <div style="display:grid; grid-template-rows:repeat(3, auto); grid-auto-flow:column; column-gap:24px; row-gap:8px; width:max-content;">
             <div><label style="margin:0 0 3px">Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px; padding:4px 6px;" value="${mo.extraDamage ?? ''}"></div>
@@ -13682,10 +13689,7 @@ function makeRichEntitySection(opts){
             <div><label style="margin:0 0 3px">Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px; padding:4px 6px;" value="${mo.extraBlock ?? ''}"></div>
             <div><label style="margin:0 0 3px">Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px; padding:4px 6px;" value="${mo.blockBonusPct ?? ''}"></div>
             <div><label style="margin:0 0 3px">Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px; padding:4px 6px;" value="${mo.extraPlays ?? ''}"></div>
-            <div style="display:flex; flex-direction:column; gap:6px; justify-content:flex-end;">
-              <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
-              <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
-            </div>
+            <label style="margin:0; font-weight:normal; align-self:end;"><input type="checkbox" id="${idPrefix}-mo-perstack" ${mo.perStack?'checked':''}> Per Stack</label>
           </div>
         </div>
 
@@ -13796,6 +13800,7 @@ function makeRichEntitySection(opts){
       mo.extraBlock = num(`${idPrefix}-mo-extrablock`);
       mo.blockBonusPct = num(`${idPrefix}-mo-blockpct`);
       mo.extraPlays = num(`${idPrefix}-mo-extraplays`);
+      mo.perStack = document.getElementById(`${idPrefix}-mo-perstack`).checked;
       mo.canStack = document.getElementById(`${idPrefix}-mo-stack`).checked;
       mo.showNumberOnCard = document.getElementById(`${idPrefix}-mo-shownum`).checked;
 
