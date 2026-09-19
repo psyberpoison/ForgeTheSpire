@@ -5166,22 +5166,6 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
     lines.push('');
 
-    const el = e.eligibility || {};
-    const goesOnBits = [];
-    if (el.onlyBlockGrantingCards) goesOnBits.push('only cards that grant Block');
-    if (el.onlyBasicCards) goesOnBits.push('only Basic cards');
-    if (el.mustHaveExhaustKeyword) goesOnBits.push("must have its own Exhaust keyword");
-    if (el.excludeUnplayable) goesOnBits.push('excludes Unplayable cards');
-    if (el.excludeXCost) goesOnBits.push('excludes X-cost cards');
-    if (el.cardTag) goesOnBits.push(`card tag: ${el.cardTag}`);
-    const types = el.types || {};
-    const typeBits = [];
-    if (types.attack) typeBits.push('Attack');
-    if (types.skill) typeBits.push('Skill');
-    if (types.power) typeBits.push('Power');
-    if (typeBits.length && typeBits.length < 3) goesOnBits.push(`types: ${typeBits.join(', ')}`);
-    if (goesOnBits.length) { lines.push(`**Goes on:** ${goesOnBits.join('; ')}`); lines.push(''); }
-
     const mo = e.modifiers || {};
     const moBits = [];
     if (has(mo.extraDamage)) moBits.push(`+${mo.extraDamage} damage`);

@@ -13168,15 +13168,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
     name: `New ${singular}`,
     description: '',
     cardLineText: '',
-    eligibility: {
-      onlyBlockGrantingCards: false,
-      onlyBasicCards: false,
-      mustHaveExhaustKeyword: false,
-      excludeUnplayable: false,
-      excludeXCost: false,
-      cardTag: '',
-      types: { attack:true, skill:true, power:true },
-    },
     modifiers: {
       extraDamage: null, damageBonusPct: null,
       extraBlock: null, blockBonusPct: null,
@@ -13222,11 +13213,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
 function ensureRichEnchantmentDefaults(e){
   const d = newRichEnchantmentEntity('tmp','X');
   if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
-  if(!e.eligibility) e.eligibility = d.eligibility;
-  else {
-    for(const k in d.eligibility) if(e.eligibility[k]===undefined) e.eligibility[k]=d.eligibility[k];
-    if(!e.eligibility.types) e.eligibility.types = { ...d.eligibility.types };
-  }
   if(!e.modifiers) e.modifiers = d.modifiers;
   else for(const k in d.modifiers) if(e.modifiers[k]===undefined) e.modifiers[k]=d.modifiers[k];
   if(!e.lock) e.lock = d.lock;
@@ -13399,7 +13385,7 @@ function makeRichEntitySection(opts){
   function openEditor(entId){
     const e = state[stateKey].find(x=>x.id===entId);
     ensureRichEnchantmentDefaults(e);
-    const el = e.eligibility, mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile;
+    const mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile;
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
@@ -13413,24 +13399,6 @@ function makeRichEntitySection(opts){
         <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
         ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
         <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
-
-        ${fieldHead('Goes on', 'Which cards can carry it. Leave all three types ticked for any card.', 'margin-top:20px')}
-        <div class="row" style="flex-wrap:wrap; gap:4px 14px">
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-block" ${el.onlyBlockGrantingCards?'checked':''}> Only cards that grant Block</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-basic" ${el.onlyBasicCards?'checked':''}> Only Basic cards</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-exhaust" ${el.mustHaveExhaustKeyword?'checked':''}> Must have its own Exhaust keyword</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-excludeunplay" ${el.excludeUnplayable?'checked':''}> Exclude Unplayable cards</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-excludex" ${el.excludeXCost?'checked':''}> Exclude X-cost cards</label>
-        </div>
-        <div class="row" style="margin-top:8px; align-items:center; gap:8px">
-          <label style="margin:0">Card tag</label>
-          <input type="text" id="${idPrefix}-el-tag" style="flex:0 0 160px" placeholder="Any" value="${escapeAttr(el.cardTag)}">
-        </div>
-        <div class="row" style="margin-top:8px; gap:4px 14px">
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-attack" ${el.types.attack?'checked':''}> Attack</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-skill" ${el.types.skill?'checked':''}> Skill</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-power" ${el.types.power?'checked':''}> Power</label>
-        </div>
 
         ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:10px 16px">
@@ -13535,16 +13503,6 @@ function makeRichEntitySection(opts){
       e.name = document.getElementById(`${idPrefix}-name`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
-
-      el.onlyBlockGrantingCards = document.getElementById(`${idPrefix}-el-block`).checked;
-      el.onlyBasicCards = document.getElementById(`${idPrefix}-el-basic`).checked;
-      el.mustHaveExhaustKeyword = document.getElementById(`${idPrefix}-el-exhaust`).checked;
-      el.excludeUnplayable = document.getElementById(`${idPrefix}-el-excludeunplay`).checked;
-      el.excludeXCost = document.getElementById(`${idPrefix}-el-excludex`).checked;
-      el.cardTag = document.getElementById(`${idPrefix}-el-tag`).value;
-      el.types.attack = document.getElementById(`${idPrefix}-el-attack`).checked;
-      el.types.skill = document.getElementById(`${idPrefix}-el-skill`).checked;
-      el.types.power = document.getElementById(`${idPrefix}-el-power`).checked;
 
       const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
       mo.extraDamage = num(`${idPrefix}-mo-extradmg`);
