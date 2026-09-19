@@ -13560,7 +13560,7 @@ function makeRichEntitySection(opts){
       t.innerHTML = `
         ${iconUrl ? `<img src="${iconUrl}" style="width:26px;height:26px;object-fit:contain;display:block;margin-bottom:4px;">` : ''}
         <div class="t-name">${escapeHtml(e.name||'Untitled')}</div>
-        <div class="t-meta">${noun} — not yet compiled</div>`;
+        <div class="t-meta">${noun} — ${stateKey==='enchantments' ? 'compiles to real C#' : 'not yet compiled'}</div>`;
       t.onclick = ()=> openEditor(e.id);
       grid.appendChild(t);
     });
@@ -13678,7 +13678,9 @@ function makeRichEntitySection(opts){
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
       <div class="modal-body ench-modal-body" style="max-height:82vh">
         <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
-          Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Ready to wire up for real once STS2's own card-enchantment mechanism is confirmed.
+          ${stateKey==='enchantments'
+            ? `Round 190: this now compiles to a real Enchantments/${singular}Name.cs — MegaCrit.Sts2.Core.Models.EnchantmentModel is a confirmed real base-game class (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; a few (the once-per-combat/first-play-only checkboxes, "Randomize Energy cost on draw," and the freeform Extra effects text) have no confirmed BaseLib API yet and are left uncompiled — see the generated file's own comments for exactly which. <strong>Known gap:</strong> nothing in Forge can GRANT this enchantment to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.`
+            : `Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Enchantments (just above this section) were confirmed and wired to real C# in Round 190 — Afflictions haven't been reflected against the real game yet, so this one stays a design doc for now.`}
         </div>
 
         ${fieldHead('Basic Information', `Name, icon, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}

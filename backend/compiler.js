@@ -5057,6 +5057,167 @@ function generateMechanicSource(mechanic, namespace, refMaps) {
   });
 }
 
+// [Round 190] Real C# codegen for Enchantments -- Tyler: "lets wire this
+// up to the real OnCardPlay trigger... Go further -- wire the whole
+// schema." See Enchantment.cs.template's own header for the full
+// field-mapping legend and the confirmed EnchantmentModel evidence trail
+// (tools/sts2tools/ecma_dump_ext.py against the real installed sts2.dll).
+// Mirrors generateRelicSource/generateMechanicSource's overall shape
+// (loadTemplate -> build placeholder values -> fillTemplate) but hand-
+// writes the override bodies directly instead of routing through
+// generateHookEffects/actionToCSharp -- enchantments' schema
+// (character.schema.json's enchantment/affliction shape, see
+// buildEnchantmentAfflictionReadme just above for the full field list)
+// is a fixed set of typed number/boolean fields, not an {trigger,
+// conditions[], actions[]} effect list like cards/relics/mechanics have,
+// so there's no action-object list for actionToCSharp to walk here.
+function generateEnchantmentSource(enchantment, namespace) {
+  if (!enchantment.name || !pascalCase(enchantment.name)) {
+    throw new Error('Enchantment has no usable name -- every enchantment needs a name to generate a C# class from.');
+  }
+  const tpl = loadTemplate('Enchantment.cs.template');
+  const has = (n) => n !== null && n !== undefined && n !== '';
+  const mo = enchantment.modifiers || {};
+  const oa = enchantment.onApply || {};
+  const op = enchantment.onPlay || {};
+  const vt = enchantment.validTargets || {};
+  const sh = enchantment.shuffle || {};
+  const perStack = !!mo.perStack;
+  const stacksSuffix = perStack ? ' * this.Amount' : '';
+
+  const overrides = [];
+
+  if (mo.canStack) {
+    overrides.push(`    // [VERIFIED] real virtual bool get_IsStackable() override
+    public override bool IsStackable => true;`);
+  }
+  if (mo.showNumberOnCard === false) {
+    overrides.push(`    // [VERIFIED] real virtual bool get_ShowAmount() override
+    public override bool ShowAmount => false;`);
+  }
+  if (sh.startAtBottomOfDraw) {
+    overrides.push(`    // [VERIFIED] real virtual bool get_ShouldStartAtBottomOfDrawPile() override
+    public override bool ShouldStartAtBottomOfDrawPile => true;`);
+  }
+
+  const typesSelected = [];
+  if (vt.types) {
+    if (vt.types.attack) typesSelected.push('Attack');
+    if (vt.types.skill) typesSelected.push('Skill');
+    if (vt.types.power) typesSelected.push('Power');
+  }
+  if (typesSelected.length && typesSelected.length < 3) {
+    const expr = typesSelected.map(t => `cardType == CardType.${t}`).join(' || ');
+    overrides.push(`    // [VERIFIED] real virtual bool CanEnchantCardType(CardType) override
+    public override bool CanEnchantCardType(CardType cardType) => ${expr};`);
+  }
+
+  const vtTags = Array.isArray(vt.tags) ? vt.tags : [];
+  const vtBaseTags = vtTags.filter(t => t && t.kind === 'base').map(t => t.ref);
+  const vtCustomTags = vtTags.filter(t => t && t.kind === 'custom').map(t => t.ref);
+  if (vtBaseTags.length || vtCustomTags.length || vt.excludeXCost) {
+    const checks = [];
+    vtBaseTags.forEach(k => checks.push(`        if (!card.Keywords.Contains(${keywordExpr(k)})) return false; // [VERIFIED] CardModel.Keywords is a real IReadOnlySet<CardKeyword> -- see conditionToCSharp's PlayedCardHasKeyword case`));
+    vtCustomTags.forEach(t => checks.push(`        if ((card as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(t)}) != true) return false; // [VERIFIED] same Forge-owned IForgeTaggedCard mechanism as conditionToCSharp's PlayedCardHasTag case`));
+    if (vt.excludeXCost) checks.push(`        // "Exclude X-cost cards" is NOT enforced here -- [UNVERIFIED] no confirmed "is this card X-cost" API was found on CardModel/CardEnergyCost this round -- see CardEnergyCost's confirmed method table in TOOLCHAIN_FINDINGS.md for a future round to check.`);
+    overrides.push(`    // [VERIFIED signature, BEST EFFORT body] real virtual bool CanEnchant(CardModel) override
+    public override bool CanEnchant(CardModel card)
+    {
+        if (!base.CanEnchant(card)) return false;
+${checks.join('\n')}
+        return true;
+    }`);
+  }
+
+  if (has(mo.extraBlock)) {
+    overrides.push(`    // [VERIFIED] real virtual decimal EnchantBlockAdditive(decimal) override
+    public override decimal EnchantBlockAdditive(decimal originalBlock) => originalBlock + ${mo.extraBlock}m${stacksSuffix};`);
+  }
+  if (has(mo.blockBonusPct)) {
+    overrides.push(`    // [VERIFIED] real virtual decimal EnchantBlockMultiplicative(decimal) override
+    public override decimal EnchantBlockMultiplicative(decimal originalBlock) => originalBlock * (1m + (${mo.blockBonusPct}m${stacksSuffix} / 100m)); // [BEST EFFORT] "Multiplicative" applying as a % scale on top of the original value is Forge's own reading of the name -- not confirmed against a real multiplicative enchantment`);
+  }
+
+  const extraDamageTerms = [];
+  if (has(mo.extraDamage)) extraDamageTerms.push(`${mo.extraDamage}m${stacksSuffix}`);
+  if (has(op.damageGrowthPerStack)) extraDamageTerms.push(`${op.damageGrowthPerStack}m * this.Amount`); // growth is inherently per-stack regardless of the Per Stack checkbox
+  if (extraDamageTerms.length) {
+    const sumExpr = extraDamageTerms.join(' + ');
+    const finalExpr = (op.multiplyFlatDamageByStacks && !perStack)
+      ? `originalDamage + (${sumExpr}) * this.Amount`
+      : `originalDamage + (${sumExpr})`;
+    overrides.push(`    // [VERIFIED] real virtual decimal EnchantDamageAdditive(decimal, ValueProp) override
+    public override decimal EnchantDamageAdditive(decimal originalDamage, ValueProp props) => ${finalExpr};`);
+  }
+  if (has(mo.damageBonusPct)) {
+    overrides.push(`    // [VERIFIED] real virtual decimal EnchantDamageMultiplicative(decimal, ValueProp) override
+    public override decimal EnchantDamageMultiplicative(decimal originalDamage, ValueProp props) => originalDamage * (1m + (${mo.damageBonusPct}m${stacksSuffix} / 100m)); // [BEST EFFORT] see compiler.js's own comment on generateEnchantmentSource`);
+  }
+  if (has(mo.extraPlays)) {
+    overrides.push(`    // [VERIFIED] real virtual int EnchantPlayCount(int) override
+    public override int EnchantPlayCount(int originalPlayCount) => originalPlayCount + ${Math.trunc(mo.extraPlays)}${stacksSuffix};`);
+  }
+
+  // OnEnchant() -- fires once when the enchantment is applied [VERIFIED
+  // signature: family virtual void OnEnchant()]. this.Card is a real
+  // (non-virtual) CardModel-typed property -- safe to READ even though it
+  // can't be overridden itself (same CS0506 reasoning Card.cs.template's
+  // header gives for why its own Id/Name overrides were removed: a
+  // non-virtual concrete member throws CS0506 if you try to override it,
+  // but reading it is fine).
+  const onEnchantLines = [];
+  if (oa.zeroEnergyCostOnApply) {
+    onEnchantLines.push(`        this.Card.EnergyCost.SetThisCombat(0, true); // [BEST EFFORT] CardEnergyCost.SetThisCombat(int, bool) is [VERIFIED] real (see compiler.js's costReductionTodoLines comment) -- the SAME real call TryModifyEnergyCostInCombat-driven cost reductions already use`);
+  }
+  if ((oa.addKeywords || []).length || (oa.removeKeywords || []).length) {
+    const nameEscaped = String(enchantment.name || 'this enchantment').replace(/"/g, '\\"');
+    onEnchantLines.push(`        ForgeActions.Todo("OnEnchant add/remove keywords on \\"${nameEscaped}\\""); // [UNVERIFIED] no confirmed runtime "mutate this card's own keyword set after the fact" API found -- CardModel.Keywords is a real getter but its setter/mutator was not confirmed this round`);
+  }
+  const onEnchantMethod = onEnchantLines.length
+    ? `\n    protected override void OnEnchant()\n    {\n${onEnchantLines.join('\n')}\n    }\n`
+    : '';
+
+  // OnPlay() body -- confirmed per-stack numeric fields become real
+  // ForgeActions/Command calls (identical real APIs actionToCSharp's own
+  // GainBlock/DrawCard/ModifyEnergy cases already use for cards). Gating
+  // fields (onceOnlyPerCombat/firstPlayOnly) and randomizeEnergyOnDraw are
+  // left as comments, not Todo() calls -- see Enchantment.cs.template's
+  // header for why.
+  const onPlayLines = [];
+  if (op.onceOnlyPerCombat) {
+    onPlayLines.push('        // "Activate only once per combat" is NOT enforced below -- [UNVERIFIED] no confirmed per-combat play-tracking API found on EnchantmentModel this round.');
+  }
+  if (op.firstPlayOnly) {
+    onPlayLines.push('        // "Damage bonuses apply only on first play" is NOT enforced below -- [UNVERIFIED] no confirmed per-combat play-count API found on EnchantmentModel this round.');
+  }
+  if (has(op.blockPerStack)) {
+    onPlayLines.push(`        await ForgeActions.GainBlock(fgPlayer, (int)(${op.blockPerStack}m * enchantStacks), cardPlay); // [VERIFIED] ForgeActions.GainBlock -- same real call cards' own GainBlock action uses`);
+  }
+  if (has(op.energyPerStack)) {
+    onPlayLines.push(`        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainEnergy(${op.energyPerStack}m * enchantStacks, cardPlay.Player); // [BEST EFFORT] PlayerCmd.GainEnergy -- same real call cards' own ModifyEnergy(Gain) action uses`);
+  }
+  if (has(op.cardsDrawnPerStack)) {
+    onPlayLines.push(`        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${op.cardsDrawnPerStack}m * enchantStacks, cardPlay.Player, false); // [Fix, round 30 evidence] CardPileCmd.Draw -- same real call cards' own DrawCard action uses`);
+  }
+  if (op.randomizeEnergyOnDraw) {
+    onPlayLines.push('        // "Randomize Energy cost on draw" is NOT wired here -- [UNVERIFIED] no confirmed "on this card drawn" hook exists on EnchantmentModel at all (only OnPlay is confirmed real); a future round would need a fresh reflect-baselib pass to find one.');
+  }
+  if (op.extraEffectsText && String(op.extraEffectsText).trim()) {
+    const msg = 'Extra effects (freeform) on ' + (enchantment.name || 'enchantment') + ': ' + op.extraEffectsText;
+    onPlayLines.push(`        ForgeActions.Todo(${csharpStringLiteral(msg)}); // [UNVERIFIED] freeform prose is never compiled into real logic -- same convention actionToCSharp uses for every unconfirmed action. Runs LAST so the confirmed per-stack effects above still fire first if this enchantment is actually played.`);
+  }
+  const onPlayBody = onPlayLines.length ? onPlayLines.join('\n') : '        // no OnPlay effects defined';
+
+  return fillTemplate(tpl, {
+    namespace,
+    className: pascalCase(enchantment.name) + 'Enchantment',
+    modifierOverrides: overrides.length ? overrides.join('\n\n') + '\n' : '',
+    onEnchantMethod,
+    perStackFlag: perStack ? 'true' : 'false',
+    onPlayBody,
+  });
+}
+
 function buildManifestJson(characterPackage, modId, gameVersion) {
   const manifest = {
     id: modId,
@@ -6998,7 +7159,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   const namespace = modId;
   const written = [];
 
-  const dirs = ['Cards', 'Relics', 'Powers', 'Characters', 'CardPools', 'RelicPools', 'PotionPools', 'Generated', 'pack'];
+  const dirs = ['Cards', 'Relics', 'Powers', 'Enchantments', 'Characters', 'CardPools', 'RelicPools', 'PotionPools', 'Generated', 'pack'];
   for (const d of dirs) fs.mkdirSync(path.join(outDir, d), { recursive: true });
 
   const write = (relPath, content) => {
@@ -7264,13 +7425,23 @@ function generateProject(characterPackage, outDir, opts = {}) {
     write('Pets/README.md', buildPetsReadme(characterPackage.pets));
   }
 
-  // Enchantments/Afflictions — Round 95, Tyler: "Enchantments/Afflictions
-  // need their own section after cards." Same design-doc-only convention
-  // as Pets just above — whether/how STS2 even supports a custom one of
-  // these is still genuinely unresearched (see claude/feature-backlog.md
-  // group C's own "Enchantments section" item), so this stays a .md file,
-  // never a compiled class, until a future round confirms a real
-  // mechanism. Same "invisible to MSBuild's **/*.cs glob" safety as Pets.
+  // Enchantments — Round 95, Tyler: "Enchantments/Afflictions need their
+  // own section after cards." UPDATED Round 190: the "still genuinely
+  // unresearched" caveat that used to sit here is now OVERTURNED —
+  // MegaCrit.Sts2.Core.Models.EnchantmentModel is a [VERIFIED] real
+  // base-game class (direct ECMA-335 metadata read of the real installed
+  // sts2.dll — see Enchantment.cs.template's header and
+  // generateEnchantmentSource's own comment for the full evidence trail
+  // and field-by-field mapping). Each enchantment now ALSO compiles to a
+  // real .cs file, same "per-entity .cs file + one README" pattern Orbs
+  // already uses just above. Afflictions stay README-only for now —
+  // Tyler's "wire the whole schema" request named enchantments
+  // specifically, and afflictions' real BaseLib shape (if any) hasn't
+  // been reflected yet.
+  for (const enchantment of characterPackage.enchantments || []) {
+    const enchSrc = generateEnchantmentSource(enchantment, namespace);
+    write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
+  }
   if ((characterPackage.enchantments || []).length) {
     write('Enchantments/README.md', buildEnchantmentAfflictionReadme('Enchantments', characterPackage.enchantments));
   }
