@@ -13200,6 +13200,11 @@ function newRichEnchantmentEntity(idPrefix, singular){
     whileInHand: { energyReductionPerTurn: null },
     shuffle: { startAtBottomOfDraw: false, shuffleOrder: 'normal' },
     whilePile: { triggersText: '' },
+    validTargets: {
+      types: { attack: true, skill: true, power: true },
+      cardTags: [],
+      excludeXCost: false,
+    },
     icon: null,
     cardFrames: { enchanted: null, attack: null, skill: null, power: null },
   };
@@ -13231,6 +13236,13 @@ function ensureRichEnchantmentDefaults(e){
   if(!e.whileInHand) e.whileInHand = d.whileInHand;
   if(!e.shuffle) e.shuffle = d.shuffle;
   if(!e.whilePile) e.whilePile = d.whilePile;
+  if(!e.validTargets) e.validTargets = d.validTargets;
+  else {
+    if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
+    else for(const k in d.validTargets.types) if(e.validTargets.types[k]===undefined) e.validTargets.types[k]=d.validTargets.types[k];
+    if(!Array.isArray(e.validTargets.cardTags)) e.validTargets.cardTags = [];
+    if(e.validTargets.excludeXCost===undefined) e.validTargets.excludeXCost = false;
+  }
   if(e.icon === undefined) e.icon = null;
   if(!e.cardFrames) e.cardFrames = d.cardFrames;
   else for(const k in d.cardFrames) if(e.cardFrames[k]===undefined) e.cardFrames[k]=d.cardFrames[k];
@@ -13385,7 +13397,7 @@ function makeRichEntitySection(opts){
   function openEditor(entId){
     const e = state[stateKey].find(x=>x.id===entId);
     ensureRichEnchantmentDefaults(e);
-    const mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile;
+    const mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile, vt = e.validTargets;
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
@@ -13399,6 +13411,16 @@ function makeRichEntitySection(opts){
         <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
         ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
         <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
+
+        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave everything checked and tags blank for no restriction.`, 'margin-top:20px')}
+        <div class="row" style="gap:14px; flex-wrap:wrap">
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
+          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
+        </div>
+        ${fieldHead('Tags', 'Comma-separated. Leave blank for no tag restriction.', 'margin-top:8px')}
+        <input type="text" id="${idPrefix}-vt-tags" value="${escapeAttr((vt.cardTags||[]).join(', '))}">
 
         ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:10px 16px">
@@ -13503,6 +13525,12 @@ function makeRichEntitySection(opts){
       e.name = document.getElementById(`${idPrefix}-name`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
+
+      vt.types.attack = document.getElementById(`${idPrefix}-vt-attack`).checked;
+      vt.types.skill = document.getElementById(`${idPrefix}-vt-skill`).checked;
+      vt.types.power = document.getElementById(`${idPrefix}-vt-power`).checked;
+      vt.excludeXCost = document.getElementById(`${idPrefix}-vt-excludex`).checked;
+      vt.cardTags = document.getElementById(`${idPrefix}-vt-tags`).value.split(',').map(s=>s.trim()).filter(Boolean);
 
       const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
       mo.extraDamage = num(`${idPrefix}-mo-extradmg`);

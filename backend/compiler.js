@@ -5166,6 +5166,18 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
     lines.push('');
 
+    const vt = e.validTargets || {};
+    const vtTypes = vt.types || {};
+    const vtTypeBits = [];
+    if (vtTypes.attack) vtTypeBits.push('Attack');
+    if (vtTypes.skill) vtTypeBits.push('Skill');
+    if (vtTypes.power) vtTypeBits.push('Power');
+    const validTargetBits = [];
+    if (vtTypeBits.length && vtTypeBits.length < 3) validTargetBits.push(`types: ${vtTypeBits.join(', ')}`);
+    if (vt.excludeXCost) validTargetBits.push('excludes X-cost cards');
+    if (Array.isArray(vt.cardTags) && vt.cardTags.length) validTargetBits.push(`tags: ${vt.cardTags.join(', ')}`);
+    if (validTargetBits.length) { lines.push(`**Valid targets:** ${validTargetBits.join('; ')}`); lines.push(''); }
+
     const mo = e.modifiers || {};
     const moBits = [];
     if (has(mo.extraDamage)) moBits.push(`+${mo.extraDamage} damage`);
