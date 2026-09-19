@@ -13254,6 +13254,18 @@ function ensureRichEnchantmentDefaults(e){
   return e;
 }
 
+// Title + hint on one line ("TITLE — hint text"), title bold — Tyler:
+// "put the title and description for each box on the same line,
+// separated by a dash. Bold the title." Title keeps the surrounding
+// <label>'s uppercase/letter-spacing (inherited by <strong>); the hint
+// span explicitly resets both so it reads as a normal sentence, not
+// shouty caps.
+function fieldHead(title, desc, style){
+  const styleAttr = style ? ` style="${style}"` : '';
+  const hint = desc ? ` — <span style="font-weight:normal; text-transform:none; letter-spacing:normal; font-size:12.5px;">${desc}</span>` : '';
+  return `<label${styleAttr}><strong>${title}</strong>${hint}</label>`;
+}
+
 function enchKeywordCheckboxes(name, selected){
   return CARD_KEYWORDS.map(k=>`
     <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
@@ -13397,15 +13409,12 @@ function makeRichEntitySection(opts){
         </div>
 
         <label style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-        <label>Description</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Leave blank and the game shows the modifiers below, written out.</div>
+        ${fieldHead('Description', 'Leave blank and the game shows the modifiers below, written out.')}
         <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
-        <label>Line added to the card</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Shown on the card itself, under its own text. Leave blank and the card says nothing extra.</div>
+        ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
         <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
 
-        <label style="margin-top:20px">Goes on</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Which cards can carry it. Leave all three types ticked for any card.</div>
+        ${fieldHead('Goes on', 'Which cards can carry it. Leave all three types ticked for any card.', 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:4px 14px">
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-block" ${el.onlyBlockGrantingCards?'checked':''}> Only cards that grant Block</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-basic" ${el.onlyBasicCards?'checked':''}> Only Basic cards</label>
@@ -13423,8 +13432,7 @@ function makeRichEntitySection(opts){
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-el-power" ${el.types.power?'checked':''}> Power</label>
         </div>
 
-        <label style="margin-top:20px">What it changes</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.</div>
+        ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:10px 16px">
           <div><label>Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px" value="${mo.extraDamage ?? ''}"></div>
           <div><label>Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px" value="${mo.damageBonusPct ?? ''}"></div>
@@ -13437,19 +13445,16 @@ function makeRichEntitySection(opts){
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
         </div>
 
-        <label style="margin-top:20px">Locking and counting down</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Together these make a freeze: the card can't be played, the count falls each turn, and when it runs out the card is free.</div>
+        ${fieldHead('Locking and counting down', "Together these make a freeze: the card can't be played, the count falls each turn, and when it runs out the card is free.", 'margin-top:20px')}
         <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-lk-locks" ${lk.locksPlayWhileCounting?'checked':''}> Card cannot be played while the count is above 0</label>
         <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px; align-items:flex-end">
           <div><label>Count falls per turn</label><input type="number" id="${idPrefix}-lk-falls" style="width:100px" value="${lk.countFallsPerTurn ?? ''}"></div>
           <div><label>Keyword while the count lasts</label><select id="${idPrefix}-lk-keyword">${optList(ENCHANTMENT_LOCK_KEYWORD_OPTIONS, lk.keywordWhileLocked)}</select></div>
         </div>
-        <label style="margin-top:8px">Tags while the count lasts</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Comma-separated — other cards can then scale on "cards with tag" while this is counting down.</div>
+        ${fieldHead('Tags while the count lasts', 'Comma-separated — other cards can then scale on "cards with tag" while this is counting down.', 'margin-top:8px')}
         <input type="text" id="${idPrefix}-lk-tags" value="${escapeAttr((lk.tagsWhileLocked||[]).join(', '))}">
 
-        <label style="margin-top:20px">When the ${noun} is applied</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">These change the card itself and remain after the ${noun} is removed.</div>
+        ${fieldHead(`When the ${noun} is applied`, `These change the card itself and remain after the ${noun} is removed.`, 'margin-top:20px')}
         <div class="row" style="gap:20px; flex-wrap:wrap">
           <div><label style="margin:0">Add keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-add`, oa.addKeywords)}</div></div>
           <div><label style="margin:0">Remove keywords</label><div style="margin-top:4px">${enchKeywordCheckboxes(`${idPrefix}-oa-remove`, oa.removeKeywords)}</div></div>
@@ -13460,8 +13465,7 @@ function makeRichEntitySection(opts){
           <div><label>Stacks gained after each play</label><input type="number" id="${idPrefix}-oa-stackgain" style="width:100px" value="${oa.stacksGainedPerPlay ?? ''}"></div>
         </div>
 
-        <label style="margin-top:20px">When the card is played</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Extra effects, on top of whatever the card already does.</div>
+        ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:4px 16px">
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
@@ -13477,16 +13481,14 @@ function makeRichEntitySection(opts){
         <label style="margin-top:10px">Extra effects (freeform — not yet wired to real triggers/conditions/actions)</label>
         <textarea id="${idPrefix}-op-effects">${escapeHtml(op.extraEffectsText || e.effectText || '')}</textarea>
 
-        <label style="margin-top:20px">While left in hand</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Reductions accumulate until the card is played, then reset.</div>
+        ${fieldHead('While left in hand', 'Reductions accumulate until the card is played, then reset.', 'margin-top:20px')}
         <div><label>Energy reduction each turn left in hand</label><input type="number" id="${idPrefix}-wh-energy" style="width:100px" value="${wh.energyReductionPerTurn ?? ''}"></div>
 
         <label style="margin-top:20px">Position after shuffling</label>
         <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
         <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
 
-        <label style="margin-top:20px">While the card waits in a pile</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">Freeform — fires while a card carrying this ${noun} sits in hand/draw/discard/exhaust without being played.</div>
+        ${fieldHead('While the card waits in a pile', `Freeform — fires while a card carrying this ${noun} sits in hand/draw/discard/exhaust without being played.`, 'margin-top:20px')}
         <textarea id="${idPrefix}-wp-triggers">${escapeHtml(wp.triggersText||'')}</textarea>
 
         <label style="margin-top:20px">Icon</label>
@@ -13499,8 +13501,7 @@ function makeRichEntitySection(opts){
           <button type="button" class="ghost" id="${idPrefix}-icon-clear" style="display:none">Remove</button>
         </div>
 
-        <label style="margin-top:20px">Card frame</label>
-        <div class="panel-desc" style="margin:-4px 0 6px">${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.</div>
+        ${fieldHead('Card frame', `${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.`, 'margin-top:20px')}
         <div class="card-frame-grid" id="${idPrefix}-cf-grid">
           ${ENCHANTMENT_FRAME_SLOTS.map(s=>`
             <div class="card-frame-slot">
