@@ -13720,31 +13720,36 @@ function makeRichEntitySection(opts){
           </div>
         </div>
 
-        ${fieldHead('What it changes', `Leave a field blank and the card isn't asked about it at all. Check Per Stack to multiply these by how many times this ${noun} has been applied.`, 'margin-top:20px')}
-        <div class="ench-field-box">
-          <div style="display:grid; grid-template-rows:repeat(3, auto); grid-auto-flow:column; column-gap:24px; row-gap:8px; width:max-content;">
-            <div><label style="margin:0 0 3px">Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px; padding:4px 6px;" value="${mo.extraDamage ?? ''}"></div>
-            <div><label style="margin:0 0 3px">Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px; padding:4px 6px;" value="${mo.damageBonusPct ?? ''}"></div>
-            <div><label style="margin:0 0 3px">Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px; padding:4px 6px;" value="${mo.extraBlock ?? ''}"></div>
-            <div><label style="margin:0 0 3px">Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px; padding:4px 6px;" value="${mo.blockBonusPct ?? ''}"></div>
-            <div><label style="margin:0 0 3px">Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px; padding:4px 6px;" value="${mo.extraPlays ?? ''}"></div>
-            <label style="margin:0; font-weight:normal; align-self:end;"><input type="checkbox" id="${idPrefix}-mo-perstack" ${mo.perStack?'checked':''}> Per Stack</label>
-          </div>
-        </div>
-
-        ${fieldHead(`When the ${noun} is applied`, `These change the card itself and remain after the ${noun} is removed.`, 'margin-top:20px')}
-        <div class="ench-field-box">
-          <div class="row" style="gap:24px; flex-wrap:wrap; align-items:flex-start">
-            <div style="display:flex; align-items:flex-start; gap:10px;">
-              <label style="margin:6px 0 0; white-space:nowrap;">Add keywords</label>
-              <div id="${idPrefix}-oa-add-slot"></div>
-            </div>
-            <div style="display:flex; align-items:flex-start; gap:10px;">
-              <label style="margin:6px 0 0; white-space:nowrap;">Remove keywords</label>
-              <div id="${idPrefix}-oa-remove-slot"></div>
+        <div class="row" style="margin-top:20px; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+          <div style="flex:1 1 320px; min-width:280px;">
+            ${fieldHead('When Applied', '', 'margin-top:0')}
+            <div class="ench-field-box">
+              <div class="row" style="gap:24px; flex-wrap:wrap; align-items:flex-start">
+                <div style="display:flex; align-items:flex-start; gap:10px;">
+                  <label style="margin:6px 0 0; white-space:nowrap;">Add keywords</label>
+                  <div id="${idPrefix}-oa-add-slot"></div>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:10px;">
+                  <label style="margin:6px 0 0; white-space:nowrap;">Remove keywords</label>
+                  <div id="${idPrefix}-oa-remove-slot"></div>
+                </div>
+              </div>
+              <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
             </div>
           </div>
-          <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
+          <div style="flex:1 1 320px; min-width:280px;">
+            ${fieldHead('Optional Changes', '', 'margin-top:0')}
+            <div class="ench-field-box">
+              <div style="display:grid; grid-template-rows:repeat(3, auto); grid-auto-flow:column; column-gap:24px; row-gap:8px; width:max-content;">
+                <div><label style="margin:0 0 3px">Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px; padding:4px 6px;" value="${mo.extraDamage ?? ''}"></div>
+                <div><label style="margin:0 0 3px">Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px; padding:4px 6px;" value="${mo.damageBonusPct ?? ''}"></div>
+                <div><label style="margin:0 0 3px">Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px; padding:4px 6px;" value="${mo.extraBlock ?? ''}"></div>
+                <div><label style="margin:0 0 3px">Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px; padding:4px 6px;" value="${mo.blockBonusPct ?? ''}"></div>
+                <div><label style="margin:0 0 3px">Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px; padding:4px 6px;" value="${mo.extraPlays ?? ''}"></div>
+                <label style="margin:0; font-weight:normal; align-self:end;"><input type="checkbox" id="${idPrefix}-mo-perstack" ${mo.perStack?'checked':''}> Per Stack</label>
+              </div>
+            </div>
+          </div>
         </div>
 
         ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
