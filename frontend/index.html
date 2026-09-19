@@ -907,6 +907,18 @@
   }
   .ench-kw-picker .picker-option{padding:3px 5px; font-size:12.5px; gap:6px;}
 
+  /* "What it changes" / "When the card is played" grouping box (round 177)
+     — Tyler circled both sections in a screenshot and said their several
+     fields need to visibly fall under one category, i.e. a boxed area
+     around all of a section's inputs. Reuses the same boxed-subsection
+     look .adv-section already established for Advanced Options (dark
+     --ink fill against the modal's lighter --stone background, --border
+     outline) rather than inventing a new visual language for the same
+     idea. Applied only to the two sections Tyler pointed at, not every
+     fieldHead()'d section in this modal — most of the others are a single
+     control and don't have this ambiguity. */
+  .ench-field-box{padding:14px 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--ink); margin-top:8px;}
+
   /* Enchantment/Affliction editor — Tyler: "lets change the contents of
      each section to be indented slightly to show more of a contrast
      between the title/description and the contents." Scoped to this one
@@ -13657,15 +13669,17 @@ function makeRichEntitySection(opts){
         <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
 
         ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
-        <div style="display:grid; grid-template-rows:repeat(3, auto); grid-auto-flow:column; column-gap:24px; row-gap:8px; width:max-content;">
-          <div><label style="margin:0 0 3px">Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px; padding:4px 6px;" value="${mo.extraDamage ?? ''}"></div>
-          <div><label style="margin:0 0 3px">Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px; padding:4px 6px;" value="${mo.damageBonusPct ?? ''}"></div>
-          <div><label style="margin:0 0 3px">Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px; padding:4px 6px;" value="${mo.extraBlock ?? ''}"></div>
-          <div><label style="margin:0 0 3px">Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px; padding:4px 6px;" value="${mo.blockBonusPct ?? ''}"></div>
-          <div><label style="margin:0 0 3px">Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px; padding:4px 6px;" value="${mo.extraPlays ?? ''}"></div>
-          <div style="display:flex; flex-direction:column; gap:6px; justify-content:flex-end;">
-            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
-            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
+        <div class="ench-field-box">
+          <div style="display:grid; grid-template-rows:repeat(3, auto); grid-auto-flow:column; column-gap:24px; row-gap:8px; width:max-content;">
+            <div><label style="margin:0 0 3px">Extra damage</label><input type="number" id="${idPrefix}-mo-extradmg" style="width:100px; padding:4px 6px;" value="${mo.extraDamage ?? ''}"></div>
+            <div><label style="margin:0 0 3px">Damage bonus %</label><input type="number" id="${idPrefix}-mo-dmgpct" style="width:100px; padding:4px 6px;" value="${mo.damageBonusPct ?? ''}"></div>
+            <div><label style="margin:0 0 3px">Extra Block</label><input type="number" id="${idPrefix}-mo-extrablock" style="width:100px; padding:4px 6px;" value="${mo.extraBlock ?? ''}"></div>
+            <div><label style="margin:0 0 3px">Block bonus %</label><input type="number" id="${idPrefix}-mo-blockpct" style="width:100px; padding:4px 6px;" value="${mo.blockBonusPct ?? ''}"></div>
+            <div><label style="margin:0 0 3px">Extra plays</label><input type="number" id="${idPrefix}-mo-extraplays" style="width:100px; padding:4px 6px;" value="${mo.extraPlays ?? ''}"></div>
+            <div style="display:flex; flex-direction:column; gap:6px; justify-content:flex-end;">
+              <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-stack" ${mo.canStack?'checked':''}> Can stack</label>
+              <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
+            </div>
           </div>
         </div>
 
@@ -13683,20 +13697,22 @@ function makeRichEntitySection(opts){
         <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
 
         ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
-        <div class="row" style="flex-wrap:wrap; gap:4px 16px">
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
-          <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
+        <div class="ench-field-box">
+          <div class="row" style="flex-wrap:wrap; gap:4px 16px">
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
+          </div>
+          <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
+            <div><label>Damage growth per stack</label><input type="number" id="${idPrefix}-op-dmggrowth" style="width:100px" value="${op.damageGrowthPerStack ?? ''}"></div>
+            <div><label>Cards drawn per stack</label><input type="number" id="${idPrefix}-op-carddraw" style="width:100px" value="${op.cardsDrawnPerStack ?? ''}"></div>
+            <div><label>Energy per stack</label><input type="number" id="${idPrefix}-op-energy" style="width:100px" value="${op.energyPerStack ?? ''}"></div>
+            <div><label>Block per stack</label><input type="number" id="${idPrefix}-op-block" style="width:100px" value="${op.blockPerStack ?? ''}"></div>
+          </div>
+          <label style="margin:8px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-op-randenergy" ${op.randomizeEnergyOnDraw?'checked':''}> Randomize Energy cost whenever this card is drawn</label>
+          <label style="margin-top:10px">Extra effects (freeform — not yet wired to real triggers/conditions/actions)</label>
+          <textarea id="${idPrefix}-op-effects">${escapeHtml(op.extraEffectsText || e.effectText || '')}</textarea>
         </div>
-        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
-          <div><label>Damage growth per stack</label><input type="number" id="${idPrefix}-op-dmggrowth" style="width:100px" value="${op.damageGrowthPerStack ?? ''}"></div>
-          <div><label>Cards drawn per stack</label><input type="number" id="${idPrefix}-op-carddraw" style="width:100px" value="${op.cardsDrawnPerStack ?? ''}"></div>
-          <div><label>Energy per stack</label><input type="number" id="${idPrefix}-op-energy" style="width:100px" value="${op.energyPerStack ?? ''}"></div>
-          <div><label>Block per stack</label><input type="number" id="${idPrefix}-op-block" style="width:100px" value="${op.blockPerStack ?? ''}"></div>
-        </div>
-        <label style="margin:8px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-op-randenergy" ${op.randomizeEnergyOnDraw?'checked':''}> Randomize Energy cost whenever this card is drawn</label>
-        <label style="margin-top:10px">Extra effects (freeform — not yet wired to real triggers/conditions/actions)</label>
-        <textarea id="${idPrefix}-op-effects">${escapeHtml(op.extraEffectsText || e.effectText || '')}</textarea>
 
         ${fieldHead('While left in hand', 'Reductions accumulate until the card is played, then reset.', 'margin-top:20px')}
         <div><label>Energy reduction each turn left in hand</label><input type="number" id="${idPrefix}-wh-energy" style="width:100px" value="${wh.energyReductionPerTurn ?? ''}"></div>
