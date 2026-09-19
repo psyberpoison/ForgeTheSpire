@@ -78,9 +78,11 @@ public sealed class {{className}} : EnchantmentModel
     // already uses (see compiler.js's generateCardSource).
     public override async Task OnPlay(PlayerChoiceContext choiceContext, CardPlay cardPlay)
     {
-        var fgPlayer = cardPlay.Player.Creature;
+        var fgPlayer = cardPlay.Player.Creature; // [VERIFIED via reflect-baselib round 5] same real access Card.cs.template's own OnPlay uses
+        var fgTarget = cardPlay.Target; // [VERIFIED via reflect-baselib round 3]
+        var fgPet = cardPlay.Player.Osty; // [VERIFIED via reflect-baselib round 5 -- Player.Osty]
         var enchantStacks = {{perStackFlag}} ? this.Amount : 1; // [BEST EFFORT] Amount is a real, non-virtual int property (get_Amount/set_Amount) -- "Per Stack multiplies by it" is Forge's own chosen semantic, not something BaseLib itself defines
 {{onPlayBody}}
         await Task.CompletedTask;
     }
-}
+{{whilePileComment}}}

@@ -13222,19 +13222,28 @@ function openPetEditor(petId){
 // out against, showing its full page (Properties/eligibility, numeric
 // modifiers, lock-and-countdown, on-apply keyword changes, on-play
 // behavior, while-in-hand, shuffle position, while-in-pile, icon, and 4
-// card-frame uploads). This is that rough pass: the full field set,
-// captured honestly — STILL DATA-CAPTURE-ONLY. The STS2 "card
-// enchantment" attachment mechanism itself is still unconfirmed (same
-// backlog gap as before), so none of this claims [VERIFIED]/[BEST
-// EFFORT] compiled behavior the way a real Forge feature does — every
-// field exports into the design-doc README only (see compiler.js's
-// buildEnchantmentsReadme/buildAfflictionsReadme). Two fields
-// (onPlay.extraEffectsText, whilePile.triggersText) are deliberately
-// freeform text rather than wired into Forge's real trigger/condition/
-// action editor (the machinery cards/relics/mechanics already compile
-// for real) — reusing that machinery here would be the natural "clean
-// up" pass once/if a real attachment point is confirmed, not part of
-// this rough-shape pass.
+// card-frame uploads). This was that rough pass: the full field set,
+// captured honestly, STILL DATA-CAPTURE-ONLY at the time (round168) —
+// two fields (onPlay.extraEffectsText, whilePile.triggersText) were
+// deliberately freeform text rather than wired into Forge's real trigger/
+// condition/action editor, exactly because the STS2 "card enchantment"
+// attachment mechanism itself was still unconfirmed.
+//
+// UPDATED round 190/191: MegaCrit.Sts2.Core.Models.EnchantmentModel is now
+// a [VERIFIED] real base-game class (see
+// claude/round190-enchantments-real-codegen.md) with a real, confirmed
+// OnPlay(PlayerChoiceContext, CardPlay) hook. Per Tyler's round-191 ask
+// ("there should be no freeform boxes... pull the onplay effect
+// options... pull the pile options from our existing pile section") this
+// is now exactly the "clean up" pass predicted above: both former
+// freeform fields are gone, replaced by real effects[] lists edited with
+// the SAME renderEffectsList() component cards/relics/mechanics already
+// use — see openEditor below and backend/compiler.js's
+// generateEnchantmentSource. Most of the rest of this section (numeric
+// modifiers, targeting, stacking, shuffle) still exports design-doc-only
+// via buildEnchantmentAfflictionReadme AND compiles to real overrides —
+// see generateEnchantmentSource's own field-mapping comment for exactly
+// which fields are [VERIFIED]/[BEST EFFORT]/[UNVERIFIED].
 //
 // One shared render/editor factory for both entities — Enchantments and
 // Afflictions are structurally identical (Tyler grouped them into one
@@ -13256,6 +13265,14 @@ const ENCHANTMENT_FRAME_SLOTS = [
   { id:'power', label:'Enchanted Power Frame', fallback:'enchanted' },
 ];
 
+// [Round 191] The enchantment/affliction "When the card is played" box's
+// trigger vocabulary — restricted to the one real, confirmed
+// EnchantmentModel hook (OnPlay(PlayerChoiceContext, CardPlay), see
+// backend/compiler.js's generateEnchantmentSource header) instead of
+// CARD_TRIGGERS/HOOK_TRIGGERS' much larger lists, which include triggers
+// with no confirmed EnchantmentModel analog.
+const ENCHANTMENT_ONPLAY_TRIGGERS = ['OnPlay'];
+
 function newRichEnchantmentEntity(idPrefix, singular){
   return {
     id: uid(idPrefix),
@@ -13273,20 +13290,27 @@ function newRichEnchantmentEntity(idPrefix, singular){
       addKeywords: [], removeKeywords: [],
       zeroEnergyCostOnApply: false,
     },
-    onPlay: {
-      onceOnlyPerCombat: false,
-      multiplyFlatDamageByStacks: false,
-      firstPlayOnly: false,
-      damageGrowthPerStack: null,
-      cardsDrawnPerStack: null,
-      randomizeEnergyOnDraw: false,
-      energyPerStack: null,
-      blockPerStack: null,
-      extraEffectsText: '',
-    },
+    // [Round 191] Tyler: "there should be no freeform boxes. the on play
+    // box should pull the onplay effect options..." — replaces the old
+    // ad-hoc onceOnlyPerCombat/multiplyFlatDamageByStacks/firstPlayOnly/
+    // damageGrowthPerStack/cardsDrawnPerStack/randomizeEnergyOnDraw/
+    // energyPerStack/blockPerStack/extraEffectsText fields with a real
+    // effects[] list — the exact same {trigger,conditions,actions,
+    // elseActions} shape cards/relics/mechanics already use, edited with
+    // the same renderEffectsList() component (see openEditor below),
+    // restricted to the one real confirmed EnchantmentModel hook,
+    // 'OnPlay' — see backend/compiler.js's generateEnchantmentSource for
+    // how this compiles to real C# via the same effectsToCSharp/
+    // actionToCSharp machinery cards' own OnPlay already uses.
+    onPlay: { effects: [] },
     whileInHand: { energyReductionPerTurn: null },
     shuffle: { startAtBottomOfDraw: false, shuffleOrder: 'normal' },
-    whilePile: { triggersText: '' },
+    // [Round 191] "...and the while in pile box should pull the pile
+    // options from our existing pile section under card settings" — same
+    // effects[] shape as card.advancedOptions.whileInHand, edited with the
+    // identical renderEffectsList(..., WHILE_IN_HAND_TRIGGERS, ..., true)
+    // call cards' own "While in a pile" Advanced Options section uses.
+    whilePile: { effects: [] },
     validTargets: {
       types: { attack: true, skill: true, power: true },
       excludeXCost: false,
@@ -13320,10 +13344,30 @@ function ensureRichEnchantmentDefaults(e){
     delete e.onApply.stacksGainedPerPlay;
   }
   if(!e.onPlay) e.onPlay = d.onPlay;
-  else for(const k in d.onPlay) if(e.onPlay[k]===undefined) e.onPlay[k]=d.onPlay[k];
+  else {
+    if(!Array.isArray(e.onPlay.effects)) e.onPlay.effects = [];
+    // [round 191] "no freeform boxes" — the old ad-hoc fields are dropped
+    // outright, not auto-translated into effects (there's no honest
+    // automatic reading of "damage growth per stack: 2" as a real action)
+    // — same "field removed outright, not migrated" precedent round 176
+    // set for flatBlockAdjustment/stacksGainedPerPlay.
+    delete e.onPlay.onceOnlyPerCombat;
+    delete e.onPlay.multiplyFlatDamageByStacks;
+    delete e.onPlay.firstPlayOnly;
+    delete e.onPlay.damageGrowthPerStack;
+    delete e.onPlay.cardsDrawnPerStack;
+    delete e.onPlay.randomizeEnergyOnDraw;
+    delete e.onPlay.energyPerStack;
+    delete e.onPlay.blockPerStack;
+    delete e.onPlay.extraEffectsText;
+  }
   if(!e.whileInHand) e.whileInHand = d.whileInHand;
   if(!e.shuffle) e.shuffle = d.shuffle;
   if(!e.whilePile) e.whilePile = d.whilePile;
+  else {
+    if(!Array.isArray(e.whilePile.effects)) e.whilePile.effects = [];
+    delete e.whilePile.triggersText; // [round 191] same "no freeform boxes" removal as onPlay above
+  }
   if(!e.validTargets) e.validTargets = d.validTargets;
   else {
     if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
@@ -13346,9 +13390,11 @@ function ensureRichEnchantmentDefaults(e){
   if(e.icon === undefined) e.icon = null;
   if(!e.cardFrames) e.cardFrames = d.cardFrames;
   else for(const k in d.cardFrames) if(e.cardFrames[k]===undefined) e.cardFrames[k]=d.cardFrames[k];
-  // Legacy round-95 fields stay on the object (effectText especially —
-  // still shown, folded into the new "on play extra effects" box below,
-  // rather than silently dropping whatever Tyler already typed there).
+  // Legacy round-95 `effectText` field (a freeform description, distinct
+  // from the round-190/191 onPlay.extraEffectsText box that WAS removed
+  // above) stays on the object rather than being deleted — it's simply no
+  // longer surfaced by any editor field since round 191 removed the box
+  // that used to show it as a fallback.
   return e;
 }
 
@@ -13754,22 +13800,10 @@ function makeRichEntitySection(opts){
           </div>
         </div>
 
-        ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
+        ${fieldHead('When the card is played', 'Real effects — the same trigger/condition/action editor cards use for their own OnPlay.', 'margin-top:20px')}
         <div class="ench-field-box">
-          <div style="display:flex; flex-direction:column; gap:6px">
-            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-once" ${op.onceOnlyPerCombat?'checked':''}> Activate only once per combat</label>
-            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-multiply" ${op.multiplyFlatDamageByStacks?'checked':''}> Multiply the flat damage bonus by ${noun} stacks</label>
-            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-op-firstplay" ${op.firstPlayOnly?'checked':''}> Damage bonuses apply only on the card's first play this combat</label>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(2, auto); column-gap:24px; row-gap:10px; width:max-content; margin-top:8px;">
-            <div><label>Damage growth per stack</label><input type="number" id="${idPrefix}-op-dmggrowth" style="width:100px" value="${op.damageGrowthPerStack ?? ''}"></div>
-            <div><label>Cards drawn per stack</label><input type="number" id="${idPrefix}-op-carddraw" style="width:100px" value="${op.cardsDrawnPerStack ?? ''}"></div>
-            <div><label>Energy per stack</label><input type="number" id="${idPrefix}-op-energy" style="width:100px" value="${op.energyPerStack ?? ''}"></div>
-            <div><label>Block per stack</label><input type="number" id="${idPrefix}-op-block" style="width:100px" value="${op.blockPerStack ?? ''}"></div>
-          </div>
-          <label style="margin:8px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-op-randenergy" ${op.randomizeEnergyOnDraw?'checked':''}> Randomize Energy cost whenever this card is drawn</label>
-          <label style="margin-top:10px">Extra effects (freeform — not yet wired to real triggers/conditions/actions)</label>
-          <textarea id="${idPrefix}-op-effects">${escapeHtml(op.extraEffectsText || e.effectText || '')}</textarea>
+          <div id="${idPrefix}-onplay-list"></div>
+          <button class="secondary" id="${idPrefix}-onplay-add" type="button">+ Add effect block</button>
         </div>
 
         ${fieldHead('While left in hand', 'Reductions accumulate until the card is played, then reset.', 'margin-top:20px')}
@@ -13779,8 +13813,9 @@ function makeRichEntitySection(opts){
         <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
         <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
 
-        ${fieldHead('While the card waits in a pile', `Freeform — fires while a card carrying this ${noun} sits in hand/draw/discard/exhaust without being played.`, 'margin-top:20px')}
-        <textarea id="${idPrefix}-wp-triggers">${escapeHtml(wp.triggersText||'')}</textarea>
+        ${fieldHead('While the card waits in a pile', `Real effects — the same pile-trigger editor Card Settings' own "While in a pile" section uses, for a card carrying this ${noun} sitting in hand/draw/discard/exhaust without being played.`, 'margin-top:20px')}
+        <div id="${idPrefix}-whilepile-list"></div>
+        <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
 
         ${fieldHead('Card frame', `${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.`, 'margin-top:20px')}
         <div class="card-frame-grid" id="${idPrefix}-cf-grid">
@@ -13818,6 +13853,21 @@ function makeRichEntitySection(opts){
     document.getElementById(`${idPrefix}-oa-add-slot`).appendChild(renderEnchKeywordPicker(oa.addKeywords));
     document.getElementById(`${idPrefix}-oa-remove-slot`).appendChild(renderEnchKeywordPicker(oa.removeKeywords));
 
+    // [Round 191] Same renderEffectsList() component cards/relics/mechanics
+    // already use — op.effects/wp.effects are mutated live by it, so
+    // nothing needs reading back in the save handler below (same as
+    // card.effects/relic.effects/ao.whileInHand elsewhere in this file).
+    renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
+    document.getElementById(`${idPrefix}-onplay-add`).onclick = ()=>{
+      op.effects.push({ trigger: 'OnPlay', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
+    };
+    renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    document.getElementById(`${idPrefix}-whilepile-add`).onclick = ()=>{
+      wp.effects.push({ trigger: 'OnTurnEndInHand', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    };
+
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
@@ -13843,22 +13893,14 @@ function makeRichEntitySection(opts){
       // oa.addKeywords/removeKeywords are mutated live by renderEnchKeywordPicker above — nothing to read back here.
       oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
 
-      op.onceOnlyPerCombat = document.getElementById(`${idPrefix}-op-once`).checked;
-      op.multiplyFlatDamageByStacks = document.getElementById(`${idPrefix}-op-multiply`).checked;
-      op.firstPlayOnly = document.getElementById(`${idPrefix}-op-firstplay`).checked;
-      op.damageGrowthPerStack = num(`${idPrefix}-op-dmggrowth`);
-      op.cardsDrawnPerStack = num(`${idPrefix}-op-carddraw`);
-      op.randomizeEnergyOnDraw = document.getElementById(`${idPrefix}-op-randenergy`).checked;
-      op.energyPerStack = num(`${idPrefix}-op-energy`);
-      op.blockPerStack = num(`${idPrefix}-op-block`);
-      op.extraEffectsText = document.getElementById(`${idPrefix}-op-effects`).value;
+      // op.effects mutated live by renderEffectsList above — nothing to read back here.
 
       wh.energyReductionPerTurn = num(`${idPrefix}-wh-energy`);
 
       sh.startAtBottomOfDraw = document.getElementById(`${idPrefix}-sh-bottom`).checked;
       sh.shuffleOrder = document.getElementById(`${idPrefix}-sh-order`).value;
 
-      wp.triggersText = document.getElementById(`${idPrefix}-wp-triggers`).value;
+      // wp.effects mutated live by renderEffectsList above — nothing to read back here.
 
       save(); render(); closeModal();
     };

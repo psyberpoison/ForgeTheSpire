@@ -969,7 +969,25 @@ function resolvePlayerExpr(ctx) {
 // null` lower-level path a relic/mechanic hook already uses — unchanged
 // behavior for OnPlay/OnAnyCardPlayed, where cardPlayBound is still true.
 function resolveDamageSourceArgs(ctx) {
-  return ctx.cardPlayBound ? 'fgPlayer, this, cardPlay' : 'fgPlayer, null, null';
+  // [Round 191 fix] `sourceCard` is CardModel? (nullable) — ForgeActions.
+  // DealDamage/DealDamageAllEnemies' real confirmed signature (see
+  // ForgeActions.cs.template). Previously always emitted bare `this`
+  // whenever cardPlayBound was true, which is only actually a CardModel
+  // when ctx.thisIsCard is ALSO true (a card's own generated class, where
+  // `this` IS the CardModel). Discovered via generateEnchantmentSource
+  // (round 191): an EnchantmentModel's OnPlay is cardPlayBound but
+  // thisIsCard:false, so the old code would have emitted `this` (an
+  // EnchantmentModel) into a `CardModel?` parameter — a real CS1503 that
+  // would have failed to compile. `cardPlay.Card` is the correct, real,
+  // ALWAYS-available CardModel in any cardPlayBound context regardless of
+  // what `this` is, so it's used whenever thisIsCard is false, rather
+  // than falling back to null (strictly more informative than losing the
+  // source-card attribution entirely) — same fix benefits any future
+  // non-card cardPlayBound context (relics/mechanics currently never hit
+  // this path since 'OnPlay' is rejected for them, but OnAnyCardPlayed
+  // could).
+  if (!ctx.cardPlayBound) return 'fgPlayer, null, null';
+  return ctx.thisIsCard ? 'fgPlayer, this, cardPlay' : 'fgPlayer, cardPlay.Card, cardPlay';
 }
 
 // NOTE: the old perEntryAmount(action, amountsMap, key) helper that used
@@ -1686,6 +1704,15 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (action.random) {
         return resolveRandomCardPickAndAct('ExhaustRandom', resolveAmountExpr(action), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, ${pickVar}, false, false); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Exhaust" card's exhaustRandomCard effect, round 59]`, exhaustPlayerExpr);
       }
+      // [Round 191 fix] The prompt-picker's last arg is bare `this` --
+      // never confirmed against a real non-card `this` (an EnchantmentModel
+      // authoring this action would pass itself, not a CardModel/
+      // AbstractModel-verified-safe type here). Gated on ctx.thisIsCard,
+      // same ReturnToHand/ShuffleCardIntoDraw precedent, rather than
+      // guessing this parameter accepts anything but a real card.
+      if (!ctx.thisIsCard) {
+        return `        ForgeActions.Todo("ExhaustCard (prompt) -- this action's CardSelectCmd.FromHand call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      }
       return `        foreach (var fgExhaustCard in await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand(choiceContext, ${exhaustPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.ExhaustSelectionPrompt, ${resolveAmountExpr(action)}), null, this)) { await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, fgExhaustCard, false, false); } // [Round 63] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
     case 'DiscardCard': {
@@ -1698,6 +1725,12 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const discardPlayerExpr = resolvePlayerExpr(ctx);
       if (action.random) {
         return resolveRandomCardPickAndAct('DiscardRandom', resolveAmountExpr(action), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, ${pickVar}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Discard" card's discardRandom effect, round 59]`, discardPlayerExpr);
+      }
+      // [Round 191 fix] Same ctx.thisIsCard gate as ExhaustCard's own
+      // prompt-picker branch just above -- see its comment for the full
+      // reasoning.
+      if (!ctx.thisIsCard) {
+        return `        ForgeActions.Todo("DiscardCard (prompt) -- this action's CardSelectCmd.FromHandForDiscard call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       }
       return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForDiscard(choiceContext, ${discardPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.DiscardSelectionPrompt, ${resolveAmountExpr(action)}), null, this)); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll — 4/4 real discard cards use this exact chain — see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
@@ -2726,6 +2759,12 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // frontend CONDITION_KINDS / backend validate.js) since that's the
       // only trigger where "this card's own damage" is a coherent idea at
       // all (matches Flick's own usage).
+      // [Round 191 fix] `this` is only a CardModel when ctx.thisIsCard
+      // is true (a card's own generated class); for an enchantment's OnPlay
+      // (thisIsCard: false, `this` is the EnchantmentModel) `e.CardSource ==
+      // this` would never match a real CardModel and is a type mismatch risk
+      // besides -- fall back to an honest TodoCondition stub instead.
+      if (!ctx.thisIsCard) return `ForgeActions.TodoCondition("DamageBrokeBlock(only valid on a card's own OnPlay -- e.CardSource == this has no meaning outside a card's own generated class)")`;
       return `(MegaCrit.Sts2.Core.Combat.CombatManager.Instance?.History?.Entries.OfType<MegaCrit.Sts2.Core.Combat.History.Entries.DamageReceivedEntry>().LastOrDefault(e => e.CardSource == this)?.Result.WasBlockBroken ?? false)`;
     // [Round 70] 'DamageKilledTarget' removed — Tyler asked to switch the
     // followUp's "killed the target" check to the fully VERIFIED
@@ -2749,6 +2788,8 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // evidence than WasBlockBroken/WasTargetKilled originally had, both
       // of which were only confirmed via mod-usage decompiles until this
       // same sts2.dll read cross-confirmed them too).
+      // [Round 191 fix] same ctx.thisIsCard guard as DamageBrokeBlock above.
+      if (!ctx.thisIsCard) return `ForgeActions.TodoCondition("DamageWasFullyBlocked(only valid on a card's own OnPlay -- e.CardSource == this has no meaning outside a card's own generated class)")`;
       return `(MegaCrit.Sts2.Core.Combat.CombatManager.Instance?.History?.Entries.OfType<MegaCrit.Sts2.Core.Combat.History.Entries.DamageReceivedEntry>().LastOrDefault(e => e.CardSource == this)?.Result.WasFullyBlocked ?? false)`;
     case 'DamageUnblockedAmount': {
       // Added 2026-08-27, same internal-only synthesis as above.
@@ -2758,6 +2799,8 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // object (see actionToCSharp's DealDamage case, which builds this
       // cond from action.followUp.comparator/value).
       const fuCmp = { lt: '<', lte: '<=', eq: '==', gte: '>=', gt: '>' }[cond.comparator] || '>=';
+      // [Round 191 fix] same ctx.thisIsCard guard as DamageBrokeBlock above.
+      if (!ctx.thisIsCard) return `ForgeActions.TodoCondition("DamageUnblockedAmount(only valid on a card's own OnPlay -- e.CardSource == this has no meaning outside a card's own generated class)")`;
       return `((MegaCrit.Sts2.Core.Combat.CombatManager.Instance?.History?.Entries.OfType<MegaCrit.Sts2.Core.Combat.History.Entries.DamageReceivedEntry>().LastOrDefault(e => e.CardSource == this)?.Result.UnblockedDamage) ${fuCmp} ${cond.value ?? 0})`;
     }
 
@@ -5071,7 +5114,7 @@ function generateMechanicSource(mechanic, namespace, refMaps) {
 // is a fixed set of typed number/boolean fields, not an {trigger,
 // conditions[], actions[]} effect list like cards/relics/mechanics have,
 // so there's no action-object list for actionToCSharp to walk here.
-function generateEnchantmentSource(enchantment, namespace) {
+function generateEnchantmentSource(enchantment, namespace, refMaps) {
   if (!enchantment.name || !pascalCase(enchantment.name)) {
     throw new Error('Enchantment has no usable name -- every enchantment needs a name to generate a C# class from.');
   }
@@ -5080,6 +5123,7 @@ function generateEnchantmentSource(enchantment, namespace) {
   const mo = enchantment.modifiers || {};
   const oa = enchantment.onApply || {};
   const op = enchantment.onPlay || {};
+  const wp = enchantment.whilePile || {};
   const vt = enchantment.validTargets || {};
   const sh = enchantment.shuffle || {};
   const perStack = !!mo.perStack;
@@ -5137,17 +5181,9 @@ ${checks.join('\n')}
     overrides.push(`    // [VERIFIED] real virtual decimal EnchantBlockMultiplicative(decimal) override
     public override decimal EnchantBlockMultiplicative(decimal originalBlock) => originalBlock * (1m + (${mo.blockBonusPct}m${stacksSuffix} / 100m)); // [BEST EFFORT] "Multiplicative" applying as a % scale on top of the original value is Forge's own reading of the name -- not confirmed against a real multiplicative enchantment`);
   }
-
-  const extraDamageTerms = [];
-  if (has(mo.extraDamage)) extraDamageTerms.push(`${mo.extraDamage}m${stacksSuffix}`);
-  if (has(op.damageGrowthPerStack)) extraDamageTerms.push(`${op.damageGrowthPerStack}m * this.Amount`); // growth is inherently per-stack regardless of the Per Stack checkbox
-  if (extraDamageTerms.length) {
-    const sumExpr = extraDamageTerms.join(' + ');
-    const finalExpr = (op.multiplyFlatDamageByStacks && !perStack)
-      ? `originalDamage + (${sumExpr}) * this.Amount`
-      : `originalDamage + (${sumExpr})`;
+  if (has(mo.extraDamage)) {
     overrides.push(`    // [VERIFIED] real virtual decimal EnchantDamageAdditive(decimal, ValueProp) override
-    public override decimal EnchantDamageAdditive(decimal originalDamage, ValueProp props) => ${finalExpr};`);
+    public override decimal EnchantDamageAdditive(decimal originalDamage, ValueProp props) => originalDamage + ${mo.extraDamage}m${stacksSuffix};`);
   }
   if (has(mo.damageBonusPct)) {
     overrides.push(`    // [VERIFIED] real virtual decimal EnchantDamageMultiplicative(decimal, ValueProp) override
@@ -5162,9 +5198,7 @@ ${checks.join('\n')}
   // signature: family virtual void OnEnchant()]. this.Card is a real
   // (non-virtual) CardModel-typed property -- safe to READ even though it
   // can't be overridden itself (same CS0506 reasoning Card.cs.template's
-  // header gives for why its own Id/Name overrides were removed: a
-  // non-virtual concrete member throws CS0506 if you try to override it,
-  // but reading it is fine).
+  // header gives for why its own Id/Name overrides were removed).
   const onEnchantLines = [];
   if (oa.zeroEnergyCostOnApply) {
     onEnchantLines.push(`        this.Card.EnergyCost.SetThisCombat(0, true); // [BEST EFFORT] CardEnergyCost.SetThisCombat(int, bool) is [VERIFIED] real (see compiler.js's costReductionTodoLines comment) -- the SAME real call TryModifyEnergyCostInCombat-driven cost reductions already use`);
@@ -5177,36 +5211,47 @@ ${checks.join('\n')}
     ? `\n    protected override void OnEnchant()\n    {\n${onEnchantLines.join('\n')}\n    }\n`
     : '';
 
-  // OnPlay() body -- confirmed per-stack numeric fields become real
-  // ForgeActions/Command calls (identical real APIs actionToCSharp's own
-  // GainBlock/DrawCard/ModifyEnergy cases already use for cards). Gating
-  // fields (onceOnlyPerCombat/firstPlayOnly) and randomizeEnergyOnDraw are
-  // left as comments, not Todo() calls -- see Enchantment.cs.template's
-  // header for why.
-  const onPlayLines = [];
-  if (op.onceOnlyPerCombat) {
-    onPlayLines.push('        // "Activate only once per combat" is NOT enforced below -- [UNVERIFIED] no confirmed per-combat play-tracking API found on EnchantmentModel this round.');
-  }
-  if (op.firstPlayOnly) {
-    onPlayLines.push('        // "Damage bonuses apply only on first play" is NOT enforced below -- [UNVERIFIED] no confirmed per-combat play-count API found on EnchantmentModel this round.');
-  }
-  if (has(op.blockPerStack)) {
-    onPlayLines.push(`        await ForgeActions.GainBlock(fgPlayer, (int)(${op.blockPerStack}m * enchantStacks), cardPlay); // [VERIFIED] ForgeActions.GainBlock -- same real call cards' own GainBlock action uses`);
-  }
-  if (has(op.energyPerStack)) {
-    onPlayLines.push(`        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainEnergy(${op.energyPerStack}m * enchantStacks, cardPlay.Player); // [BEST EFFORT] PlayerCmd.GainEnergy -- same real call cards' own ModifyEnergy(Gain) action uses`);
-  }
-  if (has(op.cardsDrawnPerStack)) {
-    onPlayLines.push(`        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${op.cardsDrawnPerStack}m * enchantStacks, cardPlay.Player, false); // [Fix, round 30 evidence] CardPileCmd.Draw -- same real call cards' own DrawCard action uses`);
-  }
-  if (op.randomizeEnergyOnDraw) {
-    onPlayLines.push('        // "Randomize Energy cost on draw" is NOT wired here -- [UNVERIFIED] no confirmed "on this card drawn" hook exists on EnchantmentModel at all (only OnPlay is confirmed real); a future round would need a fresh reflect-baselib pass to find one.');
-  }
-  if (op.extraEffectsText && String(op.extraEffectsText).trim()) {
-    const msg = 'Extra effects (freeform) on ' + (enchantment.name || 'enchantment') + ': ' + op.extraEffectsText;
-    onPlayLines.push(`        ForgeActions.Todo(${csharpStringLiteral(msg)}); // [UNVERIFIED] freeform prose is never compiled into real logic -- same convention actionToCSharp uses for every unconfirmed action. Runs LAST so the confirmed per-stack effects above still fire first if this enchantment is actually played.`);
-  }
-  const onPlayBody = onPlayLines.length ? onPlayLines.join('\n') : '        // no OnPlay effects defined';
+  // OnPlay() body -- [Round 191] Tyler: "there should be no freeform
+  // boxes. the on play box should pull the onplay effect options." The
+  // editor's "When the card is played" box is now the SAME
+  // renderEffectsList() trigger/condition/action editor cards use for
+  // their own OnPlay, restricted to the one confirmed real
+  // EnchantmentModel hook ('OnPlay') -- so this now reuses the exact same
+  // effectsToCSharp/actionToCSharp machinery generateCardSource's own
+  // OnPlay body does, instead of round 190's ad-hoc per-field mapping
+  // (onceOnlyPerCombat/damageGrowthPerStack/etc., all removed from the
+  // schema this round). ctx mirrors cascadingTriggerBody's own OnPlay ctx
+  // exactly (cardPlayBound/fgPlayerBound true, targetMayBeNull false --
+  // same real cardPlay object, same real guarantees a card's own OnPlay
+  // already relies on) except thisIsCard: false -- `this` here is the
+  // EnchantmentModel, not the played CardModel, so actions like
+  // ShuffleCardIntoDraw/ReturnToHand correctly fall back to their own
+  // existing ctx.thisIsCard-gated Todo() stubs instead of emitting
+  // `this`-referencing code that would target the wrong object.
+  const onPlayEffects = (Array.isArray(op.effects) ? op.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
+  const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+  const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
+
+  // "While in a pile" -- [Round 191] Tyler: "...and the while in pile box
+  // should pull the pile options from our existing pile section under
+  // card settings." The editor now captures real structured data (same
+  // {trigger,pile,conditions,actions} shape as
+  // card.advancedOptions.whileInHand, edited with the identical
+  // renderEffectsList(..., WHILE_IN_HAND_TRIGGERS, ..., true) component) --
+  // but this is intentionally NOT compiled into a real override here.
+  // Round 190's reflection of the real sts2.dll found no EnchantmentModel
+  // hook analogous to "while a card sits in a pile" -- the pile-trigger
+  // hooks that DO exist (AfterDiscard, OnTurnEndInHand, etc., see
+  // TRIGGER_HOOKS) are real CustomCardModel overrides, only meaningful on
+  // a CARD's own generated class, not available to override here. Rather
+  // than fabricate a nonexistent override, this stays an honest comment
+  // summarizing what was authored -- same "never invent an API" standard
+  // as everywhere else in this file -- until a future reflect-baselib
+  // round finds a real hook (or confirms there isn't one).
+  const whilePileEffects = Array.isArray(wp.effects) ? wp.effects : [];
+  const whilePileComment = whilePileEffects.length
+    ? `    // [UNVERIFIED] ${whilePileEffects.length} "while in a pile" effect(s) authored in the editor -- NOT compiled. No confirmed EnchantmentModel hook exists for "while a card carrying this enchantment sits in a pile" (round 190's reflection of the real sts2.dll found none); the pile-trigger hooks that DO exist (AfterDiscard, OnTurnEndInHand, etc.) are real CustomCardModel overrides, not available on EnchantmentModel. See Enchantments/README.md for exactly what was authored here.\n`
+    : '';
 
   return fillTemplate(tpl, {
     namespace,
@@ -5215,6 +5260,7 @@ ${checks.join('\n')}
     onEnchantMethod,
     perStackFlag: perStack ? 'true' : 'false',
     onPlayBody,
+    whilePileComment,
   });
 }
 
@@ -5303,17 +5349,34 @@ function buildPetsReadme(pets) {
 // are printed so an entry with just a name+description still reads clean.
 function buildEnchantmentAfflictionReadme(heading, entries) {
   const lines = [];
-  lines.push(`# ${heading} — captured, not yet compiled`);
-  lines.push('');
-  lines.push('Whether/how a real STS2 character mod can define a custom card- or');
-  lines.push('relic-granted run modifier like this is still genuinely unresearched — no');
-  lines.push('reflect-baselib round has confirmed a real mechanism either way (see');
-  lines.push('claude/feature-backlog.md group C). The entries below are saved as a design');
-  lines.push('doc so they\'re ready the moment a future round confirms one — this file is');
-  lines.push('not read by the compiled mod at runtime.');
-  lines.push('');
+  const isEnchantments = heading === 'Enchantments';
+  if (isEnchantments) {
+    lines.push(`# ${heading} -- most of this now compiles to real C#`);
+    lines.push('');
+    lines.push('MegaCrit.Sts2.Core.Models.EnchantmentModel is a [VERIFIED] real base-game');
+    lines.push('class (see claude/round190-enchantments-real-codegen.md for the full');
+    lines.push('reflection evidence) -- each entry below also writes a real');
+    lines.push('Enchantments/<Name>Enchantment.cs. Not every field compiles: see that .cs');
+    lines.push('file\'s own header comment for exactly which parts are');
+    lines.push('[VERIFIED]/[BEST EFFORT] real vs. [UNVERIFIED] (uncompiled). This file');
+    lines.push('itself is a design-doc summary only -- it is not read by the compiled mod');
+    lines.push('at runtime.');
+    lines.push('');
+  } else {
+    lines.push(`# ${heading} -- captured, not yet compiled`);
+    lines.push('');
+    lines.push('Whether/how a real STS2 character mod can define a custom card- or');
+    lines.push('relic-granted run modifier like this is still genuinely unresearched for');
+    lines.push('Afflictions specifically (see claude/feature-backlog.md group C) -- the');
+    lines.push('entries below are saved as a design doc so they\'re ready the moment a');
+    lines.push('future round confirms one. Enchantments (the section above this one, if');
+    lines.push('present) were confirmed and wired to real C# in round 190/191 -- see');
+    lines.push('claude/round190-enchantments-real-codegen.md. This file is not read by the');
+    lines.push('compiled mod at runtime.');
+    lines.push('');
+  }
   lines.push('[Round 168] Roughed out against the fuller field set a similar community');
-  lines.push('tool (slay.spencerstiles.com) uses for its own card-enchantment editor —');
+  lines.push('tool (slay.spencerstiles.com) uses for its own card-enchantment editor --');
   lines.push('every field below is captured the same design-doc-only way as before, just');
   lines.push('a richer shape. Fields left blank in the editor are omitted below.');
   lines.push('');
@@ -5362,19 +5425,23 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
     if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
 
+    // [Round 191] op.effects/wp.effects replace the old ad-hoc onPlay
+    // fields and whilePile.triggersText freeform text -- see
+    // generateEnchantmentSource for how (and whether) each compiles.
     const op = e.onPlay || {};
-    const opBits = [];
-    if (op.onceOnlyPerCombat) opBits.push('once per combat only');
-    if (op.multiplyFlatDamageByStacks) opBits.push('flat damage bonus × stacks');
-    if (op.firstPlayOnly) opBits.push('damage bonuses apply first play this combat only');
-    if (has(op.damageGrowthPerStack)) opBits.push(`damage grows by ${op.damageGrowthPerStack} per stack per play`);
-    if (has(op.cardsDrawnPerStack)) opBits.push(`draws ${op.cardsDrawnPerStack} card(s) per stack`);
-    if (op.randomizeEnergyOnDraw) opBits.push('randomizes Energy cost on draw');
-    if (has(op.energyPerStack)) opBits.push(`+${op.energyPerStack} Energy per stack`);
-    if (has(op.blockPerStack)) opBits.push(`+${op.blockPerStack} Block per stack`);
-    if (opBits.length) { lines.push(`**On play:** ${opBits.join('; ')}`); lines.push(''); }
-    if (op.extraEffectsText) { lines.push(`**Extra effects (freeform):** ${op.extraEffectsText}`); lines.push(''); }
-    else if (e.effectText) { lines.push(`**What it does:** ${e.effectText}`); lines.push(''); }
+    const opEffects = Array.isArray(op.effects) ? op.effects : [];
+    if (opEffects.length) {
+      const compiledNote = isEnchantments ? ` -- compiles to real C#, see Enchantments/${pascalCase(e.name || 'Untitled')}Enchantment.cs` : '';
+      lines.push(`**On play:** ${opEffects.length} effect block(s) defined in the editor${compiledNote}`);
+      opEffects.forEach((eff, i) => {
+        const condN = (eff.conditions || []).length;
+        const actN = (eff.actions || []).length;
+        lines.push(`- Effect ${i + 1}: ${actN} action(s)${condN ? `, ${condN} condition(s)` : ''}`);
+      });
+      lines.push('');
+    } else if (e.effectText) {
+      lines.push(`**What it does:** ${e.effectText}`); lines.push('');
+    }
 
     const wh = e.whileInHand || {};
     if (has(wh.energyReductionPerTurn)) { lines.push(`**While in hand:** -${wh.energyReductionPerTurn} Energy per turn left in hand (accumulates until played)`); lines.push(''); }
@@ -5389,7 +5456,16 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     }
 
     const wp = e.whilePile || {};
-    if (wp.triggersText) { lines.push(`**While waiting in a pile (freeform):** ${wp.triggersText}`); lines.push(''); }
+    const wpEffects = Array.isArray(wp.effects) ? wp.effects : [];
+    if (wpEffects.length) {
+      const notCompiledNote = isEnchantments ? ' -- NOT compiled (no confirmed EnchantmentModel hook for this yet)' : '';
+      lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor${notCompiledNote}`);
+      wpEffects.forEach((eff, i) => {
+        const actN = (eff.actions || []).length;
+        lines.push(`- While in ${eff.pile || 'Hand'}, ${eff.trigger || '?'}: ${actN} action(s)`);
+      });
+      lines.push('');
+    }
 
     if (e.icon) lines.push('_Has a custom icon._');
     const cf = e.cardFrames || {};
@@ -7439,7 +7515,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // specifically, and afflictions' real BaseLib shape (if any) hasn't
   // been reflected yet.
   for (const enchantment of characterPackage.enchantments || []) {
-    const enchSrc = generateEnchantmentSource(enchantment, namespace);
+    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById });
     write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
   }
   if ((characterPackage.enchantments || []).length) {
