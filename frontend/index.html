@@ -13160,7 +13160,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
   return {
     id: uid(idPrefix),
     name: `New ${singular}`,
-    category: '',
     description: '',
     cardLineText: '',
     eligibility: {
@@ -13216,7 +13215,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
 // in place, without discarding whatever the old fields already held.
 function ensureRichEnchantmentDefaults(e){
   const d = newRichEnchantmentEntity('tmp','X');
-  if(e.category === undefined) e.category = d.category;
   if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
   if(!e.eligibility) e.eligibility = d.eligibility;
   else {
@@ -13271,7 +13269,7 @@ function makeRichEntitySection(opts){
       t.innerHTML = `
         ${iconUrl ? `<img src="${iconUrl}" style="width:26px;height:26px;object-fit:contain;display:block;margin-bottom:4px;">` : ''}
         <div class="t-name">${escapeHtml(e.name||'Untitled')}</div>
-        <div class="t-meta">${escapeHtml(e.category) || noun} — not yet compiled</div>`;
+        <div class="t-meta">${noun} — not yet compiled</div>`;
       t.onclick = ()=> openEditor(e.id);
       grid.appendChild(t);
     });
@@ -13387,13 +13385,12 @@ function makeRichEntitySection(opts){
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
-      <div class="modal-body">
+      <div class="modal-body" style="max-height:82vh">
         <div class="panel-desc" style="margin-top:0; color:var(--danger-bright)">
           Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Ready to wire up for real once STS2's own card-enchantment mechanism is confirmed.
         </div>
 
         <label style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-        <label>Category</label><input type="text" id="${idPrefix}-category" placeholder="Uncategorized" value="${escapeAttr(e.category)}">
         <label>Description</label>
         <div class="panel-desc" style="margin:-4px 0 6px">Leave blank and the game shows the modifiers below, written out.</div>
         <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
@@ -13521,7 +13518,7 @@ function makeRichEntitySection(opts){
         <button class="danger" id="delete-${idPrefix}">Delete</button>
         <button id="save-${idPrefix}">Done</button>
       </div>
-    `);
+    `, { wide: true });
 
     wireIcon(e);
     wireFrameGrid(e);
@@ -13529,7 +13526,6 @@ function makeRichEntitySection(opts){
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
-      e.category = document.getElementById(`${idPrefix}-category`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
 

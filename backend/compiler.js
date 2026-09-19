@@ -5162,7 +5162,6 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
   entries.forEach(e => {
     lines.push(`## ${e.name || 'Untitled'}`);
     lines.push('');
-    if (e.category) lines.push(`**Category:** ${e.category}`);
     if (e.description) { lines.push(''); lines.push(e.description); }
     if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
     lines.push('');
