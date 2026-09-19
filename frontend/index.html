@@ -7627,6 +7627,14 @@ const CARD_KEYWORDS = [
   { id:'Eternal', hint:'Cannot be removed or transformed from your deck by other effects.' },
 ];
 const CARD_KEYWORD_VALUES = CARD_KEYWORDS.map(k=>k.id);
+
+// Real BaseLib MegaCrit.Sts2.Core.Entities.Cards.CardTag enum, including
+// None [VERIFIED via reflect-baselib round 10]. The card editor's
+// single-select "Base card tag" bubble picker (openCardEditor, below)
+// uses this list directly; the Enchantment/Affliction "Valid targets"
+// checkboxes reuse it too (minus None — checking a filter for "no base
+// tag" isn't a meaningful target restriction there).
+const BASE_CARD_TAGS = ['None','Strike','Defend','Minion','OstyAttack','Shiv'];
 // [Round 139] The 7 built-in keywords above, plus this character's own
 // custom cardKeywords[] — used by the PlayedCardHasKeyword condition's
 // plain <select> dropdown (a flat list reads fine there; no growth
@@ -9965,7 +9973,6 @@ function openCardEditor(cardId){
   // than toggling membership in a Set. Always exactly one active bubble
   // (defaults to 'None', never "nothing selected").
   const basetagPickerEl = document.getElementById('basetag-picker');
-  const BASE_CARD_TAGS = ['None','Strike','Defend','Minion','OstyAttack','Shiv'];
   basetagPickerEl.innerHTML = BASE_CARD_TAGS.map(t=>
     `<button type="button" class="kw-chip${selectedBaseCardTag===t?' active':''}" data-tag="${t}">${t}</button>`
   ).join('');
@@ -13202,7 +13209,8 @@ function newRichEnchantmentEntity(idPrefix, singular){
     whilePile: { triggersText: '' },
     validTargets: {
       types: { attack: true, skill: true, power: true },
-      cardTags: [],
+      baseCardTags: [],
+      gameplayTags: [],
       excludeXCost: false,
     },
     icon: null,
@@ -13240,8 +13248,10 @@ function ensureRichEnchantmentDefaults(e){
   else {
     if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
     else for(const k in d.validTargets.types) if(e.validTargets.types[k]===undefined) e.validTargets.types[k]=d.validTargets.types[k];
-    if(!Array.isArray(e.validTargets.cardTags)) e.validTargets.cardTags = [];
+    if(!Array.isArray(e.validTargets.baseCardTags)) e.validTargets.baseCardTags = [];
+    if(!Array.isArray(e.validTargets.gameplayTags)) e.validTargets.gameplayTags = [];
     if(e.validTargets.excludeXCost===undefined) e.validTargets.excludeXCost = false;
+    delete e.validTargets.cardTags; // [round 170] replaced by the two checkbox lists above — stray field from the prior round's freeform version, dropped rather than migrated (never shipped/saved anywhere real).
   }
   if(e.icon === undefined) e.icon = null;
   if(!e.cardFrames) e.cardFrames = d.cardFrames;
@@ -13268,6 +13278,20 @@ function enchKeywordCheckboxes(name, selected){
   return CARD_KEYWORDS.map(k=>`
     <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
       <input type="checkbox" class="${name}" value="${escapeAttr(k.id)}" ${selected.includes(k.id)?'checked':''}> ${k.id}
+    </label>`).join('');
+}
+
+// Generic version of the above for a plain string list rather than
+// {id,hint} objects — used by the Enchantment/Affliction "Valid targets"
+// section for both the fixed BASE_CARD_TAGS list and the dynamic
+// allGameplayTags() list. `emptyText` renders in place of the checkboxes
+// when `options` is empty (same dim-hint convention as .panel-desc)
+// instead of silently showing nothing.
+function checkboxChipList(name, options, selected, emptyText){
+  if(!options.length) return `<div class="panel-desc" style="margin:2px 0 0">${escapeHtml(emptyText || 'None yet.')}</div>`;
+  return options.map(v=>`
+    <label style="margin:0 14px 4px 0; display:inline-flex; align-items:center; gap:5px; font-weight:normal;">
+      <input type="checkbox" class="${name}" value="${escapeAttr(v)}" ${selected.includes(v)?'checked':''}> ${escapeHtml(v)}
     </label>`).join('');
 }
 
@@ -13412,15 +13436,17 @@ function makeRichEntitySection(opts){
         ${fieldHead('Line added to the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.')}
         <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
 
-        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave everything checked and tags blank for no restriction.`, 'margin-top:20px')}
+        ${fieldHead('Valid targets', `Which cards this ${noun} can go on. Leave types all checked and every tag unchecked for no restriction.`, 'margin-top:20px')}
         <div class="row" style="gap:14px; flex-wrap:wrap">
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
           <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
         </div>
-        ${fieldHead('Tags', 'Comma-separated. Leave blank for no tag restriction.', 'margin-top:8px')}
-        <input type="text" id="${idPrefix}-vt-tags" value="${escapeAttr((vt.cardTags||[]).join(', '))}">
+        ${fieldHead('Base game tags', 'The real base-game card tag. Check any that should count as a valid target.', 'margin-top:8px')}
+        <div>${checkboxChipList(`${idPrefix}-vt-basetag`, BASE_CARD_TAGS.filter(t=>t!=='None'), vt.baseCardTags)}</div>
+        ${fieldHead('Custom tags', 'Your own gameplay tags (the "Tag" chips on a card). Check any that should count as a valid target.', 'margin-top:8px')}
+        <div>${checkboxChipList(`${idPrefix}-vt-customtag`, allGameplayTags(), vt.gameplayTags, '— no custom tags created yet — add one from a card’s editor —')}</div>
 
         ${fieldHead('What it changes', `Every number here is multiplied by how many times this ${noun} has been applied. Leave a field blank and the card isn't asked about it at all.`, 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:10px 16px">
@@ -13530,7 +13556,8 @@ function makeRichEntitySection(opts){
       vt.types.skill = document.getElementById(`${idPrefix}-vt-skill`).checked;
       vt.types.power = document.getElementById(`${idPrefix}-vt-power`).checked;
       vt.excludeXCost = document.getElementById(`${idPrefix}-vt-excludex`).checked;
-      vt.cardTags = document.getElementById(`${idPrefix}-vt-tags`).value.split(',').map(s=>s.trim()).filter(Boolean);
+      vt.baseCardTags = Array.from(document.querySelectorAll(`.${idPrefix}-vt-basetag:checked`)).map(cb=>cb.value);
+      vt.gameplayTags = Array.from(document.querySelectorAll(`.${idPrefix}-vt-customtag:checked`)).map(cb=>cb.value);
 
       const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
       mo.extraDamage = num(`${idPrefix}-mo-extradmg`);
