@@ -13174,7 +13174,6 @@ function openPetEditor(petId){
 // section, not two; here they're just positive/negative framing of the
 // same shape), so this is copy-paste risk with no real benefit.
 
-const ENCHANTMENT_LOCK_KEYWORD_OPTIONS = ['None', ...CARD_KEYWORD_VALUES];
 const ENCHANTMENT_SHUFFLE_ORDER_OPTIONS = [
   { id:'normal', label:'Normal shuffle order' },
   { id:'top', label:'Always shuffles to the top' },
@@ -13201,12 +13200,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
       extraBlock: null, blockBonusPct: null,
       extraPlays: null,
       canStack: false, showNumberOnCard: true,
-    },
-    lock: {
-      locksPlayWhileCounting: false,
-      countFallsPerTurn: null,
-      keywordWhileLocked: 'None',
-      tagsWhileLocked: [],
     },
     onApply: {
       addKeywords: [], removeKeywords: [],
@@ -13251,11 +13244,7 @@ function ensureRichEnchantmentDefaults(e){
   if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
   if(!e.modifiers) e.modifiers = d.modifiers;
   else for(const k in d.modifiers) if(e.modifiers[k]===undefined) e.modifiers[k]=d.modifiers[k];
-  if(!e.lock) e.lock = d.lock;
-  else {
-    for(const k in d.lock) if(e.lock[k]===undefined) e.lock[k]=d.lock[k];
-    if(!Array.isArray(e.lock.tagsWhileLocked)) e.lock.tagsWhileLocked = [];
-  }
+  delete e.lock; // [round 173] "Locking and counting down" removed — Tyler: "the freezing mechanic will be used later in afflictions." Dropped rather than migrated; nothing real was ever saved with it.
   if(!e.onApply) e.onApply = d.onApply;
   else {
     for(const k in d.onApply) if(e.onApply[k]===undefined) e.onApply[k]=d.onApply[k];
@@ -13535,7 +13524,7 @@ function makeRichEntitySection(opts){
   function openEditor(entId){
     const e = state[stateKey].find(x=>x.id===entId);
     ensureRichEnchantmentDefaults(e);
-    const mo = e.modifiers, lk = e.lock, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile, vt = e.validTargets;
+    const mo = e.modifiers, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile, vt = e.validTargets;
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
@@ -13571,15 +13560,6 @@ function makeRichEntitySection(opts){
             <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-mo-shownum" ${mo.showNumberOnCard?'checked':''}> Show the number on the card</label>
           </div>
         </div>
-
-        ${fieldHead('Locking and counting down', "Together these make a freeze: the card can't be played, the count falls each turn, and when it runs out the card is free.", 'margin-top:20px')}
-        <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-lk-locks" ${lk.locksPlayWhileCounting?'checked':''}> Card cannot be played while the count is above 0</label>
-        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px; align-items:flex-end">
-          <div><label>Count falls per turn</label><input type="number" id="${idPrefix}-lk-falls" style="width:100px" value="${lk.countFallsPerTurn ?? ''}"></div>
-          <div><label>Keyword while the count lasts</label><select id="${idPrefix}-lk-keyword">${optList(ENCHANTMENT_LOCK_KEYWORD_OPTIONS, lk.keywordWhileLocked)}</select></div>
-        </div>
-        ${fieldHead('Tags while the count lasts', 'Comma-separated — other cards can then scale on "cards with tag" while this is counting down.', 'margin-top:8px')}
-        <input type="text" id="${idPrefix}-lk-tags" value="${escapeAttr((lk.tagsWhileLocked||[]).join(', '))}">
 
         ${fieldHead(`When the ${noun} is applied`, `These change the card itself and remain after the ${noun} is removed.`, 'margin-top:20px')}
         <div class="row" style="gap:20px; flex-wrap:wrap">
@@ -13682,11 +13662,6 @@ function makeRichEntitySection(opts){
       mo.extraPlays = num(`${idPrefix}-mo-extraplays`);
       mo.canStack = document.getElementById(`${idPrefix}-mo-stack`).checked;
       mo.showNumberOnCard = document.getElementById(`${idPrefix}-mo-shownum`).checked;
-
-      lk.locksPlayWhileCounting = document.getElementById(`${idPrefix}-lk-locks`).checked;
-      lk.countFallsPerTurn = num(`${idPrefix}-lk-falls`);
-      lk.keywordWhileLocked = document.getElementById(`${idPrefix}-lk-keyword`).value;
-      lk.tagsWhileLocked = document.getElementById(`${idPrefix}-lk-tags`).value.split(',').map(s=>s.trim()).filter(Boolean);
 
       oa.addKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-add:checked`)).map(cb=>cb.value);
       oa.removeKeywords = Array.from(document.querySelectorAll(`.${idPrefix}-oa-remove:checked`)).map(cb=>cb.value);

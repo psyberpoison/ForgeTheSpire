@@ -5193,17 +5193,6 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
     if (moBits.length) { lines.push(`**Modifiers (× stacks applied):** ${moBits.join(', ')}`); lines.push(''); }
 
-    const lk = e.lock || {};
-    if (lk.locksPlayWhileCounting || has(lk.countFallsPerTurn)) {
-      const lkBits = [];
-      if (lk.locksPlayWhileCounting) lkBits.push('card is unplayable while counting down');
-      if (has(lk.countFallsPerTurn)) lkBits.push(`count falls ${lk.countFallsPerTurn}/turn`);
-      if (lk.keywordWhileLocked && lk.keywordWhileLocked !== 'None') lkBits.push(`carries ${lk.keywordWhileLocked} while locked`);
-      if ((lk.tagsWhileLocked || []).length) lkBits.push(`tags while locked: ${lk.tagsWhileLocked.join(', ')}`);
-      lines.push(`**Locking/countdown:** ${lkBits.join('; ')}`);
-      lines.push('');
-    }
-
     const oa = e.onApply || {};
     const oaBits = [];
     if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
