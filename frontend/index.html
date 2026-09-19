@@ -879,6 +879,34 @@
      (renderEnchTagPicker, round 171) reuses .a-status-picker's sizing
      wholesale — see that function's own comment for why. */
 
+  /* "Add/Remove keywords" compact picker (renderEnchKeywordPicker, round
+     174) — Tyler: "make the search boxes smaller, and place them to the
+     right of 'add keywords' and 'remove keywords'." The outer template
+     puts the <label> and this whole picker side by side in one flex row
+     (label first, picker second, not stretched — see the "flex:1 1 auto"
+     mistake noted below), so the picker itself stays a plain top-to-
+     bottom stack (filter box, then chips, then hint) same as
+     renderEnchTagPicker's .a-status-picker, just narrower and sitting to
+     the right of the label instead of below it. The list floats
+     (position:absolute) rather than pushing the chip row down, same
+     trick the compact .c-status-picker single-select variant above uses.
+     First attempt gave the outer slot div "flex:1 1 auto", which let it
+     grow to fill the whole row (the chip row's flex-basis:100% needed a
+     resolved container width from somewhere and pulled the slot wide in
+     the process) and pushed the filter box onto its own line below the
+     label instead of beside it — switched off flex-grow on the slot AND
+     off the flex-wrap-row approach for the picker's own internals to
+     avoid that percentage-basis resolution entirely. */
+  .ench-kw-picker{display:flex; flex-direction:column; gap:6px;}
+  .ench-kw-picker .picker-wrap{width:170px; flex:0 0 auto;}
+  .ench-kw-picker .picker-filter{font-size:12px; padding:4px 7px;}
+  .ench-kw-picker .picker-list{
+    position:absolute; z-index:30; top:100%; left:0; margin-top:3px;
+    width:220px; max-height:240px; padding:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .ench-kw-picker .picker-option{padding:3px 5px; font-size:12.5px; gap:6px;}
+
   /* Enchantment/Affliction editor — Tyler: "lets change the contents of
      each section to be indented slightly to show more of a contrast
      between the title/description and the contents." Scoped to this one
@@ -13312,13 +13340,13 @@ function renderEnchKeywordPicker(selected){
   const findEntry = id => selected.includes(id);
 
   const wrap = document.createElement('div');
-  wrap.className = 'a-status-picker ench-tag-picker';
+  wrap.className = 'ench-kw-picker';
   wrap.innerHTML = `
-    <div class="chip-row"></div>
     <div class="picker-wrap">
       <input type="text" class="picker-filter" autocomplete="off" placeholder="Click to browse ${options.length} keywords…">
       <div class="picker-list"></div>
     </div>
+    <div class="chip-row"></div>
     <div class="hint-small">Click to browse, or type to search. Click any keyword to add it.</div>
   `;
   const chipRow = wrap.querySelector('.chip-row');
@@ -13644,13 +13672,13 @@ function makeRichEntitySection(opts){
 
         ${fieldHead(`When the ${noun} is applied`, `These change the card itself and remain after the ${noun} is removed.`, 'margin-top:20px')}
         <div class="row" style="gap:24px; flex-wrap:wrap; align-items:flex-start">
-          <div style="flex:1 1 280px; min-width:220px;">
-            <label style="margin:0">Add keywords</label>
-            <div id="${idPrefix}-oa-add-slot" style="margin-top:4px"></div>
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            <label style="margin:6px 0 0; white-space:nowrap;">Add keywords</label>
+            <div id="${idPrefix}-oa-add-slot"></div>
           </div>
-          <div style="flex:1 1 280px; min-width:220px;">
-            <label style="margin:0">Remove keywords</label>
-            <div id="${idPrefix}-oa-remove-slot" style="margin-top:4px"></div>
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            <label style="margin:6px 0 0; white-space:nowrap;">Remove keywords</label>
+            <div id="${idPrefix}-oa-remove-slot"></div>
           </div>
         </div>
         <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
