@@ -142,7 +142,13 @@
   section.panel .panel-head h2{font-size:16px; margin:0; display:flex; align-items:center; gap:10px;}
   section.panel .panel-head h2 .num{color:var(--accent-bright); font-family:'JetBrains Mono',monospace; font-size:13px;}
   section.panel .panel-body{padding:22px 24px;}
-  section.panel .panel-desc{color:var(--parchment-dim); font-size:13.5px; margin:-6px 0 16px;}
+  /* Was scoped to "section.panel .panel-desc" only, so any .panel-desc
+     used outside a <section class="panel"> (modals — the mechanic editor's
+     "What this does"/"Modifiers" hints, the new enchantment editor's
+     per-field hints) fell through to plain paragraph text instead of the
+     dim hint color, making it read BOLDER than the field label above it.
+     Unscoped so every .panel-desc gets the same muted treatment. */
+  .panel-desc{color:var(--parchment-dim); font-size:13.5px; margin:-6px 0 16px;}
 
   .grid-cards{
     display:grid;
