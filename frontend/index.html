@@ -13232,8 +13232,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
     onApply: {
       addKeywords: [], removeKeywords: [],
       zeroEnergyCostOnApply: false,
-      flatBlockAdjustment: null,
-      stacksGainedPerPlay: null,
     },
     onPlay: {
       onceOnlyPerCombat: false,
@@ -13278,6 +13276,8 @@ function ensureRichEnchantmentDefaults(e){
     for(const k in d.onApply) if(e.onApply[k]===undefined) e.onApply[k]=d.onApply[k];
     if(!Array.isArray(e.onApply.addKeywords)) e.onApply.addKeywords = [];
     if(!Array.isArray(e.onApply.removeKeywords)) e.onApply.removeKeywords = [];
+    delete e.onApply.flatBlockAdjustment; // [round 175] "Flat Block adjustment"/"Stacks gained after each play" removed — Tyler: "remove this section."
+    delete e.onApply.stacksGainedPerPlay;
   }
   if(!e.onPlay) e.onPlay = d.onPlay;
   else for(const k in d.onPlay) if(e.onPlay[k]===undefined) e.onPlay[k]=d.onPlay[k];
@@ -13681,10 +13681,6 @@ function makeRichEntitySection(opts){
           </div>
         </div>
         <label style="margin:10px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-oa-zeroenergy" ${oa.zeroEnergyCostOnApply?'checked':''}> Permanently set the card's Energy cost to zero on application</label>
-        <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:10px 16px">
-          <div><label>Flat Block adjustment</label><input type="number" id="${idPrefix}-oa-flatblock" style="width:100px" value="${oa.flatBlockAdjustment ?? ''}"></div>
-          <div><label>Stacks gained after each play</label><input type="number" id="${idPrefix}-oa-stackgain" style="width:100px" value="${oa.stacksGainedPerPlay ?? ''}"></div>
-        </div>
 
         ${fieldHead('When the card is played', 'Extra effects, on top of whatever the card already does.', 'margin-top:20px')}
         <div class="row" style="flex-wrap:wrap; gap:4px 16px">
@@ -13781,8 +13777,6 @@ function makeRichEntitySection(opts){
 
       // oa.addKeywords/removeKeywords are mutated live by renderEnchKeywordPicker above — nothing to read back here.
       oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
-      oa.flatBlockAdjustment = num(`${idPrefix}-oa-flatblock`);
-      oa.stacksGainedPerPlay = num(`${idPrefix}-oa-stackgain`);
 
       op.onceOnlyPerCombat = document.getElementById(`${idPrefix}-op-once`).checked;
       op.multiplyFlatDamageByStacks = document.getElementById(`${idPrefix}-op-multiply`).checked;

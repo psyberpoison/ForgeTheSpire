@@ -5198,8 +5198,6 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
     if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')}`);
     if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
-    if (has(oa.flatBlockAdjustment)) oaBits.push(`${oa.flatBlockAdjustment} flat Block adjustment`);
-    if (has(oa.stacksGainedPerPlay)) oaBits.push(`+${oa.stacksGainedPerPlay} stack(s) per play`);
     if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
 
     const op = e.onPlay || {};
