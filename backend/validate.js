@@ -913,9 +913,14 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, fieldName 
     // too rather than silently passing.
     if (act.type === 'ReturnToHand') {
       const effectivePile = xContext.pile || 'Hand';
+      // [Round 195] OnAnyCardPlayed is eligible too, same reasoning as the
+      // 15 PILE_TRIGGER_HOOK_IDS above — it's now a real, per-entry
+      // pile-gated whileInHand trigger (compiler.js:whileInHandMergeLines),
+      // and ReturnToHand's own codegen only needs ctx.thisIsCard (true
+      // there), not a specific hook shape.
       const eligible = xContext.entityKind === 'card'
         && xContext.trigger !== undefined
-        && PILE_TRIGGER_HOOK_IDS.includes(xContext.trigger)
+        && (PILE_TRIGGER_HOOK_IDS.includes(xContext.trigger) || xContext.trigger === 'OnAnyCardPlayed')
         && effectivePile !== 'Hand';
       if (!eligible) {
         errors.push(`${p}: action "ReturnToHand" ("Return This Card To Hand") is only valid inside a card's own "While in a pile" effect whose pile isn't "Hand" — got entityKind=${xContext.entityKind || 'unknown'}, trigger=${xContext.trigger || 'unknown'}, pile=${effectivePile}. A card can't return to a pile it's already in.`);
@@ -1383,11 +1388,16 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
   // original, still-real "sits in hand at turn end" analog) plus, as of
   // round 90, the 15 PILE_TRIGGER_HOOK_IDS ("while in a pile" — see
   // compiler.js:PILE_TRIGGER_OWNER_GUARD's own comment for the full
-  // decompiled evidence). Reuses validateEffects wholesale rather than a
-  // second hand-rolled block validator — same rules, just a wider allowed-
-  // trigger list than before.
+  // decompiled evidence), plus, as of round 195 (Tyler: "i noticed there
+  // isn't a 'whenever you play a card' trigger in here"), 'OnAnyCardPlayed'
+  // — real, per-entry this.Pile?.Type == X gated codegen via
+  // compiler.js:whileInHandMergeLines (same round also fixed a real bug
+  // where whileInHand's pre-existing OnTurnEndInHand entries silently
+  // compiled to nothing — see that function's own comment). Reuses
+  // validateEffects wholesale rather than a second hand-rolled block
+  // validator — same rules, just a wider allowed-trigger list than before.
   if (opts.whileInHand !== undefined) {
-    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
     // [Round 90] `pile` — which real pile (Hand/Discard/Draw/Exhaust) this
     // entry's Pile.Type check compiles to (see compiler.js:pileTypeExpr).
     // Optional — undefined defaults to 'Hand' both here and in the actual

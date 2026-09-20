@@ -4531,6 +4531,51 @@ function pileTypeExpr(pile) {
   return `MegaCrit.Sts2.Core.Entities.Cards.PileType.${p}`;
 }
 
+// [Round 195 -- Tyler: "i noticed there isn't a 'whenever you play a
+// card' trigger in here" (WHILE_IN_HAND_TRIGGERS' bubble picker, both the
+// card Advanced Options "While in a pile" section and the enchantment
+// editor's analog).] While tracing how to add it, found that whileInHand
+// entries for a trigger that's ALSO a real CARD_TRIGGER_HOOKS key (until
+// now, only OnTurnEndInHand) were being silently dropped from codegen --
+// the override method DID get generated (cardEffectsPlusWhileInHand made
+// the "does this method need to exist at all" check in extraTriggerMethods
+// see them) but cascadingTriggerBody's actual body-generation only ever
+// reads card.effects, never card.advancedOptions.whileInHand. A card with
+// ONLY a whileInHand OnTurnEndInHand entry (no base card.effects entry on
+// that trigger) compiled to a real, empty, "// no effects defined"
+// override -- a genuine pre-existing bug, not a design choice (confirmed
+// via a standalone generateProject() test before this fix: a GainBlock
+// action set through the "While in a pile" UI never appeared anywhere in
+// the generated C#). This helper is the fix, called from both
+// extraTriggerMethods branches below: it emits the whileInHand-sourced
+// entries for a trigger as an extra body segment, appended as a SIBLING
+// to cascadingTriggerBody's output (same "appended alongside, not merged
+// inside" shape costReductionTodoLines' lines already use in the same two
+// callers) rather than folded into it, so upgrade-tier branching (which
+// whileInHand entries have no concept of -- they're not per-tier) stays
+// untouched.
+//   - OnTurnEndInHand: pile is decorative/ignored here (see round 156 --
+//     that hook is inherently hand-only already), so its entries merge in
+//     completely ungated, matching the design intent round 90's own
+//     comment already claimed ("the pre-existing OnTurnEndInHand path...
+//     never needed a pile check") -- it just wasn't actually wired up.
+//   - Every other hook reachable here (OnAnyCardPlayed, as of this round)
+//     fires broadly (for ANY card played, regardless of where THIS card
+//     is currently sitting), so each entry needs its own real
+//     `this.Pile?.Type == X` gate -- same shape pileTriggerMethods already
+//     uses for the other 15 pile-aware triggers, reusing pileTypeExpr.
+function whileInHandMergeLines(entries, trigger, ctx) {
+  if (!entries.length) return '';
+  if (trigger === 'OnTurnEndInHand') {
+    return effectsToCSharp(entries, ctx);
+  }
+  return entries.map(e => {
+    const inner = effectBlockToCSharp(e, ctx);
+    const indented = inner.split('\n').map(l => `    ${l}`).join('\n');
+    return `        if (this.Pile?.Type == ${pileTypeExpr(e.pile)})\n        {\n${indented}\n        }`;
+  }).join('\n');
+}
+
 const CARD_TRIGGER_HOOKS = {
   // [Round 57 — VERIFIED via decompiling Tyler's DiscardStatusPower
   // (TheBurdenedNewCharacter.dll v5) + direct sts2.dll read of
@@ -4842,14 +4887,18 @@ function generateCardSource(card, namespace, poolClassName, cardArtOverride, ref
   // error instead of quietly losing data again.
   const allowedCardTriggers = new Set(['OnPlay', ...Object.keys(CARD_TRIGGER_HOOKS)]);
   // Advanced Options' whileInHand entries are cardEffectBlock-shaped
-  // (same trigger/conditions/actions/elseActions fields, always
-  // trigger:'OnTurnEndInHand' — see schema's card.advancedOptions.
-  // whileInHand description) — folded into the same trigger-grouping
-  // logic card.effects already uses below, rather than a second,
-  // parallel codegen path, since they compile through the exact same
-  // OnTurnEndInHand override either way — real, Self/AllEnemies-bound
-  // codegen as of round 57 (CARD_TRIGGER_HOOKS.OnTurnEndInHand.playerExpr,
-  // via CardModel.Owner), not the Todo fallback it used to be.
+  // (same trigger/conditions/actions/elseActions fields) — as of round
+  // 195, trigger can be 'OnTurnEndInHand' OR 'OnAnyCardPlayed' (plus the
+  // 15 PILE_TRIGGER_HOOK_IDS handled by pileTriggerMethods below), Tyler
+  // having pointed out "whenever you play a card" was missing from the
+  // picker. cardEffectsPlusWhileInHand (just below) only decides whether
+  // each trigger's override method needs to exist at all — the actual
+  // body content for OnTurnEndInHand/OnAnyCardPlayed comes from
+  // whileInHandMergeLines (see its own comment for the real bug this
+  // round found and fixed: whileInHand's OnTurnEndInHand entries used to
+  // compile to a real, silently EMPTY override, never actually reading
+  // card.advancedOptions.whileInHand at all despite this comment's old
+  // claim that they did).
   const whileInHandEffects = (card.advancedOptions && Array.isArray(card.advancedOptions.whileInHand)) ? card.advancedOptions.whileInHand : [];
   const cardEffectsPlusWhileInHand = (card.effects || []).concat(whileInHandEffects);
   const badTrigger = cardEffectsPlusWhileInHand.find(e => !allowedCardTriggers.has(e.trigger) && !PILE_TRIGGER_HOOK_IDS.includes(e.trigger));
@@ -4912,9 +4961,24 @@ function generateCardSource(card, namespace, poolClassName, cardArtOverride, ref
       // fgTarget bind for real here too. See CARD_TRIGGER_HOOKS' comment
       // for why this one's different from OnDiscard/OnTurnEndInHand.
       if (hook.fullCardPlayBinding) {
-        const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps), costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
+        // [Round 195] Merge any whileInHand entries on this same trigger
+        // (only OnAnyCardPlayed reaches this branch today) into this SAME
+        // method — see whileInHandMergeLines' own comment. Each entry
+        // gets a real per-entry this.Pile?.Type == X gate since this
+        // trigger fires for ANY card played, not just ones sitting in a
+        // particular pile. ctx here matches cascadingTriggerBody's own
+        // internal ctx for this trigger exactly (cardPlayBound/thisIsCard/
+        // fgPlayerBound/targetMayBeNull), since these lines execute in the
+        // same method body, after the same fgPlayer/fgTarget/fgPet
+        // bindings below.
+        const whileInHandLines = whileInHandMergeLines(
+          whileInHandEffects.filter(e => e.trigger === trigger),
+          trigger,
+          { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById }
+        );
+        const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         return `
-    // trigger: ${trigger} -> ${hook.method}(${hook.params}) [VERIFIED real signature via reflect-baselib round 2/9] — same CardPlay shape as OnPlay, so real player/target binding works here too (not a Todo fallback). Fires for ANY card played by anyone, including this card's own play if it has an OnPlay effect too.
+    // trigger: ${trigger} -> ${hook.method}(${hook.params}) [VERIFIED real signature via reflect-baselib round 2/9] — same CardPlay shape as OnPlay, so real player/target binding works here too (not a Todo fallback). Fires for ANY card played by anyone, including this card's own play if it has an OnPlay effect too. [Round 195] Also merges any Advanced Options "While in a pile" (whileInHand) entries on this same trigger, each gated by its own real this.Pile?.Type == X check — see whileInHandMergeLines' own comment.
     ${hook.access} override async Task ${hook.method}(${hook.params})
     {
 ${filterLine}        var fgPlayer = cardPlay.Player.Creature; // [VERIFIED via reflect-baselib round 5]
@@ -4940,10 +5004,28 @@ ${triggerBody}
       // (TARGETLESS_BOUND_HOOK_TRIGGERS) before this codegen is ever
       // reached, so no fgTarget reference can survive into this body.
       if (hook.playerExpr) {
-        const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, { cardPlayBound: false, targetMayBeNull: false }), costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
+        // [Round 195] Merge any whileInHand entries on this same trigger
+        // into this SAME method — see whileInHandMergeLines' own comment
+        // (this is the branch OnTurnEndInHand reaches, and the exact spot
+        // the silent-drop bug lived: cascadingTriggerBody below never read
+        // whileInHandEffects, so these entries' actions never compiled).
+        // OnTurnEndInHand merges in ungated (pile is decorative there —
+        // round 156); OnDiscard/OnRetained don't currently accept
+        // whileInHand entries at all (not in WHILE_IN_HAND_TRIGGERS), so
+        // this is a no-op for them today, but stays correct if that ever
+        // changes. ctx matches cascadingTriggerBody's own ctxOverrides for
+        // this branch (cardPlayBound:false, targetMayBeNull:false), since
+        // these lines execute in the same method body, after fgPlayer/
+        // fgPet are bound below.
+        const whileInHandLines = whileInHandMergeLines(
+          whileInHandEffects.filter(e => e.trigger === trigger),
+          trigger,
+          { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById }
+        );
+        const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, { cardPlayBound: false, targetMayBeNull: false }), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         const petLine = hook.petExpr ? `        var fgPet = ${hook.petExpr}; // [VERIFIED via decompiling TheBurdenedNewCharacter.dll's DiscardStatusPower v5 + direct sts2.dll read of CardModel.Owner/Player.Osty]\n` : '';
         return `
-    // trigger: ${trigger} -> ${hook.method}(${hook.params}) [VERIFIED real signature via reflect-baselib round 9${trigger === 'OnRetained' ? "; round 95 for OnRetained specifically, via decompiling TheBurdenedNewCharacter.dll's PatientStrike.cs/TrainedAssault.cs" : ''}; real player binding added round 57 — see CARD_TRIGGER_HOOKS' own comment and PET_SUPPORTED_TRIGGERS' comment for the full CardModel.Owner evidence trail]. No real "target" Creature exists for ${trigger} (nothing is being targeted when a card is discarded, stays in hand at turn end, or is retained) — SingleEnemy actions and the CardTarget subject are rejected up front (see backend/validate.js).
+    // trigger: ${trigger} -> ${hook.method}(${hook.params}) [VERIFIED real signature via reflect-baselib round 9${trigger === 'OnRetained' ? "; round 95 for OnRetained specifically, via decompiling TheBurdenedNewCharacter.dll's PatientStrike.cs/TrainedAssault.cs" : ''}; real player binding added round 57 — see CARD_TRIGGER_HOOKS' own comment and PET_SUPPORTED_TRIGGERS' comment for the full CardModel.Owner evidence trail]. No real "target" Creature exists for ${trigger} (nothing is being targeted when a card is discarded, stays in hand at turn end, or is retained) — SingleEnemy actions and the CardTarget subject are rejected up front (see backend/validate.js). [Round 195] Also merges any Advanced Options "While in a pile" (whileInHand) entries on this same trigger — see whileInHandMergeLines' own comment for the bug this fixed.
     ${hook.access} override async Task ${hook.method}(${hook.params})
     {
 ${filterLine}        var fgPlayer = ${hook.playerExpr}; // [VERIFIED via decompiling sts2.dll's CardModel.Owner (public, Player-typed) + TheBurdenedNewCharacter.dll's DiscardStatusPower v5, a real compiled mechanic reading the same property]

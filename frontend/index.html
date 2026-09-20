@@ -9175,9 +9175,21 @@ function describePileTriggerEntry(entry){
   let core = condsText ? `if ${condsText}, ${actionsText}` : actionsText;
   core = core.charAt(0).toUpperCase() + core.slice(1);
   if(!/[.!?]$/.test(core)) core += '.';
-  const trig = triggerLabel(entry.trigger) || entry.trigger || '';
   const pilePhrase = PILE_TRIGGER_DESC_PHRASES[entry.pile] || 'your hand';
-  const pileClause = entry.trigger === 'OnTurnEndInHand' ? '' : ` while sitting in ${pilePhrase}`;
+  // [Round 195] OnAnyCardPlayed gets its own bespoke lead-in — its
+  // CARD_TRIGGER_LABELS text already ends with a period ("...(even this
+  // one)."), so appending the generic " while sitting in X" clause after
+  // it read awkwardly. OnTurnEndInHand is still special-cased below for
+  // the same underlying reason (its own label already says "with this
+  // card in hand", so the clause would be redundant there).
+  let trig, pileClause;
+  if(entry.trigger === 'OnAnyCardPlayed'){
+    trig = 'Whenever any card is played';
+    pileClause = ` while this card is sitting in ${pilePhrase}`;
+  } else {
+    trig = triggerLabel(entry.trigger) || entry.trigger || '';
+    pileClause = entry.trigger === 'OnTurnEndInHand' ? '' : ` while sitting in ${pilePhrase}`;
+  }
   return `${trig}${pileClause}: ${core}`;
 }
 // The exported function — effects first (what the card actually does),
@@ -10657,7 +10669,7 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
 // reference check inside renderEffectsList correctly stays false here —
 // "Use X" never applies outside a card's own OnPlay block.
 const WHILE_IN_HAND_TRIGGERS = [
-  'OnTurnEndInHand',
+  'OnTurnEndInHand', 'OnAnyCardPlayed',
   'AfterPlayerTurnStart', 'AfterEnergyReset', 'BeforeHandDraw', 'AfterHandEmptied',
   'AfterOrbChanneled', 'AfterOrbEvoked', 'AfterPotionUsed', 'AfterPotionDiscarded',
   'AfterPotionProcured', 'AfterStarsSpent', 'AfterStarsGained', 'AfterForge',
