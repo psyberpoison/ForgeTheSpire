@@ -13859,31 +13859,37 @@ function makeRichEntitySection(opts){
         </div>
 
         <label class="ench-flush" style="margin-top:20px">Position after shuffling</label>
-        <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
-        <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
+        <div class="ench-field-box">
+          <label style="margin:0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
+          <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
+        </div>
 
         ${fieldHead('While the card waits in a pile', '', 'margin-top:20px')}
-        <div id="${idPrefix}-whilepile-list"></div>
-        <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
+        <div class="ench-field-box">
+          <div id="${idPrefix}-whilepile-list"></div>
+          <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
+        </div>
 
         ${fieldHead('Card frame', `${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.`, 'margin-top:20px')}
-        <div class="card-frame-grid" id="${idPrefix}-cf-grid">
-          ${ENCHANTMENT_FRAME_SLOTS.map(s=>`
-            <div class="card-frame-slot">
-              <div class="card-frame-frame enchf-frame" data-slot="${s.id}" id="${idPrefix}-cf-frame-${s.id}">
-                <img id="${idPrefix}-cf-img-${s.id}" style="display:none">
-                <div class="art-placeholder" id="${idPrefix}-cf-ph-${s.id}" style="font-size:8px; padding:4px;">${s.label}</div>
-                <div class="art-click-hint" style="font-size:7px; padding:2px;">Click to change</div>
-                <div class="art-icon-overlay art-icon-overlay--tile">
-                  <button type="button" class="ghost icon-btn icon-btn-danger ${idPrefix}-cf-clear" data-slot="${s.id}" title="Remove" style="display:none;">×</button>
+        <div class="ench-field-box">
+          <div class="card-frame-grid" id="${idPrefix}-cf-grid">
+            ${ENCHANTMENT_FRAME_SLOTS.map(s=>`
+              <div class="card-frame-slot">
+                <div class="card-frame-frame enchf-frame" data-slot="${s.id}" id="${idPrefix}-cf-frame-${s.id}">
+                  <img id="${idPrefix}-cf-img-${s.id}" style="display:none">
+                  <div class="art-placeholder" id="${idPrefix}-cf-ph-${s.id}" style="font-size:8px; padding:4px;">${s.label}</div>
+                  <div class="art-click-hint" style="font-size:7px; padding:2px;">Click to change</div>
+                  <div class="art-icon-overlay art-icon-overlay--tile">
+                    <button type="button" class="ghost icon-btn icon-btn-danger ${idPrefix}-cf-clear" data-slot="${s.id}" title="Remove" style="display:none;">×</button>
+                  </div>
                 </div>
+                <label>${s.label}</label>
+                <input type="file" class="${idPrefix}-cf-upload" data-slot="${s.id}" accept="image/png,image/jpeg,image/webp" style="display:none">
+                ${s.fallback ? `<div class="card-frame-fallback-note" id="${idPrefix}-cf-fallback-${s.id}" style="display:none">Uses "${ENCHANTMENT_FRAME_SLOTS.find(x=>x.id===s.fallback).label}"</div>` : ''}
+                <div class="hint-small ${idPrefix}-cf-error" id="${idPrefix}-cf-error-${s.id}" style="display:none; color:var(--danger-bright); font-size:8px;"></div>
               </div>
-              <label>${s.label}</label>
-              <input type="file" class="${idPrefix}-cf-upload" data-slot="${s.id}" accept="image/png,image/jpeg,image/webp" style="display:none">
-              ${s.fallback ? `<div class="card-frame-fallback-note" id="${idPrefix}-cf-fallback-${s.id}" style="display:none">Uses "${ENCHANTMENT_FRAME_SLOTS.find(x=>x.id===s.fallback).label}"</div>` : ''}
-              <div class="hint-small ${idPrefix}-cf-error" id="${idPrefix}-cf-error-${s.id}" style="display:none; color:var(--danger-bright); font-size:8px;"></div>
-            </div>
-          `).join('')}
+            `).join('')}
+          </div>
         </div>
       </div>
       <div class="modal-foot">
