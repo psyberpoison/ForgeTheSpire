@@ -5400,6 +5400,184 @@ ${checks.join('\n')}
   });
 }
 
+// [Round 196] AfflictionModel -- a REAL, SEPARATE base-game class from
+// EnchantmentModel (confirmed via direct ECMA-335 metadata read of the
+// real installed sts2.dll, same tools/sts2tools/ecma_dump_ext.py
+// toolchain round 190 used for EnchantmentModel). Tyler's own framing:
+// "afflictions are temporary enchantments" -- this is why the two now
+// have genuinely different schemas/editors (no damage/block modifiers,
+// no icon, no card frames on Afflictions; new cost-change/keyword/
+// status-gating fields Enchantments don't have) instead of sharing one
+// shape the way rounds 95-195 had them.
+//
+// Confirmed real virtual members used below (35 total methods found on
+// AfflictionModel; see claude/round196-afflictions-real-shape.md for the
+// full dump):
+//   CanAfflictCardType(CardType cardType)
+//   bool get_CanAfflictUnplayableCards()
+//   bool get_IsStackable()
+//   bool CanAfflict(CardModel card)
+//   void AfterApplied()      -- fires once when this affliction attaches
+//   void BeforeRemoved()     -- fires once when it's removed/cleared
+//   Task OnPlay(PlayerChoiceContext, Creature target) -- NOTE: a raw
+//     Creature, not a CardPlay -- see the OnPlay body comment below.
+// this.Card (get_Card/set_Card) is real but NOT virtual -- same
+// CS0506 reasoning as EnchantmentModel's Card/Title/etc., safe to READ,
+// never override.
+function generateAfflictionSource(affliction, namespace, refMaps) {
+  if (!affliction.name || !pascalCase(affliction.name)) {
+    throw new Error('Affliction has no usable name -- every affliction needs a name to generate a C# class from.');
+  }
+  const tpl = loadTemplate('Affliction.cs.template');
+  const has = (n) => n !== null && n !== undefined && n !== '';
+  const vt = affliction.validTargets || {};
+  const cc = affliction.costChange || {};
+  const rs = affliction.requiresStatus || {};
+
+  const overrides = [];
+
+  if (affliction.canStack) {
+    overrides.push(`    // [VERIFIED] real virtual bool get_IsStackable() override
+    public override bool IsStackable => true;`);
+  }
+  if (affliction.canAffectUnplayableCards) {
+    overrides.push(`    // [VERIFIED] real virtual bool get_CanAfflictUnplayableCards() override
+    public override bool CanAfflictUnplayableCards => true;`);
+  }
+
+  // [Round 196] 5 real CardType values Forge itself already offers
+  // elsewhere (CARD_TYPE_ORDER, frontend) -- Attack/Skill/Power/Status/
+  // Curse. The reference tool's own picker also showed a 6th "Quest"
+  // checkbox; left out here since no card anywhere in Forge can actually
+  // BE type Quest (typeOptionsForCard never offers it), so a working
+  // checkbox for an unreachable type would be misleading rather than
+  // useful -- can be added for real the moment Forge supports Quest cards
+  // elsewhere.
+  const typesSelected = [];
+  if (vt.types) {
+    if (vt.types.attack) typesSelected.push('Attack');
+    if (vt.types.skill) typesSelected.push('Skill');
+    if (vt.types.power) typesSelected.push('Power');
+    if (vt.types.status) typesSelected.push('Status');
+    if (vt.types.curse) typesSelected.push('Curse');
+  }
+  if (typesSelected.length && typesSelected.length < 5) {
+    const expr = typesSelected.map(t => `cardType == CardType.${t}`).join(' || ');
+    overrides.push(`    // [VERIFIED] real virtual bool CanAfflictCardType(CardType) override
+    public override bool CanAfflictCardType(CardType cardType) => ${expr};`);
+  }
+
+  const vtTags = Array.isArray(vt.tags) ? vt.tags : [];
+  const vtBaseTags = vtTags.filter(t => t && t.kind === 'base').map(t => t.ref);
+  const vtCustomTags = vtTags.filter(t => t && t.kind === 'custom').map(t => t.ref);
+  if (vtBaseTags.length || vtCustomTags.length || vt.excludeXCost) {
+    const checks = [];
+    vtBaseTags.forEach(k => checks.push(`        if (!card.Keywords.Contains(${keywordExpr(k)})) return false; // [VERIFIED] CardModel.Keywords is a real IReadOnlySet<CardKeyword> -- see conditionToCSharp's PlayedCardHasKeyword case`));
+    vtCustomTags.forEach(t => checks.push(`        if ((card as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(t)}) != true) return false; // [VERIFIED] same Forge-owned IForgeTaggedCard mechanism as conditionToCSharp's PlayedCardHasTag case`));
+    if (vt.excludeXCost) checks.push(`        // "Exclude X-cost cards" is NOT enforced here -- [UNVERIFIED] same gap CanEnchant already has, see generateEnchantmentSource's own comment.`);
+    overrides.push(`    // [VERIFIED signature, BEST EFFORT body] real virtual bool CanAfflict(CardModel) override
+    public override bool CanAfflict(CardModel card)
+    {
+        if (!base.CanAfflict(card)) return false;
+${checks.join('\n')}
+        return true;
+    }`);
+  }
+
+  // AfterApplied()/BeforeRemoved() -- [VERIFIED signatures: public virtual
+  // void AfterApplied() / BeforeRemoved()], the affliction-side analog of
+  // EnchantmentModel's OnEnchant(). Two things can land here:
+  //   1. costChange (BEST EFFORT) -- no continuous "modify this card's
+  //      cost while attached" override exists on AfflictionModel (unlike
+  //      what EnchantBlockAdditive/etc. give Enchantments), so this reuses
+  //      the same [VERIFIED] CardEnergyCost.AddThisCombat(int, bool) call
+  //      costReductionTodoLines/ModifyCost already use elsewhere, applied
+  //      once on attach and reversed once on removal so an early removal
+  //      mid-combat doesn't leave a stale cost change behind. Multiplying
+  //      by `this.Amount` (real, non-virtual int) when
+  //      "Multiply cost change by Amount" is checked is Forge's own
+  //      stacking semantic, same convention Enchantments' `perStack` uses
+  //      -- a KNOWN limitation: if Amount changes between separate
+  //      applications, the BeforeRemoved() reversal (which reads Amount
+  //      AGAIN at removal time) may not exactly cancel out the sum of
+  //      several differently-sized applications. Disclosed, not silently
+  //      wrong.
+  //   2. keywordsWhileAfflicted (UNVERIFIED) -- same gap Enchantments'
+  //      onApply.addKeywords/removeKeywords already has (no confirmed
+  //      runtime "mutate this card's own keyword set" API). Left as a
+  //      COMMENT here, not a ForgeActions.Todo() call -- Todo() THROWS the
+  //      instant it runs (see compiler.js's own round-30 postmortem, and
+  //      Enchantment.cs.template's header for why its own three gating
+  //      fields are comments too), and this method can also contain the
+  //      REAL costChange lines above -- a throw here would abort those
+  //      too. A silent no-op comment is the honest failure mode instead.
+  const applyLines = [];
+  const removeLines = [];
+  const ccAmount = has(cc.amount) ? Math.trunc(Number(cc.amount)) : 0;
+  if (ccAmount !== 0) {
+    const stacksExpr = cc.multiplyByAmount ? ' * this.Amount' : '';
+    applyLines.push(`        this.Card.EnergyCost.AddThisCombat(${ccAmount}${stacksExpr}, false); // [BEST EFFORT] CardEnergyCost.AddThisCombat(int, bool) is [VERIFIED] real (see compiler.js's costReductionTodoLines comment) -- applied once on attach, reversed in BeforeRemoved() below`);
+    removeLines.push(`        this.Card.EnergyCost.AddThisCombat(${-ccAmount}${stacksExpr}, false); // [BEST EFFORT] undoes the AfterApplied() change -- see this affliction's class header for the known stacking-amount caveat`);
+  }
+  const kwWhile = Array.isArray(affliction.keywordsWhileAfflicted) ? affliction.keywordsWhileAfflicted.filter(k => CARD_KEYWORD_VALUES.includes(k)) : [];
+  if (kwWhile.length) {
+    applyLines.push(`        // [UNVERIFIED] would add keyword(s) ${kwWhile.join(', ')} while afflicted -- no confirmed runtime CardModel keyword-mutation API found (CardModel.Keywords is a real getter, no confirmed setter/mutator). Left as a comment, not ForgeActions.Todo(), so it can't throw and abort the real cost-change line(s) above -- see this affliction's class header.`);
+    removeLines.push(`        // [UNVERIFIED] would remove keyword(s) ${kwWhile.join(', ')} added above -- same gap as AfterApplied().`);
+  }
+  const applyRemoveParts = [];
+  if (applyLines.length) applyRemoveParts.push(`    public override void AfterApplied()\n    {\n${applyLines.join('\n')}\n    }`);
+  if (removeLines.length) applyRemoveParts.push(`    public override void BeforeRemoved()\n    {\n${removeLines.join('\n')}\n    }`);
+  const applyRemoveMethods = applyRemoveParts.length ? '\n' + applyRemoveParts.join('\n\n') + '\n' : '';
+
+  // "Requires status on owner" -- [BEST EFFORT] no confirmed "recheck this
+  // continuously" override exists, so this only gates the OnPlay effects
+  // below (real, since OnPlay fires fresh every play -- true continuous
+  // behavior emerges from that, not from a dedicated status-gate API).
+  // Reuses the exact same [VERIFIED] ForgeActions.GetStatusStacks<T>
+  // call conditionToCSharp's HasStatusStacks case already uses, same
+  // vanilla/custom split (BUILTIN_POWER_CLASS_MAP / mechanicClassName).
+  let requiresStatusGuard = '';
+  if (rs.enabled) {
+    const statusKind = rs.kind === 'custom' ? 'custom' : 'vanilla';
+    const typeArg = statusKind === 'vanilla' ? BUILTIN_POWER_CLASS_MAP[rs.builtinStatus] : mechanicClassName(rs.statusRef);
+    if (typeArg) {
+      requiresStatusGuard = `        if (ForgeActions.GetStatusStacks<${typeArg}>(fgPlayer) < 1) { await Task.CompletedTask; return; } // [BEST EFFORT] "Requires status on owner" -- only gates these OnPlay effects (real, rechecked every play); does NOT gate the AfterApplied/BeforeRemoved cost/keyword changes above -- see this affliction's class header.\n`;
+    }
+  }
+
+  // OnPlay() body -- [Round 196] same renderEffectsList()-authored
+  // {trigger,conditions,actions,elseActions} shape Enchantments' OnPlay
+  // already uses, but ctx differs: cardPlayBound: false, thisIsCard:
+  // false -- AfflictionModel.OnPlay has no real CardPlay object in scope
+  // at all (its second parameter is a raw Creature, not a CardPlay -- see
+  // Affliction.cs.template's own header), so anything requiring
+  // ctx.cardPlayBound (ModifyCost's "borrow cardPlay.Card" fallback tier,
+  // EndTurn, etc.) correctly falls to its next, more conservative
+  // fallback instead of emitting a compile-breaking `cardPlay` reference.
+  const onPlayEffects = ((affliction.onPlay && Array.isArray(affliction.onPlay.effects)) ? affliction.onPlay.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
+  const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+  const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
+
+  // "While in a pile" -- same honest "captured, not compiled" gap
+  // Enchantments' whilePile has (see generateEnchantmentSource's own
+  // comment) -- no confirmed AfflictionModel hook for "while a card
+  // carrying this affliction sits in a pile" either.
+  const whilePileEffects = (affliction.whilePile && Array.isArray(affliction.whilePile.effects)) ? affliction.whilePile.effects : [];
+  const whilePileComment = whilePileEffects.length
+    ? `    // [UNVERIFIED] ${whilePileEffects.length} "while in a pile" effect(s) authored in the editor -- NOT compiled. No confirmed AfflictionModel hook exists for "while a card carrying this affliction sits in a pile". See Afflictions/README.md for exactly what was authored here.\n`
+    : '';
+
+  return fillTemplate(tpl, {
+    namespace,
+    className: pascalCase(affliction.name) + 'Affliction',
+    modifierOverrides: overrides.length ? overrides.join('\n\n') + '\n' : '',
+    applyRemoveMethods,
+    requiresStatusGuard,
+    onPlayBody,
+    whilePileComment,
+  });
+}
+
 function buildManifestJson(characterPackage, modId, gameVersion) {
   const manifest = {
     id: modId,
@@ -5499,16 +5677,18 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     lines.push('at runtime.');
     lines.push('');
   } else {
-    lines.push(`# ${heading} -- captured, not yet compiled`);
+    lines.push(`# ${heading} -- most of this now compiles to real C#`);
     lines.push('');
-    lines.push('Whether/how a real STS2 character mod can define a custom card- or');
-    lines.push('relic-granted run modifier like this is still genuinely unresearched for');
-    lines.push('Afflictions specifically (see claude/feature-backlog.md group C) -- the');
-    lines.push('entries below are saved as a design doc so they\'re ready the moment a');
-    lines.push('future round confirms one. Enchantments (the section above this one, if');
-    lines.push('present) were confirmed and wired to real C# in round 190/191 -- see');
-    lines.push('claude/round190-enchantments-real-codegen.md. This file is not read by the');
-    lines.push('compiled mod at runtime.');
+    lines.push('[Round 196] MegaCrit.Sts2.Core.Models.AfflictionModel is a [VERIFIED] real,');
+    lines.push('SEPARATE base-game class from EnchantmentModel above (see');
+    lines.push('claude/round196-afflictions-real-shape.md for the full reflection');
+    lines.push('evidence) -- Tyler\'s own framing: "afflictions are temporary');
+    lines.push('enchantments." Each entry below also writes a real');
+    lines.push('Afflictions/<Name>Affliction.cs. Not every field compiles: see that .cs');
+    lines.push('file\'s own header comment for exactly which parts are');
+    lines.push('[VERIFIED]/[BEST EFFORT] real vs. [UNVERIFIED] (uncompiled). This file');
+    lines.push('itself is a design-doc summary only -- it is not read by the compiled mod');
+    lines.push('at runtime.');
     lines.push('');
   }
   lines.push('[Round 168] Roughed out against the fuller field set a similar community');
@@ -5519,8 +5699,99 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
 
   const has = (n) => n !== null && n !== undefined && n !== '';
 
+  if (isEnchantments) {
+    entries.forEach(e => {
+      lines.push(`## ${e.name || 'Untitled'}`);
+      lines.push('');
+      if (e.description) { lines.push(''); lines.push(e.description); }
+      if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
+      lines.push('');
+
+      const vt = e.validTargets || {};
+      const vtTypes = vt.types || {};
+      const vtTypeBits = [];
+      if (vtTypes.attack) vtTypeBits.push('Attack');
+      if (vtTypes.skill) vtTypeBits.push('Skill');
+      if (vtTypes.power) vtTypeBits.push('Power');
+      const validTargetBits = [];
+      if (vtTypeBits.length && vtTypeBits.length < 3) validTargetBits.push(`types: ${vtTypeBits.join(', ')}`);
+      if (vt.excludeXCost) validTargetBits.push('excludes X-cost cards');
+      const vtTags = Array.isArray(vt.tags) ? vt.tags : [];
+      const vtBaseTags = vtTags.filter(t => t && t.kind === 'base').map(t => t.ref);
+      const vtCustomTags = vtTags.filter(t => t && t.kind === 'custom').map(t => t.ref);
+      if (vtBaseTags.length) validTargetBits.push(`base tags: ${vtBaseTags.join(', ')}`);
+      if (vtCustomTags.length) validTargetBits.push(`custom tags: ${vtCustomTags.join(', ')}`);
+      if (validTargetBits.length) { lines.push(`**Valid targets:** ${validTargetBits.join('; ')}`); lines.push(''); }
+
+      const mo = e.modifiers || {};
+      const moBits = [];
+      if (has(mo.extraDamage)) moBits.push(`+${mo.extraDamage} damage`);
+      if (has(mo.damageBonusPct)) moBits.push(`+${mo.damageBonusPct}% damage`);
+      if (has(mo.extraBlock)) moBits.push(`+${mo.extraBlock} Block`);
+      if (has(mo.blockBonusPct)) moBits.push(`+${mo.blockBonusPct}% Block`);
+      if (has(mo.extraPlays)) moBits.push(`+${mo.extraPlays} extra play(s)`);
+      if (mo.perStack) moBits.push('multiplied by stacks applied');
+      if (mo.canStack) moBits.push('stacks (applying again raises the amount)');
+      if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
+      if (moBits.length) { lines.push(`**Modifiers:** ${moBits.join(', ')}`); lines.push(''); }
+
+      const oa = e.onApply || {};
+      const oaBits = [];
+      if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
+      if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')}`);
+      if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
+      if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
+
+      // [Round 191] op.effects/wp.effects replace the old ad-hoc onPlay
+      // fields and whilePile.triggersText freeform text -- see
+      // generateEnchantmentSource for how (and whether) each compiles.
+      const op = e.onPlay || {};
+      const opEffects = Array.isArray(op.effects) ? op.effects : [];
+      if (opEffects.length) {
+        lines.push(`**On play:** ${opEffects.length} effect block(s) defined in the editor -- compiles to real C#, see Enchantments/${pascalCase(e.name || 'Untitled')}Enchantment.cs`);
+        opEffects.forEach((eff, i) => {
+          const condN = (eff.conditions || []).length;
+          const actN = (eff.actions || []).length;
+          lines.push(`- Effect ${i + 1}: ${actN} action(s)${condN ? `, ${condN} condition(s)` : ''}`);
+        });
+        lines.push('');
+      } else if (e.effectText) {
+        lines.push(`**What it does:** ${e.effectText}`); lines.push('');
+      }
+
+      const sh = e.shuffle || {};
+      if (sh.startAtBottomOfDraw || (sh.shuffleOrder && sh.shuffleOrder !== 'normal')) {
+        const shBits = [];
+        if (sh.startAtBottomOfDraw) shBits.push('starts at the bottom of the draw pile');
+        if (sh.shuffleOrder && sh.shuffleOrder !== 'normal') shBits.push(`shuffle order: ${sh.shuffleOrder}`);
+        lines.push(`**Shuffling:** ${shBits.join('; ')}`);
+        lines.push('');
+      }
+
+      const wp = e.whilePile || {};
+      const wpEffects = Array.isArray(wp.effects) ? wp.effects : [];
+      if (wpEffects.length) {
+        lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- NOT compiled (no confirmed EnchantmentModel hook for this yet)`);
+        wpEffects.forEach((eff, i) => {
+          const actN = (eff.actions || []).length;
+          lines.push(`- While in ${eff.pile || 'Hand'}, ${eff.trigger || '?'}: ${actN} action(s)`);
+        });
+        lines.push('');
+      }
+
+      if (e.icon) lines.push('_Has a custom icon._');
+      const cf = e.cardFrames || {};
+      if (cf.enchanted || cf.attack || cf.skill || cf.power) lines.push('_Has custom enchanted card frame art._');
+      lines.push('');
+    });
+    return lines.join('\n');
+  }
+
+  // [Round 196] Afflictions -- genuinely different shape from
+  // Enchantments now (no modifiers/onApply/icon/cardFrames -- see
+  // generateAfflictionSource's own comment for why).
   entries.forEach(e => {
-    lines.push(`## ${e.name || 'Untitled'}`);
+    lines.push(`## ${e.name || 'Untitled'}${e.category ? ` (${e.category})` : ''}`);
     lines.push('');
     if (e.description) { lines.push(''); lines.push(e.description); }
     if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
@@ -5532,8 +5803,10 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (vtTypes.attack) vtTypeBits.push('Attack');
     if (vtTypes.skill) vtTypeBits.push('Skill');
     if (vtTypes.power) vtTypeBits.push('Power');
+    if (vtTypes.status) vtTypeBits.push('Status');
+    if (vtTypes.curse) vtTypeBits.push('Curse');
     const validTargetBits = [];
-    if (vtTypeBits.length && vtTypeBits.length < 3) validTargetBits.push(`types: ${vtTypeBits.join(', ')}`);
+    if (vtTypeBits.length && vtTypeBits.length < 5) validTargetBits.push(`types: ${vtTypeBits.join(', ')}`);
     if (vt.excludeXCost) validTargetBits.push('excludes X-cost cards');
     const vtTags = Array.isArray(vt.tags) ? vt.tags : [];
     const vtBaseTags = vtTags.filter(t => t && t.kind === 'base').map(t => t.ref);
@@ -5542,60 +5815,44 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     if (vtCustomTags.length) validTargetBits.push(`custom tags: ${vtCustomTags.join(', ')}`);
     if (validTargetBits.length) { lines.push(`**Valid targets:** ${validTargetBits.join('; ')}`); lines.push(''); }
 
-    const mo = e.modifiers || {};
-    const moBits = [];
-    if (has(mo.extraDamage)) moBits.push(`+${mo.extraDamage} damage`);
-    if (has(mo.damageBonusPct)) moBits.push(`+${mo.damageBonusPct}% damage`);
-    if (has(mo.extraBlock)) moBits.push(`+${mo.extraBlock} Block`);
-    if (has(mo.blockBonusPct)) moBits.push(`+${mo.blockBonusPct}% Block`);
-    if (has(mo.extraPlays)) moBits.push(`+${mo.extraPlays} extra play(s)`);
-    if (mo.perStack) moBits.push('multiplied by stacks applied');
-    if (mo.canStack) moBits.push('stacks (applying again raises the amount)');
-    if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
-    if (moBits.length) { lines.push(`**Modifiers:** ${moBits.join(', ')}`); lines.push(''); }
+    const propBits = [];
+    if (e.canStack) propBits.push('stacks (repeated applications raise the amount)');
+    if (e.canAffectUnplayableCards) propBits.push('can affect already-Unplayable cards');
+    if (propBits.length) { lines.push(`**Properties:** ${propBits.join('; ')}`); lines.push(''); }
 
-    const oa = e.onApply || {};
-    const oaBits = [];
-    if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
-    if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')}`);
-    if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
-    if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
+    const rs = e.requiresStatus || {};
+    if (rs.enabled) {
+      const statusLabel = rs.kind === 'custom' ? `custom status "${rs.statusRef || '?'}"` : (rs.builtinStatus || '?');
+      lines.push(`**Requires status on owner:** ${statusLabel} (gates the On Play effects below only -- see the generated .cs for why it can't gate the cost/keyword changes too)`);
+      lines.push('');
+    }
 
-    // [Round 191] op.effects/wp.effects replace the old ad-hoc onPlay
-    // fields and whilePile.triggersText freeform text -- see
-    // generateEnchantmentSource for how (and whether) each compiles.
+    const cc = e.costChange || {};
+    const ccBits = [];
+    if (has(cc.amount) && Number(cc.amount) !== 0) {
+      ccBits.push(`${cc.amount > 0 ? '+' : ''}${cc.amount} Energy cost${cc.multiplyByAmount ? ' (multiplied by stacks applied)' : ''}`);
+    }
+    if (ccBits.length) { lines.push(`**Energy cost change:** ${ccBits.join(', ')}`); lines.push(''); }
+
+    const kwWhile = Array.isArray(e.keywordsWhileAfflicted) ? e.keywordsWhileAfflicted : [];
+    if (kwWhile.length) { lines.push(`**Keywords while afflicted:** ${kwWhile.join(', ')}`); lines.push(''); }
+
     const op = e.onPlay || {};
     const opEffects = Array.isArray(op.effects) ? op.effects : [];
     if (opEffects.length) {
-      const compiledNote = isEnchantments ? ` -- compiles to real C#, see Enchantments/${pascalCase(e.name || 'Untitled')}Enchantment.cs` : '';
-      lines.push(`**On play:** ${opEffects.length} effect block(s) defined in the editor${compiledNote}`);
+      lines.push(`**On play:** ${opEffects.length} effect block(s) defined in the editor -- compiles to real C#, see Afflictions/${pascalCase(e.name || 'Untitled')}Affliction.cs`);
       opEffects.forEach((eff, i) => {
         const condN = (eff.conditions || []).length;
         const actN = (eff.actions || []).length;
         lines.push(`- Effect ${i + 1}: ${actN} action(s)${condN ? `, ${condN} condition(s)` : ''}`);
       });
       lines.push('');
-    } else if (e.effectText) {
-      lines.push(`**What it does:** ${e.effectText}`); lines.push('');
-    }
-
-    const wh = e.whileInHand || {};
-    if (has(wh.energyReductionPerTurn)) { lines.push(`**While in hand:** -${wh.energyReductionPerTurn} Energy per turn left in hand (accumulates until played)`); lines.push(''); }
-
-    const sh = e.shuffle || {};
-    if (sh.startAtBottomOfDraw || (sh.shuffleOrder && sh.shuffleOrder !== 'normal')) {
-      const shBits = [];
-      if (sh.startAtBottomOfDraw) shBits.push('starts at the bottom of the draw pile');
-      if (sh.shuffleOrder && sh.shuffleOrder !== 'normal') shBits.push(`shuffle order: ${sh.shuffleOrder}`);
-      lines.push(`**Shuffling:** ${shBits.join('; ')}`);
-      lines.push('');
     }
 
     const wp = e.whilePile || {};
     const wpEffects = Array.isArray(wp.effects) ? wp.effects : [];
     if (wpEffects.length) {
-      const notCompiledNote = isEnchantments ? ' -- NOT compiled (no confirmed EnchantmentModel hook for this yet)' : '';
-      lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor${notCompiledNote}`);
+      lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- NOT compiled (no confirmed AfflictionModel hook for this yet)`);
       wpEffects.forEach((eff, i) => {
         const actN = (eff.actions || []).length;
         lines.push(`- While in ${eff.pile || 'Hand'}, ${eff.trigger || '?'}: ${actN} action(s)`);
@@ -5603,9 +5860,6 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
       lines.push('');
     }
 
-    if (e.icon) lines.push('_Has a custom icon._');
-    const cf = e.cardFrames || {};
-    if (cf.enchanted || cf.attack || cf.skill || cf.power) lines.push('_Has custom enchanted card frame art._');
     lines.push('');
   });
   return lines.join('\n');
@@ -7646,16 +7900,23 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // generateEnchantmentSource's own comment for the full evidence trail
   // and field-by-field mapping). Each enchantment now ALSO compiles to a
   // real .cs file, same "per-entity .cs file + one README" pattern Orbs
-  // already uses just above. Afflictions stay README-only for now —
-  // Tyler's "wire the whole schema" request named enchantments
-  // specifically, and afflictions' real BaseLib shape (if any) hasn't
-  // been reflected yet.
+  // already uses just above.
   for (const enchantment of characterPackage.enchantments || []) {
     const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById });
     write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
   }
   if ((characterPackage.enchantments || []).length) {
     write('Enchantments/README.md', buildEnchantmentAfflictionReadme('Enchantments', characterPackage.enchantments));
+  }
+
+  // Afflictions — Round 196: same overturn as Enchantments got in round
+  // 190, but for AfflictionModel, a REAL, SEPARATE base-game class (not a
+  // reskin of EnchantmentModel — see Affliction.cs.template's header and
+  // generateAfflictionSource's own comment for the full evidence trail).
+  // Tyler: "afflictions are temporary enchantments."
+  for (const affliction of characterPackage.afflictions || []) {
+    const afflSrc = generateAfflictionSource(affliction, namespace, { cardClassById, relicClassById });
+    write(`Afflictions/${pascalCase(affliction.name)}Affliction.cs`, afflSrc);
   }
   if ((characterPackage.afflictions || []).length) {
     write('Afflictions/README.md', buildEnchantmentAfflictionReadme('Afflictions', characterPackage.afflictions));

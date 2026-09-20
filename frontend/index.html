@@ -2806,20 +2806,22 @@
     <div class="panel-body">
       <!-- Round 95, Tyler: "Enchantments/Afflictions need their own
            section after cards, we'll modify how it looks later, but it
-           needs to be its own section." DATA-CAPTURE-ONLY, same honest
-           convention as Pets below — group C's own backlog item ("need
-           to confirm whether 'Enchantments' is a real STS2 system at all
-           before scoping it") is still genuinely unresearched, so this
-           doesn't imply a compiled mechanism that hasn't been confirmed
-           real. Two grids in one section (Tyler grouped them together,
-           not as separate sections) — layout/styling is placeholder,
-           per Tyler's own "we'll modify how it looks later." -->
+           needs to be its own section." UPDATED round 190 (Enchantments)
+           and round 196 (Afflictions) — both are now confirmed real,
+           separate base-game classes (EnchantmentModel/AfflictionModel)
+           and compile to real C#; see each editor's own in-modal banner
+           for the exact evidence tier per field. Two grids in one
+           section (Tyler grouped them together, not as separate
+           sections) — layout/styling is placeholder, per Tyler's own
+           "we'll modify how it looks later." -->
       <div class="panel-desc">
         Card- or relic-granted modifiers a run can pick up mid-game — Enchantments (positive) and Afflictions
-        (negative). <strong>Not yet compiled into your mod's code</strong> — whether/how STS2 supports a custom
-        one of these is still unresearched (see claude/feature-backlog.md group C). Captured here as a design doc
-        (Enchantments/README.md, Afflictions/README.md in the compiled mod) so it's ready the moment a real
-        mechanism is confirmed.
+        (negative). Both now compile to real C# (Enchantments since Round 190, Afflictions since Round 196) —
+        see each editor's own banner for exactly which fields map to a confirmed override. A design doc still
+        exports alongside the code (Enchantments/README.md, Afflictions/README.md in the compiled mod).
+        <strong>Known gap:</strong> nothing in Forge can grant an Enchantment or apply an Affliction to a card yet
+        (no card/relic action for either) — the classes are real but nothing attaches them to anything in-game
+        until a future round adds that.
       </div>
       <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
       <div class="grid-cards" id="enchantments-grid"></div>
@@ -13299,10 +13301,15 @@ function openPetEditor(petId){
 // see generateEnchantmentSource's own field-mapping comment for exactly
 // which fields are [VERIFIED]/[BEST EFFORT]/[UNVERIFIED].
 //
-// One shared render/editor factory for both entities — Enchantments and
-// Afflictions are structurally identical (Tyler grouped them into one
-// section, not two; here they're just positive/negative framing of the
-// same shape), so this is copy-paste risk with no real benefit.
+// UPDATED round 196: Afflictions split off into their own genuinely
+// separate shape/editor/factory (makeAfflictionSection, further down
+// this file) — MegaCrit.Sts2.Core.Models.AfflictionModel turned out to be
+// a REAL, SEPARATE base-game class from EnchantmentModel (35 methods,
+// confirmed via reflection — not a reskin), and Tyler confirmed:
+// "afflictions are temporary enchantments. Remove the card frame option
+// for them, remove the icon option for them. Add any fields that we
+// dont have" (comparing against slay.spencerstiles.com's own Afflictions
+// editor). makeRichEntitySection below is now Enchantments-only.
 
 const ENCHANTMENT_SHUFFLE_ORDER_OPTIONS = [
   { id:'normal', label:'Normal shuffle order' },
@@ -13656,6 +13663,278 @@ function renderEnchTagPicker(selected){
   return wrap;
 }
 
+// ==================== AFFLICTIONS (Round 196) ====================
+// Split off from makeRichEntitySection above once reflection confirmed
+// MegaCrit.Sts2.Core.Models.AfflictionModel is a real, SEPARATE base-game
+// class (35 methods) — not a reskin of EnchantmentModel. See
+// backend/compiler.js:generateAfflictionSource and
+// backend/templates/Affliction.cs.template for the full evidence trail.
+// Tyler: "afflictions are temporary enchantments. Remove the card frame
+// option for them, remove the icon option for them. Add any fields that
+// we dont have" (comparing against slay.spencerstiles.com's own
+// Afflictions editor — "it is the same as our existing blocks" for the
+// When Played / While in a Pile sections, so those two reuse the exact
+// same renderEffectsList()/trigger-vocabulary machinery Enchantments use
+// above, unchanged).
+//
+// Deliberately NOT included, with reasons:
+//   - Icon, Card frame — Tyler: explicit removal ask.
+//   - Numeric modifiers (extra damage/block, bonus %, extra plays),
+//     onApply (add/remove keywords, zero-cost-on-apply) — no confirmed
+//     AfflictionModel override for any damage/block modification exists
+//     at all (round 196 reflection came back clean on this).
+//   - "Position after shuffling" — no ShouldStartAtBottomOfDrawPile-style
+//     override was found on AfflictionModel either, and neither of
+//     Tyler's reference screenshots showed this section for Afflictions.
+//     Flagged back to Tyler as a judgment call, not an explicit ask.
+//   - A 6th "Quest" checkbox under Allowed card types — the reference
+//     tool shows one, but CARD_TYPE_ORDER (this file) only has 5 values;
+//     Forge has no way to create a Quest-type card anywhere else in the
+//     app, so there's nothing a Quest checkbox here could ever apply to.
+const AFFLICTION_STATUS_FIELDS = { kind:'kind', builtin:'builtinStatus', ref:'statusRef' };
+
+function newAfflictionEntity(idPrefix, singular){
+  return {
+    id: uid(idPrefix),
+    name: `New ${singular}`,
+    category: '',
+    description: '',
+    cardLineText: '',
+    canStack: false,
+    canAffectUnplayableCards: false,
+    // Gates onPlay.effects only (not the AfterApplied/BeforeRemoved cost
+    // hooks) — see generateAfflictionSource's requiresStatusGuard. `kind`
+    // defaults 'custom' to match mergedStatusPickerHtml's own default
+    // read (carrier[fields.kind] !== 'vanilla' => custom).
+    requiresStatus: { enabled: false, kind: 'custom', builtinStatus: null, statusRef: null },
+    // Compiles to CardEnergyCost.AddThisCombat(amount, false) in
+    // AfterApplied(), negated in BeforeRemoved() — [VERIFIED] real call,
+    // reused from round 193's ModifyCost action.
+    costChange: { amount: null, multiplyByAmount: false },
+    // CARD_KEYWORD_VALUES-gated — no confirmed AfflictionModel override,
+    // emitted as a disclosed comment (not ForgeActions.Todo()) in the
+    // generated source, same safety discipline as round 30/90/190.
+    keywordsWhileAfflicted: [],
+    onPlay: { effects: [] },
+    whilePile: { effects: [] },
+    validTargets: {
+      types: { attack: true, skill: true, power: true, status: true, curse: true },
+      excludeXCost: false,
+      tags: [],
+    },
+  };
+}
+
+// "Migrate on touch" — same convention as ensureRichEnchantmentDefaults
+// above. Crucially, this ALSO migrates any affliction saved under rounds
+// 95-195's old shared Enchantment-clone shape (modifiers/onApply/shuffle/
+// icon/cardFrames) into the new round-196 shape, dropping the fields that
+// have no home on the real, separate AfflictionModel class.
+function ensureAfflictionDefaults(e){
+  const d = newAfflictionEntity('tmp', 'X');
+  if(e.category === undefined) e.category = d.category;
+  if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
+  // Old shape kept "can stack" under modifiers.canStack — read it once on
+  // migration so an existing affliction doesn't silently lose the value.
+  if(e.canStack === undefined) e.canStack = (e.modifiers && e.modifiers.canStack) || d.canStack;
+  if(e.canAffectUnplayableCards === undefined) e.canAffectUnplayableCards = d.canAffectUnplayableCards;
+  if(!e.requiresStatus || typeof e.requiresStatus !== 'object') e.requiresStatus = d.requiresStatus;
+  else for(const k in d.requiresStatus) if(e.requiresStatus[k]===undefined) e.requiresStatus[k]=d.requiresStatus[k];
+  if(!e.costChange || typeof e.costChange !== 'object') e.costChange = d.costChange;
+  else for(const k in d.costChange) if(e.costChange[k]===undefined) e.costChange[k]=d.costChange[k];
+  if(!Array.isArray(e.keywordsWhileAfflicted)) e.keywordsWhileAfflicted = [];
+  if(!e.onPlay) e.onPlay = d.onPlay;
+  else if(!Array.isArray(e.onPlay.effects)) e.onPlay.effects = [];
+  if(!e.whilePile) e.whilePile = d.whilePile;
+  else if(!Array.isArray(e.whilePile.effects)) e.whilePile.effects = [];
+  if(!e.validTargets) e.validTargets = d.validTargets;
+  else {
+    if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
+    else {
+      // Migrating the old 3-type (attack/skill/power) shape — default
+      // every type (including the two new ones, status/curse) to true
+      // when missing, matching the "all checked = no restriction"
+      // convention the original 3 always shipped with, so an existing
+      // affliction that never restricted types doesn't silently start
+      // excluding Status/Curse cards.
+      ['attack','skill','power','status','curse'].forEach(k=>{
+        if(e.validTargets.types[k]===undefined) e.validTargets.types[k] = true;
+      });
+    }
+    if(e.validTargets.excludeXCost===undefined) e.validTargets.excludeXCost = false;
+    if(!Array.isArray(e.validTargets.tags)) e.validTargets.tags = [];
+  }
+  // No real AfflictionModel home for any of these — drop outright rather
+  // than migrate (same "field removed outright, not migrated" precedent
+  // round 176/191/193 set on the Enchantment side).
+  delete e.modifiers;
+  delete e.onApply;
+  delete e.shuffle;
+  delete e.icon;
+  delete e.cardFrames;
+  delete e.effectText;
+  return e;
+}
+
+function makeAfflictionSection(opts){
+  const { stateKey, gridId, countId, singular, idPrefix, noun } = opts;
+  const grid = document.getElementById(gridId);
+
+  function render(){
+    grid.innerHTML = '';
+    state[stateKey].forEach(e=>{
+      ensureAfflictionDefaults(e);
+      const t = document.createElement('div');
+      t.className = 'tile';
+      t.innerHTML = `
+        <div class="t-name">${escapeHtml(e.name||'Untitled')}</div>
+        <div class="t-meta">${noun} — compiles to real C#</div>`;
+      t.onclick = ()=> openEditor(e.id);
+      grid.appendChild(t);
+    });
+    const addTile = document.createElement('div');
+    addTile.className = 'tile add-tile';
+    addTile.textContent = '+';
+    addTile.onclick = ()=>{
+      const e = newAfflictionEntity(idPrefix, singular);
+      state[stateKey].push(e);
+      save(); render();
+      openEditor(e.id);
+    };
+    grid.appendChild(addTile);
+    const countEl = document.getElementById(countId);
+    if(countEl) countEl.textContent = String(state[stateKey].length);
+  }
+
+  function openEditor(entId){
+    const e = state[stateKey].find(x=>x.id===entId);
+    ensureAfflictionDefaults(e);
+    const rs = e.requiresStatus, cc = e.costChange, vt = e.validTargets, op = e.onPlay, wp = e.whilePile;
+
+    openModal(`
+      <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
+      <div class="modal-body ench-modal-body" style="max-height:82vh">
+        <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
+          Round 196: this compiles to a real Afflictions/${singular}Name.cs — MegaCrit.Sts2.Core.Models.AfflictionModel is a confirmed real base-game class, genuinely separate from EnchantmentModel above (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; "Requires status," "Energy cost change," and "Keywords while afflicted" have no confirmed dedicated override on this class and are implemented against the closest real, already-verified mechanism instead (a guard inside the real OnPlay override, and the real AfterApplied/BeforeRemoved one-time hooks) — see the generated file's own comments for the exact evidence tier of each. <strong>Known gap:</strong> nothing in Forge can APPLY this affliction to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.
+        </div>
+
+        ${fieldHead('Properties', `Name, category, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
+        <div class="ench-field-box">
+          <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
+          <label class="ench-flush" style="margin-top:16px">Category</label>
+          <input type="text" id="${idPrefix}-category" placeholder="Freeform — for your own organization only" value="${escapeAttr(e.category||'')}">
+          ${fieldHead('Description', 'Tooltip flavor text.', 'margin-top:16px')}
+          <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
+          ${fieldHead('Extra text on the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.', 'margin-top:16px')}
+          <input type="text" id="${idPrefix}-cardline" value="${escapeAttr(e.cardLineText)}">
+
+          <div class="row" style="gap:14px; flex-wrap:wrap; margin-top:16px">
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-canstack" ${e.canStack?'checked':''}> Repeated applications stack</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-canunplayable" ${e.canAffectUnplayableCards?'checked':''}> Can affect unplayable cards</label>
+          </div>
+
+          <div style="margin-top:16px">
+            <label style="margin:0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-reqstatus-enabled" ${rs.enabled?'checked':''}> Requires status on the card's owner</label>
+            <div id="${idPrefix}-reqstatus-slot" style="margin-top:8px; ${rs.enabled?'':'display:none'}"></div>
+          </div>
+        </div>
+
+        ${fieldHead('Card changes', 'What changes about the card while this affliction is attached.', 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div class="row" style="gap:14px; align-items:flex-end; flex-wrap:wrap;">
+            <div><label style="margin:0 0 3px">Energy cost change</label><input type="number" id="${idPrefix}-costchange" style="width:110px; padding:4px 6px;" value="${cc.amount ?? ''}"></div>
+            <label style="margin:0 0 7px; font-weight:normal"><input type="checkbox" id="${idPrefix}-costchange-mult" ${cc.multiplyByAmount?'checked':''}> Multiply cost change by Amount</label>
+          </div>
+          ${fieldHead('Keywords while afflicted', '', 'margin-top:16px')}
+          <div id="${idPrefix}-kw-slot"></div>
+        </div>
+
+        ${fieldHead('Allowed card types', `Which cards this ${noun} can go on. Leave types all checked and no tags selected for no restriction.`, 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div class="row" style="gap:14px; flex-wrap:wrap">
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-attack" ${vt.types.attack?'checked':''}> Attack</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-skill" ${vt.types.skill?'checked':''}> Skill</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-power" ${vt.types.power?'checked':''}> Power</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-status" ${vt.types.status?'checked':''}> Status</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-curse" ${vt.types.curse?'checked':''}> Curse</label>
+            <label style="margin:0; font-weight:normal"><input type="checkbox" id="${idPrefix}-vt-excludex" ${vt.excludeXCost?'checked':''}> Exclude X-cost cards</label>
+          </div>
+          <div id="${idPrefix}-vt-tags-slot" style="margin-top:8px"></div>
+        </div>
+
+        ${fieldHead('When this card is played', '', 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div id="${idPrefix}-onplay-list"></div>
+          <button class="secondary" id="${idPrefix}-onplay-add" type="button">+ Add effect block</button>
+        </div>
+
+        ${fieldHead('While in a Card Pile', '', 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div id="${idPrefix}-whilepile-list"></div>
+          <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="danger" id="delete-${idPrefix}">Delete</button>
+        <button id="save-${idPrefix}">Done</button>
+      </div>
+    `, { wide: true });
+
+    document.getElementById(`${idPrefix}-vt-tags-slot`).appendChild(renderEnchTagPicker(vt.tags));
+    document.getElementById(`${idPrefix}-kw-slot`).appendChild(renderEnchKeywordPicker(e.keywordsWhileAfflicted));
+
+    const reqStatusSlot = document.getElementById(`${idPrefix}-reqstatus-slot`);
+    reqStatusSlot.innerHTML = mergedStatusPickerHtml(rs, AFFLICTION_STATUS_FIELDS);
+    wireMergedStatusPicker(reqStatusSlot.querySelector('.c-status-picker'), rs, AFFLICTION_STATUS_FIELDS);
+    document.getElementById(`${idPrefix}-reqstatus-enabled`).onchange = (ev)=>{
+      rs.enabled = ev.target.checked;
+      reqStatusSlot.style.display = rs.enabled ? '' : 'none';
+    };
+
+    // Same ENCHANTMENT_ONPLAY_TRIGGERS/WHILE_IN_HAND_TRIGGERS vocabulary
+    // and renderEffectsList() component Enchantments use above — Tyler:
+    // "it is the same as our existing blocks."
+    renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
+    document.getElementById(`${idPrefix}-onplay-add`).onclick = ()=>{
+      op.effects.push({ trigger: 'OnPlay', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
+    };
+    renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    document.getElementById(`${idPrefix}-whilepile-add`).onclick = ()=>{
+      wp.effects.push({ trigger: 'OnTurnEndInHand', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    };
+
+    document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
+    document.getElementById(`save-${idPrefix}`).onclick = ()=>{
+      e.name = document.getElementById(`${idPrefix}-name`).value;
+      e.category = document.getElementById(`${idPrefix}-category`).value;
+      e.description = document.getElementById(`${idPrefix}-desc`).value;
+      e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
+      e.canStack = document.getElementById(`${idPrefix}-canstack`).checked;
+      e.canAffectUnplayableCards = document.getElementById(`${idPrefix}-canunplayable`).checked;
+      // rs.enabled/kind/builtinStatus/statusRef mutated live above — nothing to read back here.
+
+      const num = (id)=>{ const v = document.getElementById(id).value; return v==='' ? null : Number(v); };
+      cc.amount = num(`${idPrefix}-costchange`);
+      cc.multiplyByAmount = document.getElementById(`${idPrefix}-costchange-mult`).checked;
+      // e.keywordsWhileAfflicted mutated live by renderEnchKeywordPicker above — nothing to read back here.
+
+      vt.types.attack = document.getElementById(`${idPrefix}-vt-attack`).checked;
+      vt.types.skill = document.getElementById(`${idPrefix}-vt-skill`).checked;
+      vt.types.power = document.getElementById(`${idPrefix}-vt-power`).checked;
+      vt.types.status = document.getElementById(`${idPrefix}-vt-status`).checked;
+      vt.types.curse = document.getElementById(`${idPrefix}-vt-curse`).checked;
+      vt.excludeXCost = document.getElementById(`${idPrefix}-vt-excludex`).checked;
+      // vt.tags mutated live by renderEnchTagPicker above — nothing to read back here.
+      // op.effects/wp.effects mutated live by renderEffectsList above — nothing to read back here.
+
+      save(); render(); closeModal();
+    };
+  }
+  return { render };
+}
+
 function makeRichEntitySection(opts){
   const { stateKey, gridId, countId, singular, idPrefix, noun } = opts;
   const grid = document.getElementById(gridId);
@@ -13670,7 +13949,7 @@ function makeRichEntitySection(opts){
       t.innerHTML = `
         ${iconUrl ? `<img src="${iconUrl}" style="width:26px;height:26px;object-fit:contain;display:block;margin-bottom:4px;">` : ''}
         <div class="t-name">${escapeHtml(e.name||'Untitled')}</div>
-        <div class="t-meta">${noun} — ${stateKey==='enchantments' ? 'compiles to real C#' : 'not yet compiled'}</div>`;
+        <div class="t-meta">${noun} — compiles to real C#</div>`;
       t.onclick = ()=> openEditor(e.id);
       grid.appendChild(t);
     });
@@ -13788,9 +14067,7 @@ function makeRichEntitySection(opts){
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
       <div class="modal-body ench-modal-body" style="max-height:82vh">
         <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
-          ${stateKey==='enchantments'
-            ? `Round 190: this now compiles to a real Enchantments/${singular}Name.cs — MegaCrit.Sts2.Core.Models.EnchantmentModel is a confirmed real base-game class (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; a few (the once-per-combat/first-play-only checkboxes, "Randomize Energy cost on draw," and the freeform Extra effects text) have no confirmed BaseLib API yet and are left uncompiled — see the generated file's own comments for exactly which. <strong>Known gap:</strong> nothing in Forge can GRANT this enchantment to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.`
-            : `Not yet compiled into your mod's code — captured as a design doc (exported as ${singular}s/README.md), roughed out against the field set a similar community tool uses. Enchantments (just above this section) were confirmed and wired to real C# in Round 190 — Afflictions haven't been reflected against the real game yet, so this one stays a design doc for now.`}
+          Round 190: this now compiles to a real Enchantments/${singular}Name.cs — MegaCrit.Sts2.Core.Models.EnchantmentModel is a confirmed real base-game class (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; a few (the once-per-combat/first-play-only checkboxes, "Randomize Energy cost on draw," and the freeform Extra effects text) have no confirmed BaseLib API yet and are left uncompiled — see the generated file's own comments for exactly which. <strong>Known gap:</strong> nothing in Forge can GRANT this enchantment to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.
         </div>
 
         ${fieldHead('Basic Information', `Name, icon, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
@@ -13973,7 +14250,10 @@ function makeRichEntitySection(opts){
   return { render };
 }
 const enchantmentSection = makeRichEntitySection({ stateKey:'enchantments', gridId:'enchantments-grid', countId:'enchantment-count', singular:'Enchantment', idPrefix:'ench', noun:'enchantment' });
-const afflictionSection = makeRichEntitySection({ stateKey:'afflictions', gridId:'afflictions-grid', countId:'affliction-count', singular:'Affliction', idPrefix:'affl', noun:'affliction' });
+// Round 196: Afflictions now use their own makeAfflictionSection factory
+// (defined above, right before makeRichEntitySection) instead of sharing
+// Enchantments' — see that factory's header comment for the full reasoning.
+const afflictionSection = makeAfflictionSection({ stateKey:'afflictions', gridId:'afflictions-grid', countId:'affliction-count', singular:'Affliction', idPrefix:'affl', noun:'affliction' });
 function renderEnchantments(){ enchantmentSection.render(); }
 function renderAfflictions(){ afflictionSection.render(); }
 

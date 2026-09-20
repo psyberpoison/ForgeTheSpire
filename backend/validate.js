@@ -1959,10 +1959,76 @@ function validateCharacterPackage(pkg) {
     if (!e || typeof e !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(e.name)) errors.push(`${p}.name must be a non-empty string.`);
   });
+  // Afflictions — Round 196 upgrade: AfflictionModel is a real, separate
+  // base-game class from EnchantmentModel (see compiler.js:generateAfflictionSource
+  // for the full reflection evidence trail). Tyler: "afflictions are
+  // temporary enchantments... add any fields that we don't have" (vs.
+  // slay.spencerstiles.com's Afflictions editor). Validated to the same
+  // bar as every other real, compiled field in this file — mirrors the
+  // HasStatusStacks vanilla/custom split above for requiresStatus, and
+  // CARD_KEYWORD_VALUES gating above for keywordsWhileAfflicted.
   afflictions.forEach((e, i) => {
     const p = `afflictions[${i}]`;
     if (!e || typeof e !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(e.name)) errors.push(`${p}.name must be a non-empty string.`);
+    if (e.category !== undefined && typeof e.category !== 'string') errors.push(`${p}.category must be a string.`);
+    if (e.canStack !== undefined && typeof e.canStack !== 'boolean') errors.push(`${p}.canStack must be a boolean.`);
+    if (e.canAffectUnplayableCards !== undefined && typeof e.canAffectUnplayableCards !== 'boolean') {
+      errors.push(`${p}.canAffectUnplayableCards must be a boolean.`);
+    }
+    if (e.requiresStatus !== undefined) {
+      const rs = e.requiresStatus;
+      if (!rs || typeof rs !== 'object') {
+        errors.push(`${p}.requiresStatus must be an object.`);
+      } else if (rs.enabled) {
+        const kind = rs.kind === 'vanilla' ? 'vanilla' : 'custom';
+        if (rs.kind !== undefined && !['vanilla', 'custom'].includes(rs.kind)) {
+          errors.push(`${p}.requiresStatus.kind "${rs.kind}" is not one of: vanilla, custom.`);
+        } else if (kind === 'vanilla') {
+          if (!isNonEmptyString(rs.builtinStatus)) errors.push(`${p}.requiresStatus is enabled with kind "vanilla" but has no builtinStatus.`);
+          else if (!BUILTIN_STATUSES.includes(rs.builtinStatus)) errors.push(`${p}.requiresStatus.builtinStatus "${rs.builtinStatus}" is not one of the known built-in statuses.`);
+        } else {
+          if (!isNonEmptyString(rs.statusRef)) errors.push(`${p}.requiresStatus is enabled but has no statusRef.`);
+          else if (!mechanicIds.has(rs.statusRef)) errors.push(`${p}.requiresStatus.statusRef "${rs.statusRef}" doesn't match any defined mechanic id.`);
+        }
+      }
+    }
+    if (e.costChange !== undefined) {
+      const cc = e.costChange;
+      if (!cc || typeof cc !== 'object') {
+        errors.push(`${p}.costChange must be an object.`);
+      } else {
+        if (cc.amount !== undefined && typeof cc.amount !== 'number') errors.push(`${p}.costChange.amount must be a number.`);
+        if (cc.multiplyByAmount !== undefined && typeof cc.multiplyByAmount !== 'boolean') errors.push(`${p}.costChange.multiplyByAmount must be a boolean.`);
+      }
+    }
+    if (e.keywordsWhileAfflicted !== undefined) {
+      if (!Array.isArray(e.keywordsWhileAfflicted)) {
+        errors.push(`${p}.keywordsWhileAfflicted must be an array.`);
+      } else {
+        e.keywordsWhileAfflicted.forEach((kw, ki) => {
+          if (!CARD_KEYWORD_VALUES.includes(kw)) {
+            errors.push(`${p}.keywordsWhileAfflicted[${ki}] "${kw}" is not one of: ${CARD_KEYWORD_VALUES.join(', ')}.`);
+          }
+        });
+      }
+    }
+    if (e.validTargets !== undefined) {
+      const vt = e.validTargets;
+      if (!vt || typeof vt !== 'object') {
+        errors.push(`${p}.validTargets must be an object.`);
+      } else if (vt.types !== undefined) {
+        if (!vt.types || typeof vt.types !== 'object') {
+          errors.push(`${p}.validTargets.types must be an object.`);
+        } else {
+          ['attack', 'skill', 'power', 'status', 'curse'].forEach((key) => {
+            if (vt.types[key] !== undefined && typeof vt.types[key] !== 'boolean') {
+              errors.push(`${p}.validTargets.types.${key} must be a boolean.`);
+            }
+          });
+        }
+      }
+    }
   });
 
   orbs.forEach((orb, i) => {

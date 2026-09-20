@@ -434,7 +434,7 @@
     },
     "afflictions": {
       "type": "array",
-      "description": "The negative counterpart to enchantments above — same section, same DATA-CAPTURE-ONLY convention, same unresearched-mechanism caveat. Exported as Afflictions/README.md (compiler.js:buildEnchantmentAfflictionReadme).",
+      "description": "Round 196 upgrade: AfflictionModel is a REAL, SEPARATE base-game class from EnchantmentModel (MegaCrit.Sts2.Core.Models.AfflictionModel, 35 methods, confirmed via tools/sts2tools/ecma_dump_ext.py reflection against sts2.dll \u2014 not a reskin of EnchantmentModel). Tyler: \"afflictions are temporary enchantments. Remove the card frame option for them, remove the icon option for them. Add any fields that we dont have\" (comparing against slay.spencerstiles.com's Afflictions editor). Most of this now compiles to real C# \u2014 see backend/compiler.js:generateAfflictionSource and backend/templates/Affliction.cs.template for the full evidence trail and confirmed override list (CanAfflictCardType, CanAfflictUnplayableCards, IsStackable, CanAfflict, AfterApplied/BeforeRemoved, OnPlay). Exported as Afflictions/README.md too (compiler.js:buildEnchantmentAfflictionReadme).",
       "items": {
         "$ref": "#/definitions/affliction"
       }
@@ -874,12 +874,71 @@
     "affliction": {
       "type": "object",
       "required": ["id", "name"],
-      "description": "See the top-level `afflictions` property above for the full evidence review — captured for design purposes only, no C# is generated from this yet.",
+      "description": "See the top-level `afflictions` property above for the full evidence review. Round 196 shape — genuinely distinct from `enchantment` above, NOT the same shape reused: no icon, no cardFrames, no modifiers/onApply/shuffle. AfflictionModel has no confirmed damage/block override surface, so there's no numeric-modifier section at all; costChange/keywordsWhileAfflicted/requiresStatus fill the gaps a reflection pass against slay.spencerstiles.com's own Afflictions editor turned up real (or real-adjacent, clearly disclosed) mechanisms for.",
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "description": { "type": "string", "description": "Flavor text." },
-        "effectText": { "type": "string", "description": "Freeform description of what this affliction does — NOT wired to any real trigger/condition/action system yet." }
+        "category": { "type": "string", "description": "Freeform grouping label shown in the editor — not read by any real AfflictionModel override, display/organization only." },
+        "description": { "type": "string", "description": "Tooltip flavor text." },
+        "cardLineText": { "type": "string", "description": "Extra text appended to a card's rules text while this affliction is attached to it." },
+        "canStack": { "type": "boolean", "description": "Compiles to AfflictionModel.get_IsStackable() — [VERIFIED] real override, confirmed via reflection." },
+        "canAffectUnplayableCards": { "type": "boolean", "description": "Compiles to AfflictionModel.get_CanAfflictUnplayableCards() — [VERIFIED] real override, confirmed via reflection." },
+        "requiresStatus": {
+          "type": "object",
+          "description": "Gates this affliction's OnPlay effects (only — not AfterApplied/BeforeRemoved) behind ForgeActions.GetStatusStacks<T>(owner) >= 1. No dedicated AfflictionModel override was found for this field; it's implemented as an early-return guard inside the real OnPlay override instead, using the same [VERIFIED] GetStatusStacks<T> call the HasStatusStacks condition already relies on elsewhere.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "kind": { "type": "string", "enum": ["vanilla", "custom"] },
+            "builtinStatus": { "type": "string", "description": "Required when kind is \"vanilla\" — must be one of BUILTIN_STATUSES." },
+            "statusRef": { "type": "string", "description": "Required when kind is \"custom\" — must match a defined mechanic id." }
+          }
+        },
+        "costChange": {
+          "type": "object",
+          "description": "Compiles to CardEnergyCost.AddThisCombat(amount, false) — [VERIFIED] real call — applied once in AfterApplied() and negated once in BeforeRemoved() to undo it. Known limitation: if `amount` changes while the affliction is still attached, the undo won't match — disclosed in the generated source's comments.",
+          "properties": {
+            "amount": { "type": "number" },
+            "multiplyByAmount": { "type": "boolean", "description": "When true, multiplies `amount` by this affliction's stack Amount before applying." }
+          }
+        },
+        "keywordsWhileAfflicted": {
+          "type": "array",
+          "description": "Values from CARD_KEYWORD_VALUES. NOT compiled to a real override — no confirmed AfflictionModel keyword-injection mechanism exists, so this emits as a disclosed comment in the generated source rather than a throwing ForgeActions.Todo() call (deliberately, so it can't take down other real effects in the same file — see round 30/90/190 precedent).",
+          "items": { "type": "string" }
+        },
+        "effectText": { "type": "string", "description": "Legacy freeform field from the original round-95 shape, kept for backward compatibility with older saved packages." },
+        "onPlay": {
+          "type": "object",
+          "description": "Compiles to AfflictionModel.OnPlay(PlayerChoiceContext, Creature) — [VERIFIED] real override. Unlike enchantment.onPlay, there is NO CardPlay object in scope here (the real signature takes a raw Creature target), so effects compile with a different context (no cardPlay-bound actions).",
+          "properties": {
+            "effects": { "type": "array", "items": { "$ref": "#/definitions/effectBlock" } }
+          }
+        },
+        "whilePile": {
+          "type": "object",
+          "description": "Captured for design purposes only, same as enchantment.whilePile — no real AfflictionModel per-pile-trigger override has been confirmed, so this is NOT compiled into the generated C#.",
+          "properties": {
+            "effects": { "type": "array", "items": { "$ref": "#/definitions/effectBlock" } }
+          }
+        },
+        "validTargets": {
+          "type": "object",
+          "description": "Compiles to AfflictionModel.CanAfflictCardType(CardType) \u2014 [VERIFIED] real override. Five card types (Attack/Skill/Power/Status/Curse) \u2014 deliberately does NOT include a 6th \u201cQuest\u201d checkbox like slay.spencerstiles.com's reference editor shows, because Forge itself has no way to create a Quest-type card anywhere else in the app.",
+          "properties": {
+            "types": {
+              "type": "object",
+              "properties": {
+                "attack": { "type": "boolean" },
+                "skill": { "type": "boolean" },
+                "power": { "type": "boolean" },
+                "status": { "type": "boolean" },
+                "curse": { "type": "boolean" }
+              }
+            },
+            "excludeXCost": { "type": "boolean" },
+            "tags": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
     "pet": {
