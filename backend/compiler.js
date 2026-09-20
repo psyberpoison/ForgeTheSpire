@@ -590,6 +590,11 @@ const PROTECTED_CTOR_BUILTIN_POWERS = new Set(['TemporaryDexterity', 'TemporaryF
 const PLAYER_ONLY_ACTIONS = [
   'DrawCard', 'ModifyEnergy', 'ModifyGold', 'DiscardCard', 'ExhaustCard',
   'CreateCard', 'ShuffleCardIntoDraw', 'EndTurn', 'ModifyOrbSlots', 'ReturnToHand',
+  // [Round 193] "ModifyCost" -- acts on "this card" (the card the effect
+  // block belongs to), same "no real Creature-target concept" reasoning
+  // as ReturnToHand/ShuffleCardIntoDraw right above -- see that case's own
+  // comment in actionToCSharp for the full evidence trail.
+  'ModifyCost',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -1976,6 +1981,55 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       return action.mode === 'Remove'
         ? `        MegaCrit.Sts2.Core.Commands.OrbCmd.RemoveSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via direct sts2.dll IL read, round 160] see compiler.js's own comment on this case`
         : `        await MegaCrit.Sts2.Core.Commands.OrbCmd.AddSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Orbit" card's gainOrbSlots effect, round 59]`;
+    }
+    case 'ModifyCost': {
+      // [Round 193] Tyler: "instead of energy reduction while left in
+      // hand ... can we add an effect to our existing effect list that
+      // modifies the cost of the card?" -- replaces the enchantment
+      // editor's old, never-compiled `whileInHand.energyReductionPerTurn`
+      // freeform number field (removed this round, see
+      // generateEnchantmentSource/newRichEnchantmentEntity) with a real
+      // action any effect list can use. Reuses the EXACT same real,
+      // [BEST EFFORT] CardEnergyCost.Add{Scope}(int amount, bool
+      // reduceOnly) call costReductionTodoLines already emits for
+      // card.advancedOptions.costReductions -- see that function's own
+      // comment above for the full evidence trail (direct sts2.dll read
+      // of CardEnergyCost's real 26-method table, cross-confirmed against
+      // Enlightenment's real decompiled IL).
+      //
+      // Unlike costReductionTodoLines -- which generateCardSource ONLY
+      // ever calls from a card's own generated class, so `this` is always
+      // safe -- this action can be authored into ANY effect list (a
+      // card's own effects/whileInHand, a relic/mechanic hook, an
+      // enchantment's OnPlay), so it needs the same ctx.thisIsCard gate
+      // ExhaustCard/DiscardCard/ReturnToHand/ShuffleCardIntoDraw already
+      // use for the identical "acts on a specific CardModel" reason
+      // (round 191's enchantment rewiring is what surfaced this whole
+      // pattern). When !ctx.thisIsCard but ctx.cardPlayBound IS true (an
+      // enchantment's OnPlay is exactly this case), this falls back to
+      // `cardPlay.Card` -- the SAME confirmed-real CardModel reference
+      // resolveDamageSourceArgs already uses for that exact situation,
+      // and the same bare (no null-forgiving `!`) dereference pattern
+      // conditionToCSharpRaw's PlayedCardHasType/Keyword/Tag cases already
+      // use on `cardPlay.Card` -- rather than a blanket stub, since a real
+      // card reference genuinely is available there. Only a relic/
+      // mechanic hook with no cardPlay in scope at all falls back to an
+      // honest Todo().
+      const mcScope = action.scope === 'ThisTurnOrUntilPlayed' ? 'ThisTurnOrUntilPlayed' : 'ThisCombat';
+      const mcIncrease = action.mode === 'Increase';
+      const mcAmountExpr = resolveAmountExpr(action);
+      const mcSignedAmountExpr = mcIncrease ? mcAmountExpr : `-(${mcAmountExpr})`;
+      const mcReduceOnlyArg = mcIncrease ? 'false' : 'true';
+      const mcEvidenceTag = mcIncrease
+        ? `[BEST EFFORT, reduceOnly:false inferred — NOT independently confirmed by a decompiled sample, see compiler.js's costReductionTodoLines comment]`
+        : `[BEST EFFORT]`;
+      if (ctx.thisIsCard) {
+        return `        this.EnergyCost.Add${mcScope}(${mcSignedAmountExpr}, ${mcReduceOnlyArg}); // ${mcEvidenceTag} see compiler.js's own comment on this case`;
+      }
+      if (ctx.cardPlayBound) {
+        return `        cardPlay.Card.EnergyCost.Add${mcScope}(${mcSignedAmountExpr}, ${mcReduceOnlyArg}); // ${mcEvidenceTag} see compiler.js's own comment on this case`;
+      }
+      return `        ForgeActions.Todo("ModifyCost -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
     }
     default:
       throw new Error(`No C# mapping registered for action type "${action.type}". Add one in compiler.js:actionToCSharp before this card can compile.`);

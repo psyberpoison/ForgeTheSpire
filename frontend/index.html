@@ -3463,7 +3463,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -3559,7 +3559,7 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Defense', color: '#4b93dd', types: ['GainBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots'] },
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand'] },
+  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost'] },
   { label: 'Misc', color: '#7a8699', types: ['ModifyHp', 'EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -3586,6 +3586,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   EndTurn: 'end turn',
   ModifyOrbSlots: 'gain lose add remove orb slots orb slot',
   ReturnToHand: 'return card to hand retain',
+  ModifyCost: 'modify reduce increase energy cost',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -3874,7 +3875,7 @@ const STATUS_DESCRIPTIONS = {
 // "EndTurn" (Tyler, 2026-08-25: "one that ends the players turn") joined
 // this round — ending YOUR OWN turn has no creature-target concept
 // either, same bucket as Draw/GainEnergy/etc.
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -8997,6 +8998,16 @@ function describeAction(act){
     // Fixed while renaming it to "ModifyOrbSlots" — mode-gated verb, same
     // shape as ModifyGold/ModifyEnergy above.
     case 'ModifyOrbSlots': return `${act.mode === 'Remove' ? 'Remove' : 'Gain'} ${n} Orb Slot${n===1?'':'s'}`;
+    // [Round 193] Tyler: "can we add an effect to our existing effect
+    // list that modifies the cost of the card?" — mode-gated verb
+    // (Decrease/Increase), same shape as ModifyGold/ModifyHp above; scope
+    // appended in parentheses since "for the rest of combat" vs. "this
+    // turn (or until played)" meaningfully changes what the effect does.
+    case 'ModifyCost': {
+      const verb = act.mode === 'Increase' ? 'Increase' : 'Decrease';
+      const scopeText = act.scope === 'ThisTurnOrUntilPlayed' ? 'this turn (or until played)' : 'the rest of combat';
+      return `${verb} this card's Energy cost by ${n} for ${scopeText}`;
+    }
     default: return '';
   }
 }
@@ -11426,7 +11437,7 @@ function actionNeedsStatusPicker(type){ return type === 'ModifyStatus'; }
 // MODE_ACTIONS exactly. null for every other type (mode is ignored/unset).
 // [Round 160] ModifyEnergy (Gain/Lose) and ModifyOrbSlots (Add/Remove)
 // added — see ACTION_TYPES' own comment on both for the full trail.
-const ACTION_MODE_PAIRS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose'], ModifyGold: ['Gain', 'Lose'], ModifyEnergy: ['Gain', 'Lose'], ModifyOrbSlots: ['Add', 'Remove'] };
+const ACTION_MODE_PAIRS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose'], ModifyGold: ['Gain', 'Lose'], ModifyEnergy: ['Gain', 'Lose'], ModifyOrbSlots: ['Add', 'Remove'], ModifyCost: ['Decrease', 'Increase'] };
 function actionModePair(type){ return ACTION_MODE_PAIRS[type] || null; }
 // The single shared `amount` field — ModifyStatus doesn't use it at all
 // (each statusEntries[] entry has its own amount instead, see
@@ -11436,7 +11447,7 @@ function actionModePair(type){ return ACTION_MODE_PAIRS[type] || null; }
 // check, not folded into this list). Mirrors schema/character.schema.json's
 // own `amount` description.
 function actionNeedsAmount(type){
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots'].includes(type);
+  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -11688,7 +11699,7 @@ function targetOptList(actionType, selected, trigger, mode){
 // (mirrors backend/compiler.js's/validate.js's MODE_ACTIONS) — this map is
 // just the display text, real value is always the raw Add/Remove/Gain/Lose
 // string.
-const ACTION_MODE_LABELS = { Add: 'Add', Remove: 'Remove', Gain: 'Gain', Lose: 'Lose' };
+const ACTION_MODE_LABELS = { Add: 'Add', Remove: 'Remove', Gain: 'Gain', Lose: 'Lose', Decrease: 'Decrease', Increase: 'Increase' };
 function modeOptList(pair, selected){
   return (pair||[]).map(v=>`<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(ACTION_MODE_LABELS[v]||v)}</option>`).join('');
 }
@@ -11862,6 +11873,14 @@ document.addEventListener('click', e=>{
 function ensureActionRefDefaults(act){
   const modePair = actionModePair(act.type);
   if(modePair && !modePair.includes(act.mode)) act.mode = modePair[0];
+
+  // [Round 193] ModifyCost's own `scope` field — same enum/default
+  // ("ThisCombat") as card.advancedOptions.costReductions[].scope.
+  if(act.type === 'ModifyCost'){
+    if(!['ThisCombat','ThisTurnOrUntilPlayed'].includes(act.scope)) act.scope = 'ThisCombat';
+  } else {
+    delete act.scope;
+  }
 
   if(actionNeedsStatusPicker(act.type)){
     if(!Array.isArray(act.statusEntries)) act.statusEntries = [];
@@ -12346,6 +12365,24 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'ModifyOrbSlots':
       sentenceHtml = `${modeSelectHtml}${amountHtml}${useXAmountHtml}<span class="cond-word">Orb Slot(s).</span>`;
       break;
+    // [Round 193] Tyler: "instead of energy reduction while left in hand
+    // ... can we add an effect to our existing effect list that modifies
+    // the cost of the card?" Same real CardEnergyCost.Add{Scope} call
+    // card.advancedOptions.costReductions' own bespoke row already uses
+    // (see backend/compiler.js:costReductionTodoLines) — modeSelectHtml
+    // here reads ACTION_MODE_PAIRS.ModifyCost (Decrease/Increase, same
+    // words that bespoke row's own direction dropdown uses). The scope
+    // select is new — no other action type needs one — so it's built
+    // inline here rather than added to the shared modeSelectHtml/
+    // amountHtml atoms above.
+    case 'ModifyCost': {
+      const costScopeHtml = `<select class="a-cost-scope">
+        <option value="ThisCombat" ${(act.scope||'ThisCombat')==='ThisCombat'?'selected':''}>for the rest of combat</option>
+        <option value="ThisTurnOrUntilPlayed" ${act.scope==='ThisTurnOrUntilPlayed'?'selected':''}>this turn (or until played)</option>
+      </select>`;
+      sentenceHtml = `${modeSelectHtml}<span class="cond-word">this card's Energy cost by</span>${amountHtml}${useXAmountHtml}${costScopeHtml}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -12501,6 +12538,11 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // CreateCard's destination select — no re-render needed.
   const destinationSelect = row.querySelector('.a-destination');
   if(destinationSelect) destinationSelect.onchange = e=> act.destination = e.target.value;
+  // [Round 193] ModifyCost's scope select — no re-render needed, doesn't
+  // change which other fields this row shows (same as destinationSelect
+  // right above).
+  const costScopeSelect = row.querySelector('.a-cost-scope');
+  if(costScopeSelect) costScopeSelect.onchange = e=> act.scope = e.target.value;
   // CreateCard's combined custom-token/vanilla-token select — Tyler: "this
   // should pull a dropdown menu containing all of the user's created token
   // cards, as well as the vanilla status cards if possible." Value is
@@ -13303,7 +13345,6 @@ function newRichEnchantmentEntity(idPrefix, singular){
     // how this compiles to real C# via the same effectsToCSharp/
     // actionToCSharp machinery cards' own OnPlay already uses.
     onPlay: { effects: [] },
-    whileInHand: { energyReductionPerTurn: null },
     shuffle: { startAtBottomOfDraw: false, shuffleOrder: 'normal' },
     // [Round 191] "...and the while in pile box should pull the pile
     // options from our existing pile section under card settings" — same
@@ -13361,7 +13402,18 @@ function ensureRichEnchantmentDefaults(e){
     delete e.onPlay.blockPerStack;
     delete e.onPlay.extraEffectsText;
   }
-  if(!e.whileInHand) e.whileInHand = d.whileInHand;
+  // [Round 193] Tyler: "instead of energy reduction while left in hand
+  // ... can we add an effect to our existing effect list that modifies
+  // the cost of the card?" — whileInHand.energyReductionPerTurn is
+  // removed outright, not migrated (same "field removed outright, not
+  // migrated" precedent round 176/191 already set) — it was never even
+  // read by backend/compiler.js:generateEnchantmentSource in the first
+  // place (a real, pre-existing gap this round's removal also closes),
+  // and the same behavior is now expressible for real via a "Modify
+  // Cost" action inside the "While the card waits in a pile" effects
+  // list right below (WHILE_IN_HAND_TRIGGERS already includes a Hand
+  // pile option).
+  delete e.whileInHand;
   if(!e.shuffle) e.shuffle = d.shuffle;
   if(!e.whilePile) e.whilePile = d.whilePile;
   else {
@@ -13718,7 +13770,7 @@ function makeRichEntitySection(opts){
   function openEditor(entId){
     const e = state[stateKey].find(x=>x.id===entId);
     ensureRichEnchantmentDefaults(e);
-    const mo = e.modifiers, oa = e.onApply, op = e.onPlay, wh = e.whileInHand, sh = e.shuffle, wp = e.whilePile, vt = e.validTargets;
+    const mo = e.modifiers, oa = e.onApply, op = e.onPlay, sh = e.shuffle, wp = e.whilePile, vt = e.validTargets;
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
@@ -13806,9 +13858,6 @@ function makeRichEntitySection(opts){
           <button class="secondary" id="${idPrefix}-onplay-add" type="button">+ Add effect block</button>
         </div>
 
-        ${fieldHead('While left in hand', 'Reductions accumulate until the card is played, then reset.', 'margin-top:20px')}
-        <div><label>Energy reduction each turn left in hand</label><input type="number" id="${idPrefix}-wh-energy" style="width:100px" value="${wh.energyReductionPerTurn ?? ''}"></div>
-
         <label class="ench-flush" style="margin-top:20px">Position after shuffling</label>
         <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
         <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
@@ -13894,8 +13943,6 @@ function makeRichEntitySection(opts){
       oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
 
       // op.effects mutated live by renderEffectsList above — nothing to read back here.
-
-      wh.energyReductionPerTurn = num(`${idPrefix}-wh-energy`);
 
       sh.startAtBottomOfDraw = document.getElementById(`${idPrefix}-sh-bottom`).checked;
       sh.shuffleOrder = document.getElementById(`${idPrefix}-sh-order`).value;

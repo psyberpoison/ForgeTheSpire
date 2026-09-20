@@ -185,6 +185,10 @@ const ACTION_TYPES = [
   'DrawCard', 'ModifyEnergy', 'ModifyHp', 'ModifyGold', 'DiscardCard',
   'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw',
   'StunEnemy', 'EndTurn', 'ModifyOrbSlots', 'ReturnToHand',
+  // [Round 193] Tyler: "can we add an effect to our existing effect list
+  // that modifies the cost of the card?" -- see compiler.js's
+  // actionToCSharp "ModifyCost" case for the full evidence trail.
+  'ModifyCost',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -201,7 +205,7 @@ const ACTION_TYPES = [
 // ModifyOrbSlots (replacing "GainOrbSlots") launches with the same pattern
 // from day one instead of a plain always-add amount. See compiler.js's
 // ModifyEnergy/ModifyOrbSlots cases for the underlying API evidence.
-const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose'], ModifyGold: ['Gain', 'Lose'], ModifyEnergy: ['Gain', 'Lose'], ModifyOrbSlots: ['Add', 'Remove'] };
+const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose'], ModifyGold: ['Gain', 'Lose'], ModifyEnergy: ['Gain', 'Lose'], ModifyOrbSlots: ['Add', 'Remove'], ModifyCost: ['Decrease', 'Increase'] };
 // Imported from compiler.js rather than duplicated here — one source of
 // truth for "what's a valid target for this action type", "what are the
 // real built-in status classes", and "which vanilla/protected-ctor
@@ -780,6 +784,16 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, fieldName 
       }
     } else if (act.mode !== undefined && !['Add', 'Remove', 'Gain', 'Lose'].includes(act.mode)) {
       errors.push(`${p}.mode "${act.mode}" is not one of: Add, Remove, Gain, Lose.`);
+    }
+    // scope — ModifyCost only (round 193). Same real two-option choice
+    // (which CardEnergyCost.Add{Scope} overload to call) as
+    // card.advancedOptions.costReductions[].scope already validates below
+    // — optional (defaults to "ThisCombat" in compiler.js's ModifyCost
+    // case), so only type-checked when present, not required.
+    if (act.scope !== undefined && act.type !== 'ModifyCost') {
+      errors.push(`${p}: scope is only meaningful on "ModifyCost" — action type is "${act.type}".`);
+    } else if (act.scope !== undefined && !CARD_COST_REDUCTION_SCOPES.includes(act.scope)) {
+      errors.push(`${p}.scope "${act.scope}" is not one of: ${CARD_COST_REDUCTION_SCOPES.join(', ')}.`);
     }
     // statusEntries[] — ModifyStatus only. Replaces the old separate
     // builtinStatuses[]/statusRefs[] + statusAmounts{}/refAmounts{} — see
