@@ -3465,7 +3465,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -3561,7 +3561,7 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Defense', color: '#4b93dd', types: ['GainBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots'] },
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost'] },
+  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment'] },
   { label: 'Misc', color: '#7a8699', types: ['ModifyHp', 'EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -3589,6 +3589,10 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ModifyOrbSlots: 'gain lose add remove orb slots orb slot',
   ReturnToHand: 'return card to hand retain',
   ModifyCost: 'modify reduce increase energy cost',
+  AfflictCard: 'afflict apply affliction curse this card',
+  RemoveAffliction: 'remove clear affliction cure this card',
+  EnchantCard: 'enchant apply enchantment this card',
+  RemoveEnchantment: 'remove clear enchantment this card',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -9010,6 +9014,22 @@ function describeAction(act){
       const scopeText = act.scope === 'ThisTurnOrUntilPlayed' ? 'this turn (or until played)' : 'the rest of combat';
       return `${verb} this card's Energy cost by ${n} for ${scopeText}`;
     }
+    // [Round 197] Tyler: "we also need to add effects to remove or
+    // afflict cards" -- both directions (Tyler's own follow-up answer:
+    // "Both Afflict + Enchant actions"). Acts on "this card" only, same
+    // no-target-picker shape as ModifyCost/ExhaustCard/etc. right above
+    // (see compiler.js's resolveActedCardExpr). Amount shown only for the
+    // "apply" pair -- ClearAffliction/ClearEnchantment take no amount.
+    case 'AfflictCard': {
+      const name = (state.afflictions.find(a=>a.id===act.afflictionRef) || {}).name || 'an affliction';
+      return `Afflict this card with ${n} stack${n===1?'':'s'} of ${name}`;
+    }
+    case 'RemoveAffliction': return `Remove this card's current affliction (if any)`;
+    case 'EnchantCard': {
+      const name = (state.enchantments.find(en=>en.id===act.enchantmentRef) || {}).name || 'an enchantment';
+      return `Enchant this card with ${n} stack${n===1?'':'s'} of ${name}`;
+    }
+    case 'RemoveEnchantment': return `Remove this card's current enchantment (if any)`;
     default: return '';
   }
 }
@@ -11461,7 +11481,7 @@ function actionModePair(type){ return ACTION_MODE_PAIRS[type] || null; }
 // check, not folded into this list). Mirrors schema/character.schema.json's
 // own `amount` description.
 function actionNeedsAmount(type){
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost'].includes(type);
+  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -11949,6 +11969,26 @@ function ensureActionRefDefaults(act){
     }
   }
 
+  // [Round 197] AfflictCard/EnchantCard's own entity pickers -- same
+  // self-healing shape as CreateCard's tokenRef just above (defaults to
+  // the first available entity, or leaves it unset if none exist yet;
+  // dropped entirely on any other action type so a stale ref never
+  // survives a type switch).
+  if(act.type === 'AfflictCard'){
+    if(state.afflictions.length && (!act.afflictionRef || !state.afflictions.find(a=>a.id===act.afflictionRef))){
+      act.afflictionRef = state.afflictions[0].id;
+    }
+  } else {
+    delete act.afflictionRef;
+  }
+  if(act.type === 'EnchantCard'){
+    if(state.enchantments.length && (!act.enchantmentRef || !state.enchantments.find(en=>en.id===act.enchantmentRef))){
+      act.enchantmentRef = state.enchantments[0].id;
+    }
+  } else {
+    delete act.enchantmentRef;
+  }
+
   // followUp — Tyler's "follow up" ask (added 2026-08-27). DealDamage-only;
   // dropped on any other type (mirrors the type-change handler's own
   // `delete act.followUp` in wireActionRowHandlers, but also catches a
@@ -12397,6 +12437,31 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `${modeSelectHtml}<span class="cond-word">this card's Energy cost by</span>${amountHtml}${useXAmountHtml}${costScopeHtml}<span class="cond-word">.</span>`;
       break;
     }
+    // [Round 197] AfflictCard/EnchantCard -- picker dropdown modeled
+    // directly on CreateCard's own tokenRef select just above (same "no
+    // entities yet" hint-text fallback). RemoveAffliction/RemoveEnchantment
+    // need no fields at all -- CardCmd.ClearAffliction/ClearEnchantment
+    // (compiler.js) take just the card, no amount, no ref.
+    case 'AfflictCard': {
+      const afflOptions = state.afflictions.length
+        ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
+      sentenceHtml = `<span class="cond-word">Afflict this card with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      break;
+    }
+    case 'RemoveAffliction':
+      sentenceHtml = `<span class="cond-word">Remove this card's current affliction (if any).</span>`;
+      break;
+    case 'EnchantCard': {
+      const enchOptions = state.enchantments.length
+        ? `<select class="a-enchantment-ref">${state.enchantments.map(en=>`<option value="${escapeAttr(en.id)}" ${act.enchantmentRef===en.id?'selected':''}>${escapeHtml(en.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create an Enchantment first)</span>`;
+      sentenceHtml = `<span class="cond-word">Enchant this card with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${enchOptions}<span class="cond-word">.</span>`;
+      break;
+    }
+    case 'RemoveEnchantment':
+      sentenceHtml = `<span class="cond-word">Remove this card's current enchantment (if any).</span>`;
+      break;
     default:
       sentenceHtml = '';
   }
@@ -12501,7 +12566,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.mode; delete act.statusEntries; delete act.drawNextTurn;
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
-    delete act.retainThisTurn;
+    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef;
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
@@ -12572,6 +12637,13 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     if(kind === 'vanilla'){ act.tokenVanillaRef = value; delete act.tokenRef; }
     else { act.tokenRef = value; delete act.tokenVanillaRef; }
   };
+  // [Round 197] AfflictCard/EnchantCard's own entity-picker selects --
+  // no re-render needed, same as tokenRefSelect above (doesn't change
+  // which other fields this row shows).
+  const afflictionRefSelect = row.querySelector('.a-affliction-ref');
+  if(afflictionRefSelect) afflictionRefSelect.onchange = e=> act.afflictionRef = e.target.value;
+  const enchantmentRefSelect = row.querySelector('.a-enchantment-ref');
+  if(enchantmentRefSelect) enchantmentRefSelect.onchange = e=> act.enchantmentRef = e.target.value;
 
   const amountInput = row.querySelector('.a-amount');
   if(amountInput) amountInput.oninput = e=> act.amount = parseFloat(e.target.value)||0;
@@ -13697,7 +13769,6 @@ function newAfflictionEntity(idPrefix, singular){
   return {
     id: uid(idPrefix),
     name: `New ${singular}`,
-    category: '',
     description: '',
     cardLineText: '',
     canStack: false,
@@ -13732,7 +13803,6 @@ function newAfflictionEntity(idPrefix, singular){
 // have no home on the real, separate AfflictionModel class.
 function ensureAfflictionDefaults(e){
   const d = newAfflictionEntity('tmp', 'X');
-  if(e.category === undefined) e.category = d.category;
   if(e.cardLineText === undefined) e.cardLineText = d.cardLineText;
   // Old shape kept "can stack" under modifiers.canStack — read it once on
   // migration so an existing affliction doesn't silently lose the value.
@@ -13773,6 +13843,7 @@ function ensureAfflictionDefaults(e){
   delete e.icon;
   delete e.cardFrames;
   delete e.effectText;
+  delete e.category; // [Round 196 follow-up] Category section removed per Tyler's ask
   return e;
 }
 
@@ -13821,8 +13892,6 @@ function makeAfflictionSection(opts){
         ${fieldHead('Properties', `Name, category, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
         <div class="ench-field-box">
           <label class="ench-flush" style="margin-top:0">Name</label><input type="text" id="${idPrefix}-name" value="${escapeAttr(e.name)}">
-          <label class="ench-flush" style="margin-top:16px">Category</label>
-          <input type="text" id="${idPrefix}-category" placeholder="Freeform — for your own organization only" value="${escapeAttr(e.category||'')}">
           ${fieldHead('Description', 'Tooltip flavor text.', 'margin-top:16px')}
           <textarea id="${idPrefix}-desc">${escapeHtml(e.description||'')}</textarea>
           ${fieldHead('Extra text on the card', 'Shown on the card itself, under its own text. Leave blank and the card says nothing extra.', 'margin-top:16px')}
@@ -13908,7 +13977,6 @@ function makeAfflictionSection(opts){
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
     document.getElementById(`save-${idPrefix}`).onclick = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
-      e.category = document.getElementById(`${idPrefix}-category`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
       e.canStack = document.getElementById(`${idPrefix}-canstack`).checked;

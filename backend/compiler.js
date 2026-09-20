@@ -595,6 +595,14 @@ const PLAYER_ONLY_ACTIONS = [
   // as ReturnToHand/ShuffleCardIntoDraw right above -- see that case's own
   // comment in actionToCSharp for the full evidence trail.
   'ModifyCost',
+  // [Round 197] Tyler: "we also need to add effects to remove or afflict
+  // cards" -- CardCmd.Afflict<T>/CardCmd.Enchant<T>/CardCmd.ClearAffliction/
+  // CardCmd.ClearEnchantment are all real (see actionToCSharp's own cases)
+  // but every one of them acts on a specific CardModel, not a Creature --
+  // same "no real Creature-target concept" bucket as ModifyCost right
+  // above, resolved via resolveActedCardExpr(ctx) instead of a target
+  // picker.
+  'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -2031,9 +2039,80 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       }
       return `        ForgeActions.Todo("ModifyCost -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
     }
+    // [Round 197] Tyler: "we also need to add effects to remove or
+    // afflict cards" -- the "known gap" flagged in round 190
+    // (generateEnchantmentSource) and round 196 (generateAfflictionSource):
+    // "nothing in Forge can GRANT/APPLY this [enchantment/affliction] to a
+    // card yet." Closed for real via CardCmd, reflected directly off
+    // sts2.dll AND cross-confirmed against Tyler's own real, working "The
+    // Burdened" project (FatiguePower.cs/Reckless.cs -- built with the
+    // slay.spencerstiles.com reference tool, found under his connected
+    // Animation folder):
+    //   public static Task<T> Afflict<T>(CardModel card, decimal amount)
+    //   public static void ClearAffliction(CardModel card)
+    //   public static T Enchant<T>(CardModel card, decimal amount)  -- NOT
+    //     async, unlike Afflict<T> -- confirmed by the raw method
+    //     signature (no Task<> wrapper) via direct ECMA-335 read.
+    //   public static void ClearEnchantment(CardModel card)
+    // All four act on a specific CardModel, not a Creature -- same "acts
+    // on THIS card, no target picker" shape as ModifyCost/ExhaustCard/
+    // DiscardCard/ReturnToHand/ShuffleCardIntoDraw above, resolved via
+    // resolveActedCardExpr(ctx) (see its own comment) rather than
+    // repeating the inline ctx.thisIsCard/ctx.cardPlayBound check by hand
+    // -- that helper also covers a case those four never needed: an
+    // Affliction's own OnPlay, where `this.Card` is the real,
+    // [VERIFIED] way to reach "the card this affliction is on" (there's
+    // no CardPlay object in scope there at all -- see
+    // generateAfflictionSource's onPlayCtx, which sets
+    // affectedCardIsThisCard: true).
+    case 'AfflictCard': {
+      const acCardExpr = resolveActedCardExpr(ctx);
+      if (!acCardExpr) return `        ForgeActions.Todo("AfflictCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      const afflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
+      if (!afflCls) return `        ForgeActions.Todo("AfflictCard -- no affliction selected"); // pick an affliction in this action's own dropdown`;
+      return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(${acCardExpr}, (decimal)(${resolveAmountExpr(action)})); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Powers/FatiguePower.cs's real, working "await CardCmd.Afflict<Reckless>(_ac, base.Amount * 1m)" call] CardCmd.Afflict<T>(CardModel, decimal) is real, public, static, generic, async -- it constructs/attaches the affliction itself, no ModelDb.Affliction<T>()/ToMutable() needed here.`;
+    }
+    case 'RemoveAffliction': {
+      const raCardExpr = resolveActedCardExpr(ctx);
+      if (!raCardExpr) return `        ForgeActions.Todo("RemoveAffliction -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      return `        MegaCrit.Sts2.Core.Commands.CardCmd.ClearAffliction(${raCardExpr}); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Afflictions/Reckless.cs's real, working "CardCmd.ClearAffliction(_ac)" call] CardCmd.ClearAffliction(CardModel) is real, public, static, and synchronous (no Task/await, unlike Afflict<T>). Clears whatever affliction the card currently has -- a card only ever carries one, so this isn't per-affliction-type.`;
+    }
+    case 'EnchantCard': {
+      const ecCardExpr = resolveActedCardExpr(ctx);
+      if (!ecCardExpr) return `        ForgeActions.Todo("EnchantCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      const enchCls = ctx.enchantmentClassById && ctx.enchantmentClassById.get(action.enchantmentRef);
+      if (!enchCls) return `        ForgeActions.Todo("EnchantCard -- no enchantment selected"); // pick an enchantment in this action's own dropdown`;
+      return `        MegaCrit.Sts2.Core.Commands.CardCmd.Enchant<${enchCls}>(${ecCardExpr}, (decimal)(${resolveAmountExpr(action)})); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.Enchant<T>(CardModel, decimal) is real, public, static, generic -- genuinely NOT async (returns T directly, no Task<> wrapper in its real signature), unlike CardCmd.Afflict<T> right above, so this call has no await.`;
+    }
+    case 'RemoveEnchantment': {
+      const reCardExpr = resolveActedCardExpr(ctx);
+      if (!reCardExpr) return `        ForgeActions.Todo("RemoveEnchantment -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      return `        MegaCrit.Sts2.Core.Commands.CardCmd.ClearEnchantment(${reCardExpr}); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.ClearEnchantment(CardModel) is real, public, static, synchronous. Clears whatever enchantment the card currently has -- a card only ever carries one.`;
+    }
     default:
       throw new Error(`No C# mapping registered for action type "${action.type}". Add one in compiler.js:actionToCSharp before this card can compile.`);
   }
+}
+
+// [Round 197] Resolves "the CardModel this action acts on" for the four
+// CardModel-scoped actions right above (AfflictCard/RemoveAffliction/
+// EnchantCard/RemoveEnchantment), none of which have a separate target
+// picker. Same three-way fallback ModifyCost/ExhaustCard/DiscardCard/
+// ReturnToHand/ShuffleCardIntoDraw already use inline (ctx.thisIsCard ->
+// `this`, ctx.cardPlayBound -> `cardPlay.Card`), PLUS a third case those
+// five never needed: ctx.affectedCardIsThisCard, set only by
+// generateAfflictionSource's onPlayCtx -- an Affliction's own OnPlay has
+// NO CardPlay object in scope at all (AfflictionModel.OnPlay's real
+// signature takes a raw Creature, not a CardPlay -- see that function's
+// own header comment), but `this.Card` is a real, [VERIFIED]
+// AfflictionModel property pointing at exactly the card this affliction
+// is attached to. Returns null when none of the three apply -- callers
+// fall back to an honest Todo().
+function resolveActedCardExpr(ctx) {
+  if (ctx.thisIsCard) return 'this';
+  if (ctx.cardPlayBound) return 'cardPlay.Card';
+  if (ctx.affectedCardIsThisCard) return 'this.Card';
+  return null;
 }
 
 // --- card keywords (Exhaust/Ethereal/Innate/Retain/Unplayable/Sly/Eternal) --
@@ -2492,7 +2571,7 @@ function cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, ctxOverride
   // the one consumer so far, and resolvePlayerExpr's comment for the
   // broader "fgPlayer is always bound" argument this flag makes explicit
   // rather than assumed per-call-site.
-  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded: the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for one.
+  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded: the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for one.
   const baseEffects = (card.effects || []).filter(e => e.trigger === trigger);
   const baseBody = baseEffects.length ? effectsToCSharp(baseEffects, ctx) : null;
   if (!resolvedTiers.length) return baseBody;
@@ -3872,7 +3951,7 @@ ${passthrough}
     // that assumes fgPlayer is always in scope (CardsPlayedThisTurn/
     // AttacksPlayedThisTurn) needs to know per-hook whether it really is —
     // see those cases' own comment for why.
-    const modCtx = { cardPlayBound: false, fgPlayerBound: !!hook.playerExpr, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+    const modCtx = { cardPlayBound: false, fgPlayerBound: !!hook.playerExpr, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
     const condExpr = (mod.conditions && mod.conditions.length)
       ? mod.conditions.map(c => conditionToCSharp(c, modCtx)).join(' && ')
       : 'true';
@@ -4031,7 +4110,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // whole method body is just the Todo() fallback and neither is
     // invoked. So every reachable call passes through this ctx with
     // fgPlayer already unconditionally bound.
-    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment
+    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment
     // Round 19 added a THIRD real shape beyond "both bound"/"neither bound"
     // — 22 of the 39 new hooks expose exactly ONE real Creature (playerExpr
     // set, targetExpr null: e.g. AfterGoldGained's bare `Player player`,
@@ -4974,7 +5053,7 @@ function generateCardSource(card, namespace, poolClassName, cardArtOverride, ref
         const whileInHandLines = whileInHandMergeLines(
           whileInHandEffects.filter(e => e.trigger === trigger),
           trigger,
-          { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById }
+          { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
         );
         const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         return `
@@ -5020,7 +5099,7 @@ ${triggerBody}
         const whileInHandLines = whileInHandMergeLines(
           whileInHandEffects.filter(e => e.trigger === trigger),
           trigger,
-          { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById }
+          { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
         );
         const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, { cardPlayBound: false, targetMayBeNull: false }), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         const petLine = hook.petExpr ? `        var fgPet = ${hook.petExpr}; // [VERIFIED via decompiling TheBurdenedNewCharacter.dll's DiscardStatusPower v5 + direct sts2.dll read of CardModel.Owner/Player.Osty]\n` : '';
@@ -5065,7 +5144,7 @@ ${costLines.length ? costLines.join('\n') + '\n' : ''}        await Task.Complet
       if (!entries.length) return null;
       const hook = TRIGGER_HOOKS[triggerId];
       const guard = PILE_TRIGGER_OWNER_GUARD[triggerId];
-      const ctx = { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+      const ctx = { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
       const indent = s => s.split('\n').map(l => `    ${l}`).join('\n');
       const perEntryBlocks = entries.map(e => {
         const body = effectsToCSharp([e], ctx) || '        // no effects defined';
@@ -5365,7 +5444,7 @@ ${checks.join('\n')}
   // existing ctx.thisIsCard-gated Todo() stubs instead of emitting
   // `this`-referencing code that would target the wrong object.
   const onPlayEffects = (Array.isArray(op.effects) ? op.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
-  const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+  const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
   // "While in a pile" -- [Round 191] Tyler: "...and the while in pile box
@@ -5555,7 +5634,7 @@ ${checks.join('\n')}
   // EndTurn, etc.) correctly falls to its next, more conservative
   // fallback instead of emitting a compile-breaking `cardPlay` reference.
   const onPlayEffects = ((affliction.onPlay && Array.isArray(affliction.onPlay.effects)) ? affliction.onPlay.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
-  const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById };
+  const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, affectedCardIsThisCard: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
   // "While in a pile" -- same honest "captured, not compiled" gap
@@ -5791,7 +5870,7 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
   // Enchantments now (no modifiers/onApply/icon/cardFrames -- see
   // generateAfflictionSource's own comment for why).
   entries.forEach(e => {
-    lines.push(`## ${e.name || 'Untitled'}${e.category ? ` (${e.category})` : ''}`);
+    lines.push(`## ${e.name || 'Untitled'}`); // [Round 196 follow-up] Category field removed per Tyler's ask
     lines.push('');
     if (e.description) { lines.push(''); lines.push(e.description); }
     if (e.cardLineText) { lines.push(''); lines.push(`**Line added to the card:** ${e.cardLineText}`); }
@@ -7715,6 +7794,18 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // ModelDb.Relic<T>().
   const cardClassById = new Map(characterPackage.cards.map(c => [c.id, pascalCase(c.name) + 'Card']));
   const relicClassById = new Map((characterPackage.relics || []).map(r => [r.id, pascalCase(r.name) + 'Relic']));
+  // [Round 197] Same map-by-id convention as cardClassById/relicClassById
+  // above, built fully-qualified (global::{namespace}.Afflictions.X /
+  // .Enchantments.X) rather than bare -- unlike cardClassById/
+  // relicClassById, these two get referenced from potentially ANY
+  // generated namespace (a relic's or mechanic's own effects, not just a
+  // card's own), and Relic.cs.template/Mechanic.cs.template have no
+  // `using {{namespace}}.Afflictions;`/`.Enchantments;` of their own, so a
+  // bare class name would risk an unresolved-type build error there. See
+  // actionToCSharp's AfflictCard/EnchantCard cases (ctx.afflictionClassById/
+  // ctx.enchantmentClassById).
+  const afflictionClassById = new Map((characterPackage.afflictions || []).map(a => [a.id, `global::${namespace}.Afflictions.${pascalCase(a.name)}Affliction`]));
+  const enchantmentClassById = new Map((characterPackage.enchantments || []).map(e => [e.id, `global::${namespace}.Enchantments.${pascalCase(e.name)}Enchantment`]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
 
@@ -7902,7 +7993,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // real .cs file, same "per-entity .cs file + one README" pattern Orbs
   // already uses just above.
   for (const enchantment of characterPackage.enchantments || []) {
-    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById });
+    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
     write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
   }
   if ((characterPackage.enchantments || []).length) {
@@ -7915,7 +8006,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // generateAfflictionSource's own comment for the full evidence trail).
   // Tyler: "afflictions are temporary enchantments."
   for (const affliction of characterPackage.afflictions || []) {
-    const afflSrc = generateAfflictionSource(affliction, namespace, { cardClassById, relicClassById });
+    const afflSrc = generateAfflictionSource(affliction, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
     write(`Afflictions/${pascalCase(affliction.name)}Affliction.cs`, afflSrc);
   }
   if ((characterPackage.afflictions || []).length) {
@@ -7958,7 +8049,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
       if (!cardArtHeaderAdded) { artReport.push('', '**Card art:**'); cardArtHeaderAdded = true; }
       artReport.push(cardArtReportLine);
     }
-    const src = generateCardSource(card, namespace, cardPoolClassName, cardArtOverride, { cardClassById, relicClassById });
+    const src = generateCardSource(card, namespace, cardPoolClassName, cardArtOverride, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
     write(`Cards/${pascalCase(card.name)}Card.cs`, src);
   }
   if (characterPackage.cards.length && !cardArtHeaderAdded) {
@@ -7967,13 +8058,13 @@ function generateProject(characterPackage, outDir, opts = {}) {
 
   // Relics.
   for (const relic of characterPackage.relics || []) {
-    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById });
+    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
     write(`Relics/${pascalCase(relic.name)}Relic.cs`, src);
   }
 
   // Mechanics (custom powers/statuses).
   for (const mechanic of characterPackage.mechanics || []) {
-    const src = generateMechanicSource(mechanic, namespace, { cardClassById, relicClassById });
+    const src = generateMechanicSource(mechanic, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
     write(`Powers/${pascalCase(mechanic.name)}Power.cs`, src);
   }
 
