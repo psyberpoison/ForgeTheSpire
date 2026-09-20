@@ -13800,7 +13800,7 @@ function makeRichEntitySection(opts){
           </div>
         </div>
 
-        ${fieldHead('When the card is played', 'Real effects — the same trigger/condition/action editor cards use for their own OnPlay.', 'margin-top:20px')}
+        ${fieldHead('When the card is played', '', 'margin-top:20px')}
         <div class="ench-field-box">
           <div id="${idPrefix}-onplay-list"></div>
           <button class="secondary" id="${idPrefix}-onplay-add" type="button">+ Add effect block</button>
@@ -13813,7 +13813,7 @@ function makeRichEntitySection(opts){
         <label style="margin:4px 0 0; font-weight:normal; display:flex; align-items:center; gap:6px"><input type="checkbox" id="${idPrefix}-sh-bottom" ${sh.startAtBottomOfDraw?'checked':''}> Start at the bottom of the draw pile</label>
         <div style="margin-top:8px"><select id="${idPrefix}-sh-order">${ENCHANTMENT_SHUFFLE_ORDER_OPTIONS.map(o=>`<option value="${o.id}" ${sh.shuffleOrder===o.id?'selected':''}>${o.label}</option>`).join('')}</select></div>
 
-        ${fieldHead('While the card waits in a pile', `Real effects — the same pile-trigger editor Card Settings' own "While in a pile" section uses, for a card carrying this ${noun} sitting in hand/draw/discard/exhaust without being played.`, 'margin-top:20px')}
+        ${fieldHead('While the card waits in a pile', '', 'margin-top:20px')}
         <div id="${idPrefix}-whilepile-list"></div>
         <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
 
