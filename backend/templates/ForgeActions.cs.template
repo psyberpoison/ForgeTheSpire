@@ -198,7 +198,20 @@ public static class ForgeActions
     // ForgeActions.DealDamage(...);` call site (the vast majority — only
     // a KilledTarget followUp actually reads the return value) is
     // unaffected by this signature change.
-    public static async Task<AttackCommand?> DealDamage(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, Creature target, int amount, int hitCount = 1)
+    // `unblockable` (new, round 199) -- ValueProp.Unblockable is
+    // [VERIFIED via direct ECMA-335 field read of the real
+    // MegaCrit.Sts2.Core.ValueProps.ValueProp [Flags] enum -- Unblockable
+    // = 2, Unpowered = 4, Move = 8, SkipHurtAnim = 16, round 199] real.
+    // Only actually reachable on the sourceCard == null path below --
+    // AttackCommand.DamageProps (the sourceCard != null path's own way of
+    // carrying ValueProp) has a PRIVATE setter (same reflection pass), so
+    // there is no real way to flow it through DamageCmd.Attack(...)'s
+    // fluent builder. compiler.js only sets `unblockable: true` on calls
+    // it knows take this branch (see actionToCSharp's DealDamage case);
+    // it's still accepted (and silently ignored) on the sourceCard-bound
+    // branch rather than throwing, so a package saved before this
+    // distinction existed can't crash generation over it.
+    public static async Task<AttackCommand?> DealDamage(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, Creature target, int amount, int hitCount = 1, bool unblockable = false)
     {
         if (sourceCard != null)
         {
@@ -206,7 +219,7 @@ public static class ForgeActions
         }
         else
         {
-            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, target, (decimal)amount, default(ValueProp), dealer);
+            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, target, (decimal)amount, unblockable ? ValueProp.Unblockable : default(ValueProp), dealer);
             return null;
         }
     }
@@ -231,7 +244,10 @@ public static class ForgeActions
     // [Round 70] Same return-value change as DealDamage above, same reason
     // — a KilledTarget followUp on an AllEnemies Deal Damage action needs
     // this AttackCommand's real Results too.
-    public static async Task<AttackCommand?> DealDamageAllEnemies(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, MegaCrit.Sts2.Core.Combat.ICombatState combatState, int amount, int hitCount = 1)
+    // `unblockable` (new, round 199) -- same real ValueProp.Unblockable,
+    // same private-setter limitation on the sourceCard-bound branch -- see
+    // DealDamage's own comment just above for the full evidence.
+    public static async Task<AttackCommand?> DealDamageAllEnemies(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, MegaCrit.Sts2.Core.Combat.ICombatState combatState, int amount, int hitCount = 1, bool unblockable = false)
     {
         if (sourceCard != null)
         {
@@ -239,7 +255,7 @@ public static class ForgeActions
         }
         else
         {
-            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, combatState.HittableEnemies, (decimal)amount, default(ValueProp), dealer);
+            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, combatState.HittableEnemies, (decimal)amount, unblockable ? ValueProp.Unblockable : default(ValueProp), dealer);
             return null;
         }
     }

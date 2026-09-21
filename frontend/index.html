@@ -2813,15 +2813,22 @@
            for the exact evidence tier per field. Two grids in one
            section (Tyler grouped them together, not as separate
            sections) — layout/styling is placeholder, per Tyler's own
-           "we'll modify how it looks later." -->
+           "we'll modify how it looks later." UPDATED round 199, Tyler:
+           "lets remove this [old panel-desc text, including its now-stale
+           'nothing can grant/apply either yet' known-gap line -- closed
+           by round 197's AfflictCard/EnchantCard actions] ... put in a
+           section of information that tells the user that enchantments
+           persist unless removed, and afflictions are only per-combat." -->
       <div class="panel-desc">
         Card- or relic-granted modifiers a run can pick up mid-game — Enchantments (positive) and Afflictions
-        (negative). Both now compile to real C# (Enchantments since Round 190, Afflictions since Round 196) —
-        see each editor's own banner for exactly which fields map to a confirmed override. A design doc still
-        exports alongside the code (Enchantments/README.md, Afflictions/README.md in the compiled mod).
-        <strong>Known gap:</strong> nothing in Forge can grant an Enchantment or apply an Affliction to a card yet
-        (no card/relic action for either) — the classes are real but nothing attaches them to anything in-game
-        until a future round adds that.
+        (negative). Both compile to real C# (Enchantments since Round 190, Afflictions since Round 196) and can
+        be granted to a card via the Afflict Card / Enchant Card actions (Round 197) — see each editor's own
+        banner for exactly which fields map to a confirmed override. A design doc still exports alongside the
+        code (Enchantments/README.md, Afflictions/README.md in the compiled mod).
+        <br><br>
+        <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment
+        action) — they don't wear off on their own.
+        <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat.
       </div>
       <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
       <div class="grid-cards" id="enchantments-grid"></div>
@@ -3075,6 +3082,12 @@ const HOOK_TRIGGER_LABELS = {
   // a real Group A event hook like every other entry above (see
   // backend/validate.js's HOOK_TRIGGERS comment for the full story).
   AfterForge: 'After you forge',
+  // [Round 199] BeforeFlush/AfterFlush -- real, newly mapped this round
+  // (see backend/compiler.js:TRIGGER_HOOKS' own comment) -- "Flush" is
+  // this game's term for discarding your still-unplayed hand at end of
+  // turn.
+  BeforeFlush: 'Before your hand is flushed (discarded at end of turn)',
+  AfterFlush: 'After your hand is flushed (discarded at end of turn)',
 };
 // Merged lookup — CARD_TRIGGER_LABELS first (OnAnyCardPlayed's card-context
 // wording), then HOOK_TRIGGER_LABELS, then the raw id as a last resort (a
@@ -3168,6 +3181,7 @@ const HOOK_TRIGGER_BINDING = {
   AfterStarsSpent: 'player', AfterStarsGained: 'player', AfterSummon: 'player',
   BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'unbound',
   AfterForge: 'player', // playerExpr: 'forger.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.AfterForge
+  BeforeFlush: 'player', AfterFlush: 'player', // [Round 199] playerExpr: 'player.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.BeforeFlush/AfterFlush
 };
 // Round 21 — Tyler: "lets go through the hooks and their targets... I need
 // this to be fullproof." A SECOND, finer-grained restriction beyond
@@ -3401,14 +3415,14 @@ const TRIGGER_CATEGORIES = [
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
   { id:'powers', label:'Powers / Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged'] },
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
-  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle'] },
+  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
   { id:'orb', label:'Orb', color:'#3aa8a0', triggers:['AfterOrbChanneled','AfterOrbEvoked'] },
   { id:'restsite', label:'Rest Site', color:'#8fbf4a', triggers:['AfterRestSiteHeal','AfterRestSiteSmith'] },
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
 ];
-const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge"];
+const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 // Sweep TRIGGER_CATEGORIES against the real union of CARD_TRIGGERS +
 // HOOK_TRIGGERS at load time, so a future trigger added to one list without
 // a matching category entry fails loudly in the console instead of just
@@ -3465,7 +3479,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -3561,7 +3575,7 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Defense', color: '#4b93dd', types: ['GainBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots'] },
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment'] },
+  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile'] },
   { label: 'Misc', color: '#7a8699', types: ['ModifyHp', 'EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -3593,6 +3607,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   RemoveAffliction: 'remove clear affliction cure this card',
   EnchantCard: 'enchant apply enchantment this card',
   RemoveEnchantment: 'remove clear enchantment this card',
+  ClearAfflictionFromPile: 'clear remove affliction from pile hand draw discard exhaust other cards',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -3881,7 +3896,20 @@ const STATUS_DESCRIPTIONS = {
 // "EndTurn" (Tyler, 2026-08-25: "one that ends the players turn") joined
 // this round — ending YOUR OWN turn has no creature-target concept
 // either, same bucket as Draw/GainEnergy/etc.
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost"];
+//
+// [Round 199 BUG FIX] AfflictCard/RemoveAffliction/EnchantCard/
+// RemoveEnchantment (round 197) and ClearAfflictionFromPile (round 199)
+// were never added here even though compiler.js's real PLAYER_ONLY_ACTIONS
+// has always included them (they act on a specific CardModel or a whole
+// pile, never a Creature) -- meaning this list drifted out of sync with
+// its own mirrored source of truth. Without them here, the type-change
+// handler's local validTargetsForAction() never forced act.target to
+// "Self" for these 5 types, so a freshly-added action could save with a
+// stale/default Creature target (e.g. "SingleEnemy") that the REAL
+// compiler.js:validTargetsForAction (imported into validate.js) rejects
+// outright at generate/download time -- caught by round 199's own
+// pipeline test.
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -11974,7 +12002,7 @@ function ensureActionRefDefaults(act){
   // the first available entity, or leaves it unset if none exist yet;
   // dropped entirely on any other action type so a stale ref never
   // survives a type switch).
-  if(act.type === 'AfflictCard'){
+  if(act.type === 'AfflictCard' || act.type === 'ClearAfflictionFromPile'){
     if(state.afflictions.length && (!act.afflictionRef || !state.afflictions.find(a=>a.id===act.afflictionRef))){
       act.afflictionRef = state.afflictions[0].id;
     }
@@ -11987,6 +12015,15 @@ function ensureActionRefDefaults(act){
     }
   } else {
     delete act.enchantmentRef;
+  }
+  // [Round 199] ClearAfflictionFromPile's own pile select -- same
+  // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
+  // entries already use, defaults to "Hand" (matching Reckless.cs's own
+  // real usage and compiler.js:pileTypeExpr's own fallback).
+  if(act.type === 'ClearAfflictionFromPile'){
+    if(!PILE_TYPES.includes(act.pile)) act.pile = 'Hand';
+  } else {
+    delete act.pile;
   }
 
   // followUp — Tyler's "follow up" ask (added 2026-08-27). DealDamage-only;
@@ -12303,7 +12340,19 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // wording ask: "Deal " [x] " damage to " [target], [x] " times." /
     // "...times, per stack of " [status] " on " [target,self,all
     // enemies]."
-    case 'DealDamage':
+    case 'DealDamage': {
+      // [Round 199] "Unblockable" -- ValueProp.Unblockable is [VERIFIED
+      // via direct ECMA-335 field read of the real ValueProp [Flags] enum]
+      // real, directly evidenced by Afflictions/Reckless.cs's own real
+      // "await CreatureCmd.Damage(..., ValueProp.Unblockable, ...)"
+      // self-damage call. Only actually takes effect when this action has
+      // no CardModel source (a relic/mechanic/affliction's own effect,
+      // never a card's own OnPlay) -- see compiler.js's own comment; still
+      // shown everywhere (not context-gated in the UI) so it can't
+      // silently disappear depending on where the effect lives, same
+      // "always offered, backend decides what's reachable" convention
+      // ModifyCost's scope dropdown etc. already follow.
+      const unblockableHtml = `<label class="a-check-label" title="Deals damage that ignores Block entirely. [VERIFIED via decompiling Tyler's own real &quot;The Burdened&quot; project, round 199 -- Afflictions/Reckless.cs's real, working ValueProp.Unblockable self-damage call] Only takes effect on a relic/mechanic/affliction's own Deal Damage (no CardModel source) -- a no-op on a card's own Deal Damage, since AttackCommand's DamageProps setter is private."><input type="checkbox" class="a-unblockable" ${act.unblockable?'checked':''}> Unblockable</label>`;
       sentenceHtml = `
         <span class="cond-word">Deal</span>
         ${dealDamageAmountSlotHtml}
@@ -12311,8 +12360,10 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         <span class="cond-word">,</span>
         ${dealDamageHitCountSlotHtml}
         <span class="cond-word">times.</span>
+        ${unblockableHtml}
       `;
       break;
+    }
     case 'GainBlock': sentenceHtml = selfOnlyScalableSentence('Gain', 'Block'); break;
     // Mode-driven merge of the old ApplyStatus/RemoveStatus/
     // ApplyCustomStatus/RemoveCustomStatus — Tyler: "lets reduce apply/
@@ -12462,6 +12513,18 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'RemoveEnchantment':
       sentenceHtml = `<span class="cond-word">Remove this card's current enchantment (if any).</span>`;
       break;
+    // [Round 199] Directly evidenced by Afflictions/Reckless.cs's own
+    // real OnPlay -- clears its own affliction type from every other card
+    // in hand. Generalized to any pile + any afflictionRef here (see
+    // compiler.js's actionToCSharp case for the full evidence).
+    case 'ClearAfflictionFromPile': {
+      const cafpOptions = state.afflictions.length
+        ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
+      const cafpPileHtml = `<select class="a-pile">${pileOptList(act.pile)}</select>`;
+      sentenceHtml = `<span class="cond-word">Clear</span> ${cafpOptions} <span class="cond-word">from every other card in your</span> ${cafpPileHtml}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -12566,7 +12629,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.mode; delete act.statusEntries; delete act.drawNextTurn;
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
-    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef;
+    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable;
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
@@ -12644,6 +12707,14 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(afflictionRefSelect) afflictionRefSelect.onchange = e=> act.afflictionRef = e.target.value;
   const enchantmentRefSelect = row.querySelector('.a-enchantment-ref');
   if(enchantmentRefSelect) enchantmentRefSelect.onchange = e=> act.enchantmentRef = e.target.value;
+  // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
+  // needed, same as destinationSelect/costScopeSelect above.
+  const pileSelect = row.querySelector('.a-pile');
+  if(pileSelect) pileSelect.onchange = e=> act.pile = e.target.value;
+  // [Round 199] DealDamage's "Unblockable" checkbox -- no re-render
+  // needed, same as randomCheck/retainThisTurn above.
+  const unblockableCheck = row.querySelector('.a-unblockable');
+  if(unblockableCheck) unblockableCheck.onchange = e=> act.unblockable = e.target.checked;
 
   const amountInput = row.querySelector('.a-amount');
   if(amountInput) amountInput.oninput = e=> act.amount = parseFloat(e.target.value)||0;
@@ -13419,6 +13490,15 @@ function newRichEnchantmentEntity(idPrefix, singular){
       perStack: false,
       canStack: false, showNumberOnCard: true,
     },
+    // [Round 201 -- correcting round 200] addKeywords/removeKeywords were
+    // removed in round 200 (reasoning that OnEnchant() has no matching
+    // removal hook, so a keyword change could never be safely reversed on
+    // removal) and are back this round -- Tyler supplied a real, working
+    // reference enchantment (a different, unrelated character-creator
+    // tool's real generated output) that does exactly this, permanently,
+    // with no reversal on removal. See backend/compiler.js's
+    // generateEnchantmentSource for the full IL-disassembly evidence
+    // trail confirming real CardModel.AddKeyword/RemoveKeyword calls.
     onApply: {
       addKeywords: [], removeKeywords: [],
       zeroEnergyCostOnApply: false,
@@ -13443,6 +13523,12 @@ function newRichEnchantmentEntity(idPrefix, singular){
     // identical renderEffectsList(..., WHILE_IN_HAND_TRIGGERS, ..., true)
     // call cards' own "While in a pile" Advanced Options section uses.
     whilePile: { effects: [] },
+    // [Round 200] "make this section fully functional" -- Additional
+    // Triggers, same real hook vocabulary (HOOK_TRIGGERS) Relics/
+    // Mechanics/Afflictions already use for their own effects[] --
+    // EnchantmentModel extends AbstractModel and genuinely has that same
+    // 200+-method real hook surface.
+    effects: [],
     validTargets: {
       types: { attack: true, skill: true, power: true },
       excludeXCost: false,
@@ -13470,6 +13556,10 @@ function ensureRichEnchantmentDefaults(e){
   if(!e.onApply) e.onApply = d.onApply;
   else {
     for(const k in d.onApply) if(e.onApply[k]===undefined) e.onApply[k]=d.onApply[k];
+    // [Round 201 -- correcting round 200] addKeywords/removeKeywords are
+    // back — round 200 deleted them outright on a wrong premise (see
+    // newRichEnchantmentEntity's own comment above for the full story).
+    // Migrate-on-touch same as every other array field here.
     if(!Array.isArray(e.onApply.addKeywords)) e.onApply.addKeywords = [];
     if(!Array.isArray(e.onApply.removeKeywords)) e.onApply.removeKeywords = [];
     delete e.onApply.flatBlockAdjustment; // [round 175] "Flat Block adjustment"/"Stacks gained after each play" removed — Tyler: "remove this section."
@@ -13511,6 +13601,10 @@ function ensureRichEnchantmentDefaults(e){
     if(!Array.isArray(e.whilePile.effects)) e.whilePile.effects = [];
     delete e.whilePile.triggersText; // [round 191] same "no freeform boxes" removal as onPlay above
   }
+  // [Round 200] "make this section fully functional" — Additional
+  // Triggers, same real hook vocabulary (HOOK_TRIGGERS) Relics/Mechanics/
+  // Afflictions already use for their own effects[].
+  if(!Array.isArray(e.effects)) e.effects = [];
   if(!e.validTargets) e.validTargets = d.validTargets;
   else {
     if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
@@ -13788,6 +13882,13 @@ function newAfflictionEntity(idPrefix, singular){
     keywordsWhileAfflicted: [],
     onPlay: { effects: [] },
     whilePile: { effects: [] },
+    // [Round 199] "build out the full affliction section" -- this
+    // affliction's OWN additional triggers, same HOOK_TRIGGERS vocabulary
+    // Relics/Mechanics already use for their own top-level `effects`
+    // (AfflictionModel extends AbstractModel, same real hook surface) --
+    // a SEPARATE array from onPlay.effects above, which keeps its own
+    // dedicated OnPlay-only shape unchanged.
+    effects: [],
     validTargets: {
       types: { attack: true, skill: true, power: true, status: true, curse: true },
       excludeXCost: false,
@@ -13817,6 +13918,7 @@ function ensureAfflictionDefaults(e){
   else if(!Array.isArray(e.onPlay.effects)) e.onPlay.effects = [];
   if(!e.whilePile) e.whilePile = d.whilePile;
   else if(!Array.isArray(e.whilePile.effects)) e.whilePile.effects = [];
+  if(!Array.isArray(e.effects)) e.effects = [];
   if(!e.validTargets) e.validTargets = d.validTargets;
   else {
     if(!e.validTargets.types) e.validTargets.types = d.validTargets.types;
@@ -13885,8 +13987,10 @@ function makeAfflictionSection(opts){
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
       <div class="modal-body ench-modal-body" style="max-height:82vh">
-        <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
-          Round 196: this compiles to a real Afflictions/${singular}Name.cs — MegaCrit.Sts2.Core.Models.AfflictionModel is a confirmed real base-game class, genuinely separate from EnchantmentModel above (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; "Requires status," "Energy cost change," and "Keywords while afflicted" have no confirmed dedicated override on this class and are implemented against the closest real, already-verified mechanism instead (a guard inside the real OnPlay override, and the real AfterApplied/BeforeRemoved one-time hooks) — see the generated file's own comments for the exact evidence tier of each. <strong>Known gap:</strong> nothing in Forge can APPLY this affliction to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.
+        <div class="panel-desc ench-flush" style="margin-top:0">
+          This compiles to a real Afflictions/${singular}Name.cs — MegaCrit.Sts2.Core.Models.AfflictionModel is a confirmed real base-game class, genuinely separate from EnchantmentModel above (verified via direct ECMA-335 metadata read of your installed sts2.dll), and every field below maps to a real, confirmed override or a real, verified mechanism (e.g. "Requires status" is a guard inside the real OnPlay override; "Energy cost change"/"Keywords while afflicted" use the real AfterApplied/BeforeRemoved one-time hooks).
+          <br><br>
+          <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat. Use the Afflict Card / Remove Affliction actions (available in any effect block) to attach or detach this affliction at runtime.
         </div>
 
         ${fieldHead('Properties', `Name, category, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
@@ -13942,6 +14046,12 @@ function makeAfflictionSection(opts){
           <div id="${idPrefix}-whilepile-list"></div>
           <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
         </div>
+
+        ${fieldHead('Additional Triggers', 'Any other real trigger this affliction can hook (end-of-turn cleanup, combat start/end, and more) -- besides its own dedicated "When this card is played" section above.', 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div id="${idPrefix}-effects-list"></div>
+          <button class="secondary" id="${idPrefix}-effects-add" type="button">+ Add trigger</button>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="danger" id="delete-${idPrefix}">Delete</button>
@@ -13960,18 +14070,37 @@ function makeAfflictionSection(opts){
       reqStatusSlot.style.display = rs.enabled ? '' : 'none';
     };
 
-    // Same ENCHANTMENT_ONPLAY_TRIGGERS/WHILE_IN_HAND_TRIGGERS vocabulary
-    // and renderEffectsList() component Enchantments use above — Tyler:
-    // "it is the same as our existing blocks."
+    // Same ENCHANTMENT_ONPLAY_TRIGGERS vocabulary and renderEffectsList()
+    // component Enchantments use above — Tyler: "it is the same as our
+    // existing blocks."
     renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
     document.getElementById(`${idPrefix}-onplay-add`).onclick = ()=>{
       op.effects.push({ trigger: 'OnPlay', conditions: [], actions: [], elseActions: [] });
       renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
     };
-    renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    // [Round 200] "make this section fully functional" -- whilePile's
+    // trigger vocabulary was wrong (WHILE_IN_HAND_TRIGGERS is sourced
+    // from CARD_TRIGGER_HOOKS, declared on CustomCardModel specifically
+    // -- AfflictionModel can't reach those at all). HOOK_TRIGGERS is the
+    // real, reachable vocabulary instead -- see backend/compiler.js's
+    // generateAfflictionSource (combinedTriggerEffects) for how this now
+    // compiles for real, each entry gated by a real
+    // `this.Card.Pile?.Type == X` check.
+    renderEffectsList({ effects: wp.effects }, HOOK_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
     document.getElementById(`${idPrefix}-whilepile-add`).onclick = ()=>{
-      wp.effects.push({ trigger: 'OnTurnEndInHand', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
-      renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+      wp.effects.push({ trigger: 'OnCombatStart', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: wp.effects }, HOOK_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    };
+    // [Round 199] "Additional Triggers" -- same HOOK_TRIGGERS vocabulary
+    // and renderEffectsList() component Relics/Mechanics already use for
+    // their own top-level effects[] (see makeRelicSection's own
+    // #add-effect wiring) -- 'OnPlay' correctly isn't offered here
+    // (HOOK_TRIGGERS never includes it), since this affliction's own
+    // OnPlay is the dedicated section above instead.
+    renderEffectsList({ effects: e.effects }, HOOK_TRIGGERS, `${idPrefix}-effects-list`);
+    document.getElementById(`${idPrefix}-effects-add`).onclick = ()=>{
+      e.effects.push({ trigger: 'OnCombatStart', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: e.effects }, HOOK_TRIGGERS, `${idPrefix}-effects-list`);
     };
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
@@ -14134,8 +14263,10 @@ function makeRichEntitySection(opts){
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
       <div class="modal-body ench-modal-body" style="max-height:82vh">
-        <div class="panel-desc ench-flush" style="margin-top:0; color:var(--danger-bright)">
-          Round 190: this now compiles to a real Enchantments/${singular}Name.cs — MegaCrit.Sts2.Core.Models.EnchantmentModel is a confirmed real base-game class (verified via direct ECMA-335 metadata read of your installed sts2.dll). Most fields below map to a real, confirmed override; a few (the once-per-combat/first-play-only checkboxes, "Randomize Energy cost on draw," and the freeform Extra effects text) have no confirmed BaseLib API yet and are left uncompiled — see the generated file's own comments for exactly which. <strong>Known gap:</strong> nothing in Forge can GRANT this enchantment to a card yet (no card/relic action for it) — the class is real but nothing attaches it to anything in-game until a future round adds that.
+        <div class="panel-desc ench-flush" style="margin-top:0">
+          This compiles to a real Enchantments/${singular}Name.cs — MegaCrit.Sts2.Core.Models.EnchantmentModel is a confirmed real base-game class (verified via direct ECMA-335 metadata read of your installed sts2.dll), and every field below maps to a real, confirmed override.
+          <br><br>
+          <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment action) — they don't wear off on their own. Use the Enchant Card / Remove Enchantment actions (available in any effect block) to attach or detach this enchantment at runtime.
         </div>
 
         ${fieldHead('Basic Information', `Name, icon, description, targeting and stacking for this ${noun}.`, 'margin-top:20px')}
@@ -14179,7 +14310,7 @@ function makeRichEntitySection(opts){
 
         <div class="row" style="margin-top:20px; gap:24px; align-items:flex-start; flex-wrap:wrap;">
           <div style="flex:1 1 320px; min-width:280px;">
-            ${fieldHead('When Applied', '', 'margin-top:0')}
+            ${fieldHead('When Applied', 'Permanent changes made the moment this enchantment is applied to a card -- none of these are undone if the enchantment is later removed.', 'margin-top:0')}
             <div class="ench-field-box">
               <div style="display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; align-items:flex-start; gap:10px;">
@@ -14227,6 +14358,12 @@ function makeRichEntitySection(opts){
           <button class="secondary" id="${idPrefix}-whilepile-add" type="button">+ Add pile-trigger effect</button>
         </div>
 
+        ${fieldHead('Additional Triggers', 'Any other real trigger this enchantment can hook (end-of-turn cleanup, combat start/end, and more) -- besides its own dedicated "When the card is played" section above.', 'margin-top:20px')}
+        <div class="ench-field-box">
+          <div id="${idPrefix}-effects-list"></div>
+          <button class="secondary" id="${idPrefix}-effects-add" type="button">+ Add trigger</button>
+        </div>
+
         ${fieldHead('Card frame', `${ENCHANTMENT_FRAME_WIDTH}×${ENCHANTMENT_FRAME_HEIGHT}px. Attack/Skill/Power fall back to the plain Enchanted Frame when unset. All optional.`, 'margin-top:20px')}
         <div class="ench-field-box">
           <div class="card-frame-grid" id="${idPrefix}-cf-grid">
@@ -14262,6 +14399,9 @@ function makeRichEntitySection(opts){
     // focus) and mutate their arrays directly, so no further wiring is
     // needed for any of them in the save handler below.
     document.getElementById(`${idPrefix}-vt-tags-slot`).appendChild(renderEnchTagPicker(vt.tags));
+    // [Round 201] addKeywords/removeKeywords restored (see
+    // newRichEnchantmentEntity's own comment above) -- same
+    // renderEnchKeywordPicker two-instance wiring round 174 established.
     document.getElementById(`${idPrefix}-oa-add-slot`).appendChild(renderEnchKeywordPicker(oa.addKeywords));
     document.getElementById(`${idPrefix}-oa-remove-slot`).appendChild(renderEnchKeywordPicker(oa.removeKeywords));
 
@@ -14274,10 +14414,29 @@ function makeRichEntitySection(opts){
       op.effects.push({ trigger: 'OnPlay', conditions: [], actions: [], elseActions: [] });
       renderEffectsList({ effects: op.effects }, ENCHANTMENT_ONPLAY_TRIGGERS, `${idPrefix}-onplay-list`);
     };
-    renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    // [Round 200] "make this section fully functional" -- whilePile's
+    // trigger vocabulary was wrong (WHILE_IN_HAND_TRIGGERS is sourced
+    // from CARD_TRIGGER_HOOKS, declared on CustomCardModel specifically
+    // -- EnchantmentModel can't reach those at all). HOOK_TRIGGERS is the
+    // real, reachable vocabulary (same one Relics/Mechanics/Afflictions'
+    // own effects[] use) -- see backend/compiler.js's generateEnchantmentSource
+    // (combinedTriggerEffects) for how this now compiles for real, each
+    // entry gated by a real `this.Card.Pile?.Type == X` check.
+    renderEffectsList({ effects: wp.effects }, HOOK_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
     document.getElementById(`${idPrefix}-whilepile-add`).onclick = ()=>{
-      wp.effects.push({ trigger: 'OnTurnEndInHand', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
-      renderEffectsList({ effects: wp.effects }, WHILE_IN_HAND_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+      wp.effects.push({ trigger: 'OnCombatStart', pile: 'Hand', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: wp.effects }, HOOK_TRIGGERS, `${idPrefix}-whilepile-list`, undefined, true);
+    };
+    // [Round 200] "Additional Triggers" -- NEW for Enchantments this
+    // round, same real hook vocabulary and renderEffectsList() component
+    // Relics/Mechanics/Afflictions already use for their own top-level
+    // effects[] -- 'OnPlay' correctly isn't offered here (HOOK_TRIGGERS
+    // never includes it), since this enchantment's own OnPlay is the
+    // dedicated section above instead.
+    renderEffectsList({ effects: e.effects }, HOOK_TRIGGERS, `${idPrefix}-effects-list`);
+    document.getElementById(`${idPrefix}-effects-add`).onclick = ()=>{
+      e.effects.push({ trigger: 'OnCombatStart', conditions: [], actions: [], elseActions: [] });
+      renderEffectsList({ effects: e.effects }, HOOK_TRIGGERS, `${idPrefix}-effects-list`);
     };
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
@@ -14302,7 +14461,7 @@ function makeRichEntitySection(opts){
       mo.canStack = document.getElementById(`${idPrefix}-mo-stack`).checked;
       mo.showNumberOnCard = document.getElementById(`${idPrefix}-mo-shownum`).checked;
 
-      // oa.addKeywords/removeKeywords are mutated live by renderEnchKeywordPicker above — nothing to read back here.
+      // oa.addKeywords/removeKeywords mutated live by renderEnchKeywordPicker above — nothing to read back here.
       oa.zeroEnergyCostOnApply = document.getElementById(`${idPrefix}-oa-zeroenergy`).checked;
 
       // op.effects mutated live by renderEffectsList above — nothing to read back here.

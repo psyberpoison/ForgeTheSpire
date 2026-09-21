@@ -84,7 +84,7 @@ const CARD_TAGS = ['None', 'Strike', 'Defend', 'Minion', 'OstyAttack', 'Shiv'];
 // — despite being on Tyler's reconstructed "odd-shaped Group B" list, a
 // fresh sts2.dll read confirmed it's Task-returning, i.e. a real Group A
 // event hook like every other entry in this array.
-const HOOK_TRIGGERS = ['OnMyTurnStart', 'OnEnemyTurnStart', 'OnMyTurnEnd', 'OnEnemyTurnEnd', 'OnCombatStart', 'OnKillEnemy', 'OnMyDamageTaken', 'OnEnemyDamageTaken', 'OnExhaust', 'OnDrawCard', 'Passive', 'OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterModifyingCardPlayCount', 'AfterCardDiscarded', 'AfterAttack', 'AfterMyDamageGiven', 'AfterEnemyDamageGiven', 'BeforeMyDamageReceived', 'BeforeEnemyDamageReceived', 'AfterMyBlockCleared', 'AfterEnemyBlockCleared', 'AfterMyBlockGained', 'AfterEnemyBlockGained', 'AfterMyBlockBroken', 'AfterEnemyBlockBroken', 'AfterEnemyAddedToCombat', 'AfterMyCurrentHpChanged', 'AfterEnemyCurrentHpChanged', 'BeforeMyDeath', 'BeforeEnemyDeath', 'AfterDiedToDoom', 'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath', 'AfterSummon', 'AfterMyPowerAmountChanged', 'AfterEnemyPowerAmountChanged', 'AfterEnergyReset', 'AfterEnergySpent', 'AfterGoldGained', 'AfterStarsSpent', 'AfterStarsGained', 'BeforeHandDraw', 'AfterHandEmptied', 'AfterPreventingDraw', 'AfterShuffle', 'AfterActEntered', 'AfterCombatEnd', 'AfterCombatVictory', 'BeforeSideTurnStart', 'AfterPlayerTurnStart', 'AfterOrbChanneled', 'AfterOrbEvoked', 'AfterRestSiteHeal', 'AfterRestSiteSmith', 'BeforePotionUsed', 'AfterPotionUsed', 'AfterPotionDiscarded', 'AfterPotionProcured', 'AfterItemPurchased', 'AfterForge'];
+const HOOK_TRIGGERS = ['OnMyTurnStart', 'OnEnemyTurnStart', 'OnMyTurnEnd', 'OnEnemyTurnEnd', 'OnCombatStart', 'OnKillEnemy', 'OnMyDamageTaken', 'OnEnemyDamageTaken', 'OnExhaust', 'OnDrawCard', 'Passive', 'OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterModifyingCardPlayCount', 'AfterCardDiscarded', 'AfterAttack', 'AfterMyDamageGiven', 'AfterEnemyDamageGiven', 'BeforeMyDamageReceived', 'BeforeEnemyDamageReceived', 'AfterMyBlockCleared', 'AfterEnemyBlockCleared', 'AfterMyBlockGained', 'AfterEnemyBlockGained', 'AfterMyBlockBroken', 'AfterEnemyBlockBroken', 'AfterEnemyAddedToCombat', 'AfterMyCurrentHpChanged', 'AfterEnemyCurrentHpChanged', 'BeforeMyDeath', 'BeforeEnemyDeath', 'AfterDiedToDoom', 'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath', 'AfterSummon', 'AfterMyPowerAmountChanged', 'AfterEnemyPowerAmountChanged', 'AfterEnergyReset', 'AfterEnergySpent', 'AfterGoldGained', 'AfterStarsSpent', 'AfterStarsGained', 'BeforeHandDraw', 'AfterHandEmptied', 'AfterPreventingDraw', 'AfterShuffle', 'AfterActEntered', 'AfterCombatEnd', 'AfterCombatVictory', 'BeforeSideTurnStart', 'AfterPlayerTurnStart', 'AfterOrbChanneled', 'AfterOrbEvoked', 'AfterRestSiteHeal', 'AfterRestSiteSmith', 'BeforePotionUsed', 'AfterPotionUsed', 'AfterPotionDiscarded', 'AfterPotionProcured', 'AfterItemPurchased', 'AfterForge', 'BeforeFlush', 'AfterFlush'];
 // [Fix, round 35] 13 old ambiguous "fires for both your side and the
 // enemy's" trigger ids retired above (fail loud -- Tyler's own migration
 // choice, see RETIRED_AMBIGUOUS_TRIGGERS below): AfterDamageGiven,
@@ -195,6 +195,11 @@ const ACTION_TYPES = [
   // CardCmd.Afflict<T>/ClearAffliction/Enchant<T>/ClearEnchantment calls
   // these compile to.
   'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment',
+  // [Round 199] "build out the full affliction section" -- see
+  // compiler.js's actionToCSharp "ClearAfflictionFromPile" case for the
+  // real CardCmd.ClearAffliction/PileTypeExtensions.GetPile evidence
+  // (directly evidenced by Afflictions/Reckless.cs's own real OnPlay).
+  'ClearAfflictionFromPile',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -901,14 +906,24 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // EnchantCard only, same "reject an empty pick with a friendlier
     // message, reject a stale/unknown id otherwise" shape as CreateCard's
     // tokenRef right above.
-    if (act.type === 'AfflictCard') {
+    if (act.type === 'AfflictCard' || act.type === 'ClearAfflictionFromPile') {
       if (act.afflictionRef === '' || act.afflictionRef === undefined) {
-        errors.push(`${p}: action "AfflictCard" needs an affliction selected — pick one from the dropdown, or add an Affliction first if none exist yet (Enchantments & Afflictions section).`);
+        errors.push(`${p}: action "${act.type}" needs an affliction selected — pick one from the dropdown, or add an Affliction first if none exist yet (Enchantments & Afflictions section).`);
       } else if (!afflictionIds.has(act.afflictionRef)) {
         errors.push(`${p}.afflictionRef "${act.afflictionRef}" doesn't match any defined affliction id.`);
       }
     } else if (act.afflictionRef !== undefined) {
-      errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard" — action type is "${act.type}".`);
+      errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+    }
+    // [Round 199] pile -- ClearAfflictionFromPile only, same "must be one
+    // of PILE_TYPES, or omitted (defaults to Hand)" shape whileInHand's
+    // own .pile field already uses (see its own check further below).
+    if (act.type === 'ClearAfflictionFromPile') {
+      if (act.pile !== undefined && !PILE_TYPES.includes(act.pile)) {
+        errors.push(`${p}.pile is "${act.pile}" — must be one of: ${PILE_TYPES.join(', ')} (or omitted, which defaults to "Hand").`);
+      }
+    } else if (act.pile !== undefined) {
+      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile" — action type is "${act.type}".`);
     }
     if (act.type === 'EnchantCard') {
       if (act.enchantmentRef === '' || act.enchantmentRef === undefined) {
@@ -918,6 +933,16 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       }
     } else if (act.enchantmentRef !== undefined) {
       errors.push(`${p}: enchantmentRef is only meaningful on "EnchantCard" — action type is "${act.type}".`);
+    }
+    // [Round 199] unblockable -- DealDamage only, boolean. See
+    // compiler.js's actionToCSharp DealDamage case for the real
+    // ValueProp.Unblockable evidence and the sourceCard-bound branch's
+    // known no-op caveat (not re-validated here — that's a runtime-shape
+    // limitation, not a malformed package).
+    if (act.type === 'DealDamage') {
+      if (act.unblockable !== undefined && typeof act.unblockable !== 'boolean') errors.push(`${p}.unblockable must be a boolean.`);
+    } else if (act.unblockable !== undefined) {
+      errors.push(`${p}: unblockable is only meaningful on "DealDamage" — action type is "${act.type}".`);
     }
     // [Round 155] retainThisTurn — Tyler's companion checkbox: "There
     // should also be a check box to 'retain the card this turn' if the
@@ -1993,6 +2018,28 @@ function validateCharacterPackage(pkg) {
     const p = `enchantments[${i}]`;
     if (!e || typeof e !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(e.name)) errors.push(`${p}.name must be a non-empty string.`);
+    // [Round 201] onApply.addKeywords/removeKeywords -- restored this
+    // round (removed in round 200, then proven real by a working
+    // reference enchantment's decompiled OnEnchant() body -- see
+    // Enchantment.cs.template's header for the full evidence trail).
+    // Same CARD_KEYWORD_VALUES gating as affliction.keywordsWhileAfflicted
+    // below. Never validated before round 201 (round 190-200 never
+    // checked these at all).
+    if (e.onApply) {
+      ['addKeywords', 'removeKeywords'].forEach((field) => {
+        if (e.onApply[field] !== undefined) {
+          if (!Array.isArray(e.onApply[field])) {
+            errors.push(`${p}.onApply.${field} must be an array.`);
+          } else {
+            e.onApply[field].forEach((kw, ki) => {
+              if (!CARD_KEYWORD_VALUES.includes(kw)) {
+                errors.push(`${p}.onApply.${field}[${ki}] "${kw}" is not one of: ${CARD_KEYWORD_VALUES.join(', ')}.`);
+              }
+            });
+          }
+        }
+      });
+    }
     // [Round 197] Enchantments' own onPlay/whilePile effect lists were
     // never validated before now -- they were only checked for .name.
     // This matters as of round 197 because EnchantCard/AfflictCard
@@ -2002,7 +2049,26 @@ function validateCharacterPackage(pkg) {
     // (not 'card') deliberately keeps the X-cost-eligibility check off --
     // Enchantments have no energy cost of their own.
     validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
+    // [Round 200 -- "make this section fully functional"] whilePile's
+    // trigger vocabulary was wrong: EnchantmentModel/AfflictionModel are
+    // NOT CustomCardModel, so they can't reach CARD_TRIGGER_HOOKS-sourced
+    // triggers like OnTurnEndInHand/OnAnyCardPlayed/PILE_TRIGGER_HOOK_IDS
+    // at all -- those are declared on CustomCardModel specifically. Both
+    // extend the shared AbstractModel base instead, so HOOK_TRIGGERS (the
+    // same real vocabulary Relics/Mechanics/Afflictions' own effects[] use)
+    // is the correct, reachable set. This was harmless before round 200
+    // only because nothing was ever compiled from whilePile at all; now
+    // that compiler.js merges it into a real, compiled Additional Triggers
+    // block (see generateEnchantmentSource's combinedTriggerEffects), an
+    // invalid trigger id here would fail at C# compile time in the export,
+    // not just be silently wrong.
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
+    // [Round 200] Enchantments' own new "Additional Triggers" list (see
+    // generateEnchantmentSource's combinedTriggerEffects) -- same real
+    // hook vocabulary and validation shape as Afflictions' effects[]
+    // below (added round 199) and Relics/Mechanics' own effects[].
+    if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
   });
   // Afflictions — Round 196 upgrade: AfflictionModel is a real, separate
   // base-game class from EnchantmentModel (see compiler.js:generateAfflictionSource
@@ -2079,7 +2145,19 @@ function validateCharacterPackage(pkg) {
     // trigger === 'OnPlay' only, so that's the only allowed trigger here
     // too. entityKind: 'affliction' keeps X-cost-eligibility off.
     validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
+    // [Round 200] Same vocabulary fix as Enchantments' whilePile above --
+    // AfflictionModel can't reach CARD_TRIGGER_HOOKS-sourced triggers
+    // either. See that comment for the full rationale.
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
+    // [Round 199] "build out the full affliction section" -- Afflictions'
+    // additional-triggers list, same real hook vocabulary (HOOK_TRIGGERS)
+    // Relics/Mechanics already validate their own effects[] against (see
+    // relic.effects' own call above this one) -- AfflictionModel extends
+    // AbstractModel, so it genuinely has the same real hook surface. A
+    // SEPARATE array from onPlay.effects above (which keeps its own
+    // dedicated, OnPlay-only validation unchanged).
+    if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
   });
 
   orbs.forEach((orb, i) => {

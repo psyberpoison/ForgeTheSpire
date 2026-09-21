@@ -603,6 +603,15 @@ const PLAYER_ONLY_ACTIONS = [
   // above, resolved via resolveActedCardExpr(ctx) instead of a target
   // picker.
   'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment',
+  // [Round 199] "ClearAfflictionFromPile" -- BUG FIX: this was missed when
+  // the action was first added, leaving it validated against the default
+  // Creature-target list (SingleEnemy/AllEnemies/Self/RandomEnemy) even
+  // though actionToCSharp's own case never reads action.target at all --
+  // it loops PileTypeExtensions.GetPile(pile, owner).Cards instead, a
+  // whole PILE, not a single Creature or CardModel. Same bucket as
+  // AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment right
+  // above for that same underlying reason.
+  'ClearAfflictionFromPile',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -939,6 +948,19 @@ function resolvePlayerExpr(ctx) {
   // DiscardCard's own still-open gap noted in the round 30 write-up.
   if (ctx.cardPlayBound) return 'cardPlay.Player';
   if (ctx.entityKind === 'relic') return 'this.Owner';
+  // [Round 199, extended round 200] Neither AfflictionModel nor
+  // EnchantmentModel has an Owner property of its own (only get_Card()) --
+  // CardModel.Owner IS the real, confirmed Player-typed property (see
+  // Affliction.cs.template's own OnPlay comment/generateAfflictionSource),
+  // so `this.Card.Owner` is the real analog to RelicModel.Owner above,
+  // same as Reckless.cs's own real `_affOwner = base.Card.Owner`. Round
+  // 200 extends this to `entityKind === 'enchantment'` too -- its own new
+  // "Additional Triggers"/whilePile hooks (generateHookEffects) bind
+  // fgPlayer off each hook's own playerExpr (e.g. a raw `target`/`dealer`
+  // Creature, not necessarily the owning player), the exact same
+  // fgPlayer.Player-can-be-null risk round 31's real DrawInternal crash
+  // exposed -- this.Card.Owner sidesteps it identically for Enchantments.
+  if (ctx.entityKind === 'affliction' || ctx.entityKind === 'enchantment') return 'this.Card.Owner';
   return 'fgPlayer.Player';
 }
 
@@ -1464,9 +1486,26 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         // unaffected — discarding an awaited Task<T>'s result as a bare
         // statement is ordinary C#, no local variable needed there.
         const usesKilledTargetAttackCommand = !!(fu && fu.trigger === 'KilledTarget' && Array.isArray(fu.actions) && fu.actions.length);
+        // [Round 199] "Unblockable" -- ValueProp.Unblockable is
+        // [VERIFIED via direct ECMA-335 field read of the real
+        // MegaCrit.Sts2.Core.ValueProps.ValueProp [Flags] enum, round
+        // 199] a real member (= 2). Only actually reachable on the
+        // sourceCard-less path ForgeActions.DealDamage/DealDamageAllEnemies
+        // take (see their own template comment) -- the sourceCard path
+        // goes through AttackCommand's own fluent builder, whose
+        // DamageProps setter is PRIVATE (confirmed same reflection pass),
+        // so there's no way to set it there. dmgSrc already tells us which
+        // path this call takes (resolveDamageSourceArgs) -- a sourceCard
+        // is present exactly when ctx.cardPlayBound, so the flag is
+        // honestly dropped (not silently wrong) with a comment on that
+        // branch instead of being passed somewhere it can't take effect.
+        const unblockableArg = action.unblockable ? 'true' : 'false';
+        const unblockableNote = (action.unblockable && ctx.cardPlayBound)
+          ? ' /* [KNOWN GAP] "Unblockable" has no effect here -- this goes through AttackCommand, whose DamageProps setter is private; only takes effect on a relic/mechanic/affliction\'s own DealDamage (no CardModel source) -- see compiler.js\'s own comment on this case */'
+          : '';
         const dealLine = action.target === 'AllEnemies'
-          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies`
-          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage`;
+          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies${unblockableNote}`
+          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage${unblockableNote}`;
         if (fu && fu.trigger && Array.isArray(fu.actions) && fu.actions.length) {
           // FullyBlocked/UnblockedAmount added 2026-08-27 (sts2.dll direct
           // read confirmed DamageResult.WasFullyBlocked/UnblockedDamage as
@@ -2088,6 +2127,33 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const reCardExpr = resolveActedCardExpr(ctx);
       if (!reCardExpr) return `        ForgeActions.Todo("RemoveEnchantment -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       return `        MegaCrit.Sts2.Core.Commands.CardCmd.ClearEnchantment(${reCardExpr}); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.ClearEnchantment(CardModel) is real, public, static, synchronous. Clears whatever enchantment the card currently has -- a card only ever carries one.`;
+    }
+    // [Round 199 -- "build out the full affliction section"] Directly
+    // evidenced by Afflictions/Reckless.cs's own real, working OnPlay body
+    // (Tyler's real "The Burdened" project, rounds 197-199's reference):
+    // it clears its OWN affliction type from every OTHER card in hand via
+    // `PileType.Hand.GetPile(_affOwner).Cards.Where(_c => _c.Affliction is
+    // global::...Reckless).ToList()` then `CardCmd.ClearAffliction(_ac)`
+    // per match -- a self-limiting "only one of me active at a time" rule.
+    // Generalized here beyond hand-only/self-only: any pile
+    // (PileTypeExtensions.GetPile/CardPile.Cards -- both [VERIFIED], see
+    // resolveRandomCardPickAndAct's own comment for the same real access
+    // pattern), and any afflictionRef (not just "this affliction"), so a
+    // relic/mechanic/card can use it too, not only an affliction acting on
+    // itself. `.ToList()` snapshots the pile before mutating it, matching
+    // Reckless.cs's own real defensive copy. No CardModel needed in scope
+    // at all -- only a real Player (via resolvePlayerExpr) to find the
+    // pile's owner -- so this never falls back to Todo() for lack of a
+    // CardModel the way the four actions above can.
+    case 'ClearAfflictionFromPile': {
+      const cafpAfflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
+      if (!cafpAfflCls) return `        ForgeActions.Todo("ClearAfflictionFromPile -- no affliction selected"); // pick an affliction in this action's own dropdown`;
+      const cafpPileExpr = pileTypeExpr(action.pile);
+      const cafpOwnerExpr = resolvePlayerExpr(ctx);
+      return `        foreach (CardModel fgAflC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(${cafpPileExpr}, ${cafpOwnerExpr}).Cards.Where(_c => _c.Affliction is ${cafpAfflCls}).ToList()) // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 199 -- Afflictions/Reckless.cs's real, working PileType.Hand.GetPile(...).Cards.Where(_c => _c.Affliction is ...).ToList() pattern]
+        {
+            MegaCrit.Sts2.Core.Commands.CardCmd.ClearAffliction(fgAflC);
+        }`;
     }
     default:
       throw new Error(`No C# mapping registered for action type "${action.type}". Add one in compiler.js:actionToCSharp before this card can compile.`);
@@ -3621,6 +3687,38 @@ const TRIGGER_HOOKS = {
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
+  // [Round 199 -- "build out the full affliction section"] BeforeFlush/
+  // AfterFlush are REAL, both [VERIFIED via direct ECMA-335 metadata read
+  // of the real installed sts2.dll/MegaCrit.Sts2.Core.dll this round] --
+  // declared on MegaCrit.Sts2.Core.Models.AbstractModel itself (newslot,
+  // virtual, public), NOT AfflictionModel specifically, so every entity
+  // kind that already has access to TRIGGER_HOOKS (relics, mechanics, and
+  // now afflictions -- see generateHookEffects' entityKind === 'affliction'
+  // handling below) gets these too. Discovered while investigating a real,
+  // working custom Affliction (Afflictions/Reckless.cs, rounds 197/198's
+  // reference project on Tyler's own machine) whose real, compiled
+  // BeforeFlush(PlayerChoiceContext, Player) override clears its own
+  // affliction from the player's whole hand if its card never got played
+  // that turn -- "Flush" is this game's term for that end-of-turn
+  // unplayed-hand-discard step. `player.Creature` binding is the same
+  // real Player.Creature property AfterGoldGained above already uses.
+  BeforeFlush: {
+    method: 'BeforeFlush',
+    params: 'PlayerChoiceContext choiceContext, Player player',
+    playerExpr: 'player.Creature', targetExpr: null,
+  },
+  AfterFlush: {
+    // Real params also include `IReadOnlyCollection<CardModel> flushedCards,
+    // IReadOnlyCollection<CardModel> retainedCards` -- no confirmed way to
+    // bind either as a single fgTarget-style Creature, so they're left out
+    // of `params` reaching the generated method signature would need them
+    // typed correctly anyway; omitted here means this hook fires but those
+    // two collections aren't reachable from Forge's own action vocabulary
+    // yet -- same honest scope-limiting as every other collectionless hook.
+    method: 'AfterFlush',
+    params: 'PlayerChoiceContext choiceContext, Player player, System.Collections.Generic.IReadOnlyCollection<CardModel> flushedCards, System.Collections.Generic.IReadOnlyCollection<CardModel> retainedCards',
+    playerExpr: 'player.Creature', targetExpr: null,
+  },
   BeforeHandDraw: {
     method: 'BeforeHandDraw',
     params: 'Player player, PlayerChoiceContext choiceContext, ICombatState combatState',
@@ -4037,6 +4135,26 @@ const CARD_KEYWORD_VALUES = ['Exhaust', 'Ethereal', 'Innate', 'Retain', 'Unplaya
 // both are hook-driven (react to combat events) rather than "played" like a
 // card, so they share the exact same trigger -> real BaseLib method
 // mapping. `entityKind` is just for clearer error messages.
+// [Round 200 -- "make this section fully functional"] Real per-effect
+// pile-membership gate, used to fold Enchantment/Affliction's own "While
+// in a Card Pile" entries into this SAME merged-hook codegen instead of
+// leaving them uncompiled. `this.Card.Pile` is [VERIFIED via direct
+// ECMA-335 metadata read of CardModel, round 200] a real, public,
+// non-virtual property (CardModel.get_Pile()), and `CardPile.Type` is
+// likewise real (CardPile.get_Type()) -- the exact same real property
+// already read as `this.Pile?.Type` from a CARD's own generated class
+// elsewhere in this file (whileInHandMergeLines), just reached via
+// `this.Card` instead of `this` since here `this` is the Enchantment/
+// AfflictionModel instance, not the CardModel itself. Only set on an
+// effect when it came from a whilePile entry (see generateEnchantmentSource/
+// generateAfflictionSource) -- a plain "Additional Triggers" entry has no
+// `__pileGuard` and passes through unwrapped.
+function wrapPileGuard(effect, code) {
+  if (!effect.__pileGuard) return code;
+  const indented = code.split('\n').map(l => l ? '    ' + l : l).join('\n');
+  return `        // effect: ${effect.trigger} (while in a pile -- this.Card.Pile is [VERIFIED via direct ECMA-335 metadata read of CardModel, round 200])\n        if (this.Card.Pile?.Type == ${effect.__pileGuard})\n        {\n${indented}\n        }`;
+}
+
 function generateHookEffects(entity, entityKind, refMaps) {
   const blocks = [];
   // [Fix, round 35] Same-real-method merge groups. Before this round,
@@ -4063,7 +4181,19 @@ function generateHookEffects(entity, entityKind, refMaps) {
       // the package before it reaches here, but generateProject() is also
       // callable directly, so this stays a hard error rather than
       // silently compiling something misleading.
-      throw new Error(`"${effect.trigger}" isn't a valid trigger for a ${entityKind} — a ${entityKind} isn't "played" (that's card-only). Pick a real trigger like OnCombatStart, OnTakeDamage, etc.`);
+      //
+      // [Round 199] Afflictions DO have a real OnPlay (AfflictionModel.
+      // OnPlay(PlayerChoiceContext, Creature) — a genuinely different real
+      // signature from this generic hook vocabulary's own) — it's handled
+      // by generateAfflictionSource's own dedicated onPlayBody/
+      // onPlayEffects, never through this function, so an affliction's
+      // "additional triggers" list (this function's entity.effects) still
+      // correctly rejects picking 'OnPlay' again here — same defense-in-
+      // depth reasoning, just a more accurate message for this entityKind.
+      const reason = entityKind === 'affliction'
+        ? `an affliction's own OnPlay is already available as its dedicated "When this card is played" section above — this list is for its OTHER triggers`
+        : `a ${entityKind} isn't "played" (that's card-only)`;
+      throw new Error(`"${effect.trigger}" isn't a valid trigger here — ${reason}. Pick a real trigger like OnCombatStart, OnTakeDamage, etc.`);
     }
     if (effect.trigger === 'Passive') {
       blocks.push(`    // trigger: Passive — no hook override generated; a passive ${entityKind}'s\n    // presence alone (via CardPool/RelicPool membership, or being applied to a\n    // creature) is assumed to be enough. [UNVERIFIED]`);
@@ -4110,7 +4240,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // whole method body is just the Todo() fallback and neither is
     // invoked. So every reachable call passes through this ctx with
     // fgPlayer already unconditionally bound.
-    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment
+    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
     // Round 19 added a THIRD real shape beyond "both bound"/"neither bound"
     // — 22 of the 39 new hooks expose exactly ONE real Creature (playerExpr
     // set, targetExpr null: e.g. AfterGoldGained's bare `Player player`,
@@ -4134,9 +4264,9 @@ function generateHookEffects(entity, entityKind, refMaps) {
       // with a guardExpr remains in this Todo branch — this stays as a
       // defensive fallback for any future trigger that's genuinely
       // unbound rather than collection-bound.)
-      body = group.map(({ effect }) =>
+      body = group.map(({ effect }) => wrapPileGuard(effect,
         `        ForgeActions.Todo("${effect.trigger} effect — ${hook.method}'s real parameters (${hook.params || 'none'}) don't expose a confirmed player/target Creature to bind this effect's actions to"); // [UNVERIFIED]`
-      ).join('\n');
+      )).join('\n');
     } else if (hook.collectionExpr) {
       // [Fix, round 35 follow-up -- Tyler: "the player and pet all take
       // their turn at the same time. all enemies take their turn at the
@@ -4156,7 +4286,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
         const raw = effectBlockToCSharp(effect, hookCtx);
         const loopBody = raw.split('\n').map(l => l ? '    ' + l : l).join('\n');
         const loop = `        foreach (var fgPlayer in ${effHook.collectionExpr}) // [VERIFIED shape via direct sts2.dll read — see TRIGGER_HOOKS.${effect.trigger}'s own comment]\n        {\n${loopBody}\n        }`;
-        if (!effHook.guardExpr) return loop;
+        if (!effHook.guardExpr) return wrapPileGuard(effect, loop);
         // Side-filtered sibling (Mine/Enemy on the real `side` param) —
         // guard wraps the WHOLE loop, not each iteration, since `side`
         // never changes mid-loop (it's a method parameter, not per-
@@ -4164,7 +4294,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
         // see the round-35 comment on effectBodies below in the non-
         // collection branch.
         const indented = loop.split('\n').map(l => l ? '    ' + l : l).join('\n');
-        return `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${effHook.guardExpr})\n        {\n${indented}\n        }`;
+        return wrapPileGuard(effect, `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${effHook.guardExpr})\n        {\n${indented}\n        }`);
       });
       body = effectBodies.join('\n');
     } else {
@@ -4173,14 +4303,14 @@ function generateHookEffects(entity, entityKind, refMaps) {
         : `        var fgPlayer = ${hook.playerExpr}; // [VERIFIED via direct sts2.dll read — single-Creature/Player hook, no second party exposed]\n${petLine}`;
       const effectBodies = group.map(({ effect, hook: effHook }) => {
         const raw = effectBlockToCSharp(effect, hookCtx);
-        if (!effHook.guardExpr) return raw;
+        if (!effHook.guardExpr) return wrapPileGuard(effect, raw);
         // [Fix, round 35] Mine/Enemy (or turn-side) filtered sibling —
         // see TRIGGER_HOOKS' own comments on the split entries for the
         // real Creature.IsEnemy/CombatSide evidence this guard is built
         // from. Re-indented one level deeper since it's now wrapped in
         // its own if-block rather than being the whole method body.
         const indented = raw.split('\n').map(l => l ? '    ' + l : l).join('\n');
-        return `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${effHook.guardExpr})\n        {\n${indented}\n        }`;
+        return wrapPileGuard(effect, `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${effHook.guardExpr})\n        {\n${indented}\n        }`);
       });
       body = `${bindLines}${effectBodies.join('\n')}`;
     }
@@ -5399,7 +5529,7 @@ function generateEnchantmentSource(enchantment, namespace, refMaps, assetCtx) {
     const checks = [];
     vtBaseTags.forEach(k => checks.push(`        if (!card.Keywords.Contains(${keywordExpr(k)})) return false; // [VERIFIED] CardModel.Keywords is a real IReadOnlySet<CardKeyword> -- see conditionToCSharp's PlayedCardHasKeyword case`));
     vtCustomTags.forEach(t => checks.push(`        if ((card as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(t)}) != true) return false; // [VERIFIED] same Forge-owned IForgeTaggedCard mechanism as conditionToCSharp's PlayedCardHasTag case`));
-    if (vt.excludeXCost) checks.push(`        // "Exclude X-cost cards" is NOT enforced here -- [UNVERIFIED] no confirmed "is this card X-cost" API was found on CardModel/CardEnergyCost this round -- see CardEnergyCost's confirmed method table in TOOLCHAIN_FINDINGS.md for a future round to check.`);
+    if (vt.excludeXCost) checks.push(`        if (card.EnergyCost.CostsX) return false; // [VERIFIED via direct ECMA-335 metadata read of CardEnergyCost, round 200] CardEnergyCost.CostsX is a real, public, non-virtual bool property.`);
     overrides.push(`    // [VERIFIED signature, BEST EFFORT body] real virtual bool CanEnchant(CardModel) override
     public override bool CanEnchant(CardModel card)
     {
@@ -5439,10 +5569,44 @@ ${checks.join('\n')}
   if (oa.zeroEnergyCostOnApply) {
     onEnchantLines.push(`        this.Card.EnergyCost.SetThisCombat(0, true); // [BEST EFFORT] CardEnergyCost.SetThisCombat(int, bool) is [VERIFIED] real (see compiler.js's costReductionTodoLines comment) -- the SAME real call TryModifyEnergyCostInCombat-driven cost reductions already use`);
   }
-  if ((oa.addKeywords || []).length || (oa.removeKeywords || []).length) {
-    const nameEscaped = String(enchantment.name || 'this enchantment').replace(/"/g, '\\"');
-    onEnchantLines.push(`        ForgeActions.Todo("OnEnchant add/remove keywords on \\"${nameEscaped}\\""); // [UNVERIFIED] no confirmed runtime "mutate this card's own keyword set after the fact" API found -- CardModel.Keywords is a real getter but its setter/mutator was not confirmed this round`);
-  }
+  // [Round 201 -- correcting round 200] Tyler supplied a real, working
+  // reference enchantment ("TestRemove", from a genuinely different,
+  // unrelated STS2 character-creator tool -- slay.spencerstiles.com --
+  // found in a fresh copy of "The Burdened - New Character" on his own
+  // machine) that adds Exhaust/Ethereal/Innate and removes
+  // Retain/Sly/Eternal/Unplayable, all inside OnEnchant(), with NO
+  // reversal on removal. Direct IL disassembly of its real, compiled
+  // OnEnchant() body (tools/sts2tools/il_dump.py against that mod's own
+  // .dll) shows exactly this: three CardModel.AddKeyword(CardKeyword)
+  // calls (same [VERIFIED] real, public, non-virtual instance method
+  // round 199 already uses for Afflictions), then four
+  // CardCmd.RemoveKeyword(CardModel, CardKeyword[]) calls. Cross-checked
+  // against the canonical installed sts2.dll: CardModel also has a real,
+  // public, non-virtual RemoveKeyword(CardKeyword) instance method (the
+  // exact symmetric pair to AddKeyword, same one round 199 already uses
+  // for Afflictions' AfterApplied/BeforeRemoved apply-once/remove-once
+  // pattern) -- used here instead of the CardCmd array-based static
+  // version for consistency with AddKeyword just above and with
+  // Afflictions' own call shape elsewhere in this file.
+  //
+  // Round 200 removed this feature outright, reasoning that since
+  // EnchantmentModel has no removal/unenchant hook, a keyword change with
+  // no way to reverse it on removal would be a real bug. That reasoning
+  // was WRONG about the premise: this real, shipped, working reference
+  // enchantment proves the correct semantic was never "reversible while
+  // enchanted" -- it's a PERMANENT, one-way mutation applied once on
+  // enchant, exactly like this.Card.EnergyCost.SetThisCombat(0, true)
+  // above (zeroEnergyCostOnApply) already was, and exactly what
+  // "removeKeywordsOnEnchant" is named for in the other tool's own
+  // schema. Removing this enchantment later does NOT restore the
+  // removed keywords or strip the added ones -- disclosed plainly in the
+  // editor copy, not hidden.
+  (Array.isArray(oa.addKeywords) ? oa.addKeywords : []).filter(k => CARD_KEYWORD_VALUES.includes(k)).forEach(k => {
+    onEnchantLines.push(`        this.Card.AddKeyword(${keywordExpr(k)}); // [VERIFIED via direct ECMA-335 metadata read of CardModel, cross-confirmed by IL-disassembling a real, working reference enchantment's compiled OnEnchant() body, round 201] CardModel.AddKeyword(CardKeyword) is real, public, non-virtual -- applied once on enchant, permanent (no reversal on removal).`);
+  });
+  (Array.isArray(oa.removeKeywords) ? oa.removeKeywords : []).filter(k => CARD_KEYWORD_VALUES.includes(k)).forEach(k => {
+    onEnchantLines.push(`        this.Card.RemoveKeyword(${keywordExpr(k)}); // [VERIFIED via direct ECMA-335 metadata read of CardModel, cross-confirmed by IL-disassembling a real, working reference enchantment's compiled OnEnchant() body, round 201] CardModel.RemoveKeyword(CardKeyword) is real, public, non-virtual -- applied once on enchant, permanent (no reversal on removal).`);
+  });
   const onEnchantMethod = onEnchantLines.length
     ? `\n    protected override void OnEnchant()\n    {\n${onEnchantLines.join('\n')}\n    }\n`
     : '';
@@ -5468,25 +5632,31 @@ ${checks.join('\n')}
   const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
-  // "While in a pile" -- [Round 191] Tyler: "...and the while in pile box
-  // should pull the pile options from our existing pile section under
-  // card settings." The editor now captures real structured data (same
-  // {trigger,pile,conditions,actions} shape as
-  // card.advancedOptions.whileInHand, edited with the identical
-  // renderEffectsList(..., WHILE_IN_HAND_TRIGGERS, ..., true) component) --
-  // but this is intentionally NOT compiled into a real override here.
-  // Round 190's reflection of the real sts2.dll found no EnchantmentModel
-  // hook analogous to "while a card sits in a pile" -- the pile-trigger
-  // hooks that DO exist (AfterDiscard, OnTurnEndInHand, etc., see
-  // TRIGGER_HOOKS) are real CustomCardModel overrides, only meaningful on
-  // a CARD's own generated class, not available to override here. Rather
-  // than fabricate a nonexistent override, this stays an honest comment
-  // summarizing what was authored -- same "never invent an API" standard
-  // as everywhere else in this file -- until a future reflect-baselib
-  // round finds a real hook (or confirms there isn't one).
+  // [Round 200 -- "make this section fully functional"] "Additional
+  // Triggers" -- NEW for Enchantments this round, mirroring Afflictions'
+  // round-199 addition: EnchantmentModel extends AbstractModel (the same
+  // common base Cards/Relics/Powers/Afflictions/Orbs all share -- see
+  // TRIGGER_HOOKS' own header), so it genuinely has the same 200+-method
+  // real hook surface. `enchantment.effects` is a NEW, separate array
+  // from `onPlay.effects` above (which keeps its own dedicated OnPlay-only
+  // shape unchanged) -- generateHookEffects itself rejects 'OnPlay' being
+  // picked again here.
+  //
+  // "While in a pile" now compiles for real too, merged into this SAME
+  // combined list -- each whilePile entry tagged with a real __pileGuard
+  // (this.Card.Pile?.Type == X, see wrapPileGuard's own header comment)
+  // instead of staying a NOT-compiled comment the way round 190/191 left
+  // it. Both arrays share the same real HOOK_TRIGGERS vocabulary now (the
+  // frontend no longer offers the card-only WHILE_IN_HAND_TRIGGERS ids
+  // here -- EnchantmentModel can't override those, they're declared on
+  // CustomCardModel).
   const whilePileEffects = Array.isArray(wp.effects) ? wp.effects : [];
-  const whilePileComment = whilePileEffects.length
-    ? `    // [UNVERIFIED] ${whilePileEffects.length} "while in a pile" effect(s) authored in the editor -- NOT compiled. No confirmed EnchantmentModel hook exists for "while a card carrying this enchantment sits in a pile" (round 190's reflection of the real sts2.dll found none); the pile-trigger hooks that DO exist (AfterDiscard, OnTurnEndInHand, etc.) are real CustomCardModel overrides, not available on EnchantmentModel. See Enchantments/README.md for exactly what was authored here.\n`
+  const combinedTriggerEffects = [
+    ...(Array.isArray(enchantment.effects) ? enchantment.effects : []),
+    ...whilePileEffects.map(e => ({ ...e, __pileGuard: pileTypeExpr(e.pile) })),
+  ];
+  const extraTriggerMethods = combinedTriggerEffects.length
+    ? generateHookEffects({ effects: combinedTriggerEffects }, 'enchantment', refMaps)
     : '';
 
   return fillTemplate(tpl, {
@@ -5497,7 +5667,7 @@ ${checks.join('\n')}
     onEnchantMethod,
     perStackFlag: perStack ? 'true' : 'false',
     onPlayBody,
-    whilePileComment,
+    extraTriggerMethods,
   });
 }
 
@@ -5575,7 +5745,7 @@ function generateAfflictionSource(affliction, namespace, refMaps) {
     const checks = [];
     vtBaseTags.forEach(k => checks.push(`        if (!card.Keywords.Contains(${keywordExpr(k)})) return false; // [VERIFIED] CardModel.Keywords is a real IReadOnlySet<CardKeyword> -- see conditionToCSharp's PlayedCardHasKeyword case`));
     vtCustomTags.forEach(t => checks.push(`        if ((card as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(t)}) != true) return false; // [VERIFIED] same Forge-owned IForgeTaggedCard mechanism as conditionToCSharp's PlayedCardHasTag case`));
-    if (vt.excludeXCost) checks.push(`        // "Exclude X-cost cards" is NOT enforced here -- [UNVERIFIED] same gap CanEnchant already has, see generateEnchantmentSource's own comment.`);
+    if (vt.excludeXCost) checks.push(`        if (card.EnergyCost.CostsX) return false; // [VERIFIED via direct ECMA-335 metadata read of CardEnergyCost, round 200] CardEnergyCost.CostsX is a real, public, non-virtual bool property.`);
     overrides.push(`    // [VERIFIED signature, BEST EFFORT body] real virtual bool CanAfflict(CardModel) override
     public override bool CanAfflict(CardModel card)
     {
@@ -5603,15 +5773,14 @@ ${checks.join('\n')}
   //      AGAIN at removal time) may not exactly cancel out the sum of
   //      several differently-sized applications. Disclosed, not silently
   //      wrong.
-  //   2. keywordsWhileAfflicted (UNVERIFIED) -- same gap Enchantments'
-  //      onApply.addKeywords/removeKeywords already has (no confirmed
-  //      runtime "mutate this card's own keyword set" API). Left as a
-  //      COMMENT here, not a ForgeActions.Todo() call -- Todo() THROWS the
-  //      instant it runs (see compiler.js's own round-30 postmortem, and
-  //      Enchantment.cs.template's header for why its own three gating
-  //      fields are comments too), and this method can also contain the
-  //      REAL costChange lines above -- a throw here would abort those
-  //      too. A silent no-op comment is the honest failure mode instead.
+  //   2. keywordsWhileAfflicted (Round 199 -- now [VERIFIED] real) --
+  //      CardModel.AddKeyword(CardKeyword)/RemoveKeyword(CardKeyword), both
+  //      confirmed real via direct ECMA-335 metadata read, applied once on
+  //      attach and reversed once on removal, same timing as costChange
+  //      above. (Enchantments' own equivalent onApply.addKeywords/
+  //      removeKeywords fields were removed outright instead, rather than
+  //      compiled the same way -- EnchantmentModel has no removal hook at
+  //      all to reverse them with; see Enchantment.cs.template's header.)
   const applyLines = [];
   const removeLines = [];
   const ccAmount = has(cc.amount) ? Math.trunc(Number(cc.amount)) : 0;
@@ -5620,10 +5789,25 @@ ${checks.join('\n')}
     applyLines.push(`        this.Card.EnergyCost.AddThisCombat(${ccAmount}${stacksExpr}, false); // [BEST EFFORT] CardEnergyCost.AddThisCombat(int, bool) is [VERIFIED] real (see compiler.js's costReductionTodoLines comment) -- applied once on attach, reversed in BeforeRemoved() below`);
     removeLines.push(`        this.Card.EnergyCost.AddThisCombat(${-ccAmount}${stacksExpr}, false); // [BEST EFFORT] undoes the AfterApplied() change -- see this affliction's class header for the known stacking-amount caveat`);
   }
+  // [Round 199 -- "build out the full affliction section"] Closed via
+  // direct ECMA-335 reflection of CardModel: `public void AddKeyword
+  // (CardKeyword keyword)` / `public void RemoveKeyword(CardKeyword
+  // keyword)` are both real, public, non-virtual instance methods --
+  // confirmed as a DIFFERENT member pair from the get_Keywords()/
+  // get_CanonicalKeywords() getters this class's header used to cite as
+  // the only confirmed surface. Mirrors the exact same real call
+  // (CardModel.AddKeyword(CardKeyword)) already [VERIFIED] and in use
+  // elsewhere in this file for a card's own permanent keywords (see
+  // resolveActedCardExpr's neighboring comment) -- this is the same real
+  // API, just invoked dynamically here (attach/detach) instead of once at
+  // construction. keywordExpr(word) is the existing CardKeyword.${word}
+  // helper this file already uses for CanAfflict's tag checks above.
   const kwWhile = Array.isArray(affliction.keywordsWhileAfflicted) ? affliction.keywordsWhileAfflicted.filter(k => CARD_KEYWORD_VALUES.includes(k)) : [];
   if (kwWhile.length) {
-    applyLines.push(`        // [UNVERIFIED] would add keyword(s) ${kwWhile.join(', ')} while afflicted -- no confirmed runtime CardModel keyword-mutation API found (CardModel.Keywords is a real getter, no confirmed setter/mutator). Left as a comment, not ForgeActions.Todo(), so it can't throw and abort the real cost-change line(s) above -- see this affliction's class header.`);
-    removeLines.push(`        // [UNVERIFIED] would remove keyword(s) ${kwWhile.join(', ')} added above -- same gap as AfterApplied().`);
+    kwWhile.forEach(k => {
+      applyLines.push(`        this.Card.AddKeyword(${keywordExpr(k)}); // [VERIFIED via direct ECMA-335 metadata read of CardModel, round 199] CardModel.AddKeyword(CardKeyword) is real, public, non-virtual -- applied once on attach, reversed in BeforeRemoved() below.`);
+      removeLines.push(`        this.Card.RemoveKeyword(${keywordExpr(k)}); // [VERIFIED via direct ECMA-335 metadata read of CardModel, round 199] CardModel.RemoveKeyword(CardKeyword) is real, public, non-virtual -- undoes the AfterApplied() change above.`);
+    });
   }
   const applyRemoveParts = [];
   if (applyLines.length) applyRemoveParts.push(`    public override void AfterApplied()\n    {\n${applyLines.join('\n')}\n    }`);
@@ -5659,13 +5843,38 @@ ${checks.join('\n')}
   const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, affectedCardIsThisCard: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
-  // "While in a pile" -- same honest "captured, not compiled" gap
-  // Enchantments' whilePile has (see generateEnchantmentSource's own
-  // comment) -- no confirmed AfflictionModel hook for "while a card
-  // carrying this affliction sits in a pile" either.
+  // [Round 199 -- "build out the full affliction section"] Additional
+  // triggers beyond OnPlay -- AfflictionModel extends AbstractModel (round
+  // 199's own AfflictionModel reflection, re-confirming round 196's), so
+  // it genuinely inherits the SAME 200+-method real hook surface Relics/
+  // Mechanics already expose via TRIGGER_HOOKS/generateHookEffects
+  // (BeforeFlush -- the exact hook Reckless.cs's real end-of-turn cleanup
+  // needs, see TRIGGER_HOOKS' own new entry -- OnCombatStart,
+  // OnMyTurnStart, AfterMyDamageGiven, etc.). `affliction.effects` is a
+  // NEW, separate array from `affliction.onPlay.effects` (which keeps its
+  // own dedicated, differently-shaped OnPlay handling above unchanged) --
+  // generateHookEffects itself rejects 'OnPlay' being picked again here
+  // (see its own updated error message). hookCtx's affectedCardIsThisCard
+  // (set for entityKind==='affliction') is what lets AfflictCard/
+  // RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile
+  // resolve "this card" correctly from any of these hooks too, not just
+  // OnPlay.
+  // [Round 200 -- "make this section fully functional"] "While in a
+  // pile" now compiles for real too -- merged into the SAME combined
+  // effects list "Additional Triggers" uses, each whilePile entry tagged
+  // with a real __pileGuard (this.Card.Pile?.Type == X, see
+  // wrapPileGuard's own header comment) instead of staying a NOT-compiled
+  // comment. Both arrays share the same real HOOK_TRIGGERS vocabulary
+  // now (the frontend no longer offers the card-only WHILE_IN_HAND_TRIGGERS
+  // ids here -- AfflictionModel can't override those, they're declared on
+  // CustomCardModel).
   const whilePileEffects = (affliction.whilePile && Array.isArray(affliction.whilePile.effects)) ? affliction.whilePile.effects : [];
-  const whilePileComment = whilePileEffects.length
-    ? `    // [UNVERIFIED] ${whilePileEffects.length} "while in a pile" effect(s) authored in the editor -- NOT compiled. No confirmed AfflictionModel hook exists for "while a card carrying this affliction sits in a pile". See Afflictions/README.md for exactly what was authored here.\n`
+  const combinedTriggerEffects = [
+    ...(Array.isArray(affliction.effects) ? affliction.effects : []),
+    ...whilePileEffects.map(e => ({ ...e, __pileGuard: pileTypeExpr(e.pile) })),
+  ];
+  const extraTriggerMethods = combinedTriggerEffects.length
+    ? generateHookEffects({ effects: combinedTriggerEffects }, 'affliction', refMaps)
     : '';
 
   // [Round 198] Registration -- AfflictionModel has no CustomAfflictionModel
@@ -5688,7 +5897,7 @@ ${checks.join('\n')}
     applyRemoveMethods,
     requiresStatusGuard,
     onPlayBody,
-    whilePileComment,
+    extraTriggerMethods,
   });
 }
 
@@ -5779,30 +5988,30 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
   const lines = [];
   const isEnchantments = heading === 'Enchantments';
   if (isEnchantments) {
-    lines.push(`# ${heading} -- most of this now compiles to real C#`);
+    lines.push(`# ${heading} -- this now fully compiles to real C#`);
     lines.push('');
     lines.push('MegaCrit.Sts2.Core.Models.EnchantmentModel is a [VERIFIED] real base-game');
     lines.push('class (see claude/round190-enchantments-real-codegen.md for the full');
     lines.push('reflection evidence) -- each entry below also writes a real');
-    lines.push('Enchantments/<Name>Enchantment.cs. Not every field compiles: see that .cs');
-    lines.push('file\'s own header comment for exactly which parts are');
-    lines.push('[VERIFIED]/[BEST EFFORT] real vs. [UNVERIFIED] (uncompiled). This file');
-    lines.push('itself is a design-doc summary only -- it is not read by the compiled mod');
-    lines.push('at runtime.');
+    lines.push('Enchantments/<Name>Enchantment.cs. Every field on this section now');
+    lines.push('compiles to real, confirmed C# -- see that .cs file\'s own header comment');
+    lines.push('for the full evidence trail on each override ([VERIFIED] vs. [BEST');
+    lines.push('EFFORT] semantics-only caveats). This file itself is a design-doc summary');
+    lines.push('only -- it is not read by the compiled mod at runtime.');
     lines.push('');
   } else {
-    lines.push(`# ${heading} -- most of this now compiles to real C#`);
+    lines.push(`# ${heading} -- this now fully compiles to real C#`);
     lines.push('');
     lines.push('[Round 196] MegaCrit.Sts2.Core.Models.AfflictionModel is a [VERIFIED] real,');
     lines.push('SEPARATE base-game class from EnchantmentModel above (see');
     lines.push('claude/round196-afflictions-real-shape.md for the full reflection');
     lines.push('evidence) -- Tyler\'s own framing: "afflictions are temporary');
     lines.push('enchantments." Each entry below also writes a real');
-    lines.push('Afflictions/<Name>Affliction.cs. Not every field compiles: see that .cs');
-    lines.push('file\'s own header comment for exactly which parts are');
-    lines.push('[VERIFIED]/[BEST EFFORT] real vs. [UNVERIFIED] (uncompiled). This file');
-    lines.push('itself is a design-doc summary only -- it is not read by the compiled mod');
-    lines.push('at runtime.');
+    lines.push('Afflictions/<Name>Affliction.cs. Every field on this section now');
+    lines.push('compiles to real, confirmed C# -- see that .cs file\'s own header comment');
+    lines.push('for the full evidence trail on each override ([VERIFIED] vs. [BEST');
+    lines.push('EFFORT] semantics-only caveats). This file itself is a design-doc summary');
+    lines.push('only -- it is not read by the compiled mod at runtime.');
     lines.push('');
   }
   lines.push('[Round 168] Roughed out against the fuller field set a similar community');
@@ -5849,10 +6058,14 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
       if (mo.showNumberOnCard === false) moBits.push('stack number hidden on card');
       if (moBits.length) { lines.push(`**Modifiers:** ${moBits.join(', ')}`); lines.push(''); }
 
+      // [Round 201 -- correcting round 200] addKeywords/removeKeywords
+      // are real again -- see generateEnchantmentSource's own comment for
+      // the full evidence trail (a real, working reference enchantment
+      // proved this compiles for real, permanently, on OnEnchant()).
       const oa = e.onApply || {};
       const oaBits = [];
-      if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')}`);
-      if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')}`);
+      if ((oa.addKeywords || []).length) oaBits.push(`adds ${oa.addKeywords.join(', ')} (permanent)`);
+      if ((oa.removeKeywords || []).length) oaBits.push(`removes ${oa.removeKeywords.join(', ')} (permanent)`);
       if (oa.zeroEnergyCostOnApply) oaBits.push('sets Energy cost to 0');
       if (oaBits.length) { lines.push(`**On application:** ${oaBits.join('; ')}`); lines.push(''); }
 
@@ -5885,10 +6098,22 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
       const wp = e.whilePile || {};
       const wpEffects = Array.isArray(wp.effects) ? wp.effects : [];
       if (wpEffects.length) {
-        lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- NOT compiled (no confirmed EnchantmentModel hook for this yet)`);
+        lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- compiles to real C# (Round 200), gated by a real \`this.Card.Pile?.Type\` check, see Enchantments/${pascalCase(e.name || 'Untitled')}Enchantment.cs`);
         wpEffects.forEach((eff, i) => {
           const actN = (eff.actions || []).length;
           lines.push(`- While in ${eff.pile || 'Hand'}, ${eff.trigger || '?'}: ${actN} action(s)`);
+        });
+        lines.push('');
+      }
+
+      // [Round 200] Additional Triggers -- NEW for Enchantments this
+      // round, same real hook vocabulary Relics/Mechanics/Afflictions use.
+      const additionalEffects = Array.isArray(e.effects) ? e.effects : [];
+      if (additionalEffects.length) {
+        lines.push(`**Additional triggers:** ${additionalEffects.length} effect block(s) defined in the editor -- compiles to real C#, see Enchantments/${pascalCase(e.name || 'Untitled')}Enchantment.cs`);
+        additionalEffects.forEach((eff, i) => {
+          const actN = (eff.actions || []).length;
+          lines.push(`- Trigger ${eff.trigger || '?'}: ${actN} action(s)`);
         });
         lines.push('');
       }
@@ -5966,10 +6191,23 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
     const wp = e.whilePile || {};
     const wpEffects = Array.isArray(wp.effects) ? wp.effects : [];
     if (wpEffects.length) {
-      lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- NOT compiled (no confirmed AfflictionModel hook for this yet)`);
+      lines.push(`**While waiting in a pile:** ${wpEffects.length} effect block(s) defined in the editor -- compiles to real C# (Round 200), gated by a real \`this.Card.Pile?.Type\` check, see Afflictions/${pascalCase(e.name || 'Untitled')}Affliction.cs`);
       wpEffects.forEach((eff, i) => {
         const actN = (eff.actions || []).length;
         lines.push(`- While in ${eff.pile || 'Hand'}, ${eff.trigger || '?'}: ${actN} action(s)`);
+      });
+      lines.push('');
+    }
+
+    // [Round 199/200] Additional Triggers -- same real hook vocabulary
+    // Relics/Mechanics/Enchantments use. Previously captured but never
+    // reported in this README generator.
+    const additionalEffects = Array.isArray(e.effects) ? e.effects : [];
+    if (additionalEffects.length) {
+      lines.push(`**Additional triggers:** ${additionalEffects.length} effect block(s) defined in the editor -- compiles to real C#, see Afflictions/${pascalCase(e.name || 'Untitled')}Affliction.cs`);
+      additionalEffects.forEach((eff, i) => {
+        const actN = (eff.actions || []).length;
+        lines.push(`- Trigger ${eff.trigger || '?'}: ${actN} action(s)`);
       });
       lines.push('');
     }

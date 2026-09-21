@@ -427,7 +427,7 @@
     },
     "enchantments": {
       "type": "array",
-      "description": "Round 95, Tyler: \"Enchantments/Afflictions need their own section after cards, we'll modify how it looks later, but it needs to be its own section.\" DATA-CAPTURE ONLY, same convention as pets below — whether/how a real STS2 character mod can define a custom card- or relic-granted run modifier is still genuinely unresearched (see claude/feature-backlog.md group C's own \"Enchantments section\" item: \"need to confirm whether 'Enchantments' is a real STS2 system at all before scoping it\"). Entries here are exported as a design doc (Enchantments/README.md, see compiler.js:buildEnchantmentAfflictionReadme) rather than compiled into any C#.",
+      "description": "Round 95, Tyler: \"Enchantments/Afflictions need their own section after cards, we'll modify how it looks later, but it needs to be its own section.\" MegaCrit.Sts2.Core.Models.EnchantmentModel is a REAL, confirmed base-game class (55 methods, confirmed via tools/sts2tools/ecma_dump_ext.py reflection against sts2.dll). Most of this compiles to real C# — see backend/compiler.js:generateEnchantmentSource and backend/templates/Enchantment.cs.template for the full evidence trail. Also exported as a plain-language design doc (Enchantments/README.md, see compiler.js:buildEnchantmentAfflictionReadme).",
       "items": {
         "$ref": "#/definitions/enchantment"
       }
@@ -863,12 +863,79 @@
     "enchantment": {
       "type": "object",
       "required": ["id", "name"],
-      "description": "See the top-level `enchantments` property above for the full evidence review — captured for design purposes only, no C# is generated from this yet.",
+      "description": "See the top-level `enchantments` property above for the full evidence review. Round 200 (\"make this section fully functional\") shape — every field below is a real, confirmed EnchantmentModel override. onApply.addKeywords/removeKeywords (see onApply below) were briefly removed in round 200, then restored in round 201 once a real, working reference enchantment proved the correct semantic: a permanent, one-way mutation applied once on enchant, never reversed on removal.",
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
         "description": { "type": "string", "description": "Flavor text." },
-        "effectText": { "type": "string", "description": "Freeform description of what this enchantment does — NOT wired to any real trigger/condition/action system yet." }
+        "icon": { "type": "object", "description": "Compiles to CustomEnchantmentModel.CustomIconPath — [VERIFIED via decompiling a real, working \"STS2 Character Creator\"-generated mod on Tyler's own machine] real override point." },
+        "cardFrames": { "type": "object", "description": "Per-rarity card-frame art overrides applied to any card this enchantment is attached to." },
+        "modifiers": {
+          "type": "object",
+          "description": "Numeric EnchantmentModel overrides. [VERIFIED signature] on every override below; the exact SEMANTICS of the two multiplicative fields (what they scale against) are Forge's own reasonable reading, disclosed as [BEST EFFORT] in the generated source's comments — not a guess about whether the override itself works.",
+          "properties": {
+            "canStack": { "type": "boolean", "description": "Compiles to EnchantmentModel.get_IsStackable() — [VERIFIED] real override." },
+            "showNumberOnCard": { "type": "boolean", "description": "Compiles to EnchantmentModel.get_ShowAmount() — [VERIFIED] real override." },
+            "perStack": { "type": "boolean", "description": "When true, the numeric fields below scale by `* this.Amount`." },
+            "extraBlock": { "type": "number", "description": "Compiles to EnchantBlockAdditive(decimal) — [VERIFIED] real override." },
+            "blockBonusPct": { "type": "number", "description": "Compiles to EnchantBlockMultiplicative(decimal) — [VERIFIED signature, BEST EFFORT semantics] real override." },
+            "extraDamage": { "type": "number", "description": "Compiles to EnchantDamageAdditive(decimal, ValueProp) — [VERIFIED] real override." },
+            "damageBonusPct": { "type": "number", "description": "Compiles to EnchantDamageMultiplicative(decimal, ValueProp) — [VERIFIED signature, BEST EFFORT semantics] real override." },
+            "extraPlays": { "type": "number", "description": "Compiles to EnchantPlayCount(int) — [VERIFIED] real override." }
+          }
+        },
+        "onApply": {
+          "type": "object",
+          "description": "Compiles into EnchantmentModel.OnEnchant() — [VERIFIED] the class's only real lifecycle callback. Round 201: addKeywords/removeKeywords were removed in round 200 (reasoning that OnEnchant() has no matching removal hook to reverse them) and restored this round — Tyler supplied a real, working reference enchantment (\"TestRemove\", a different, unrelated character-creator tool's real generated output) that does exactly this, permanently, with no reversal on removal; direct IL disassembly of its compiled OnEnchant() confirmed real CardModel.AddKeyword(CardKeyword)/RemoveKeyword(CardKeyword) calls.",
+          "properties": {
+            "addKeywords": { "type": "array", "items": { "type": "string" }, "description": "Values from CARD_KEYWORD_VALUES. Compiles to this.Card.AddKeyword(CardKeyword) calls inside OnEnchant() — [VERIFIED via direct ECMA-335 metadata read of CardModel, cross-confirmed by IL-disassembling a real, working reference enchantment, round 201]. Applied once, permanently, when the enchantment is applied — NOT reversed if the enchantment is later removed (EnchantmentModel has no removal/unenchant hook to reverse it with)." },
+            "removeKeywords": { "type": "array", "items": { "type": "string" }, "description": "Values from CARD_KEYWORD_VALUES. Compiles to this.Card.RemoveKeyword(CardKeyword) calls inside OnEnchant() — [VERIFIED via direct ECMA-335 metadata read of CardModel, cross-confirmed by IL-disassembling a real, working reference enchantment, round 201]. Applied once, permanently — NOT restored if the enchantment is later removed, same caveat as addKeywords above." },
+            "zeroEnergyCostOnApply": { "type": "boolean", "description": "Compiles to this.Card.EnergyCost.SetThisCombat(0, true) inside OnEnchant() — [VERIFIED] real call, same one cost-reduction actions already use." }
+          }
+        },
+        "onPlay": {
+          "type": "object",
+          "description": "Compiles to EnchantmentModel.OnPlay(PlayerChoiceContext, CardPlay) — [VERIFIED] real override, using the same effect/condition/action editor cards' own OnPlay uses.",
+          "properties": {
+            "effects": { "type": "array", "items": { "$ref": "#/definitions/effectBlock" } }
+          }
+        },
+        "whilePile": {
+          "type": "object",
+          "description": "Round 200 — now compiles for real: merged into this enchantment's own Additional Triggers mechanism below, each entry gated by a real `this.Card.Pile?.Type == X` check ([VERIFIED via direct ECMA-335 metadata read of CardModel/CardPile]) instead of staying an uncompiled design note.",
+          "properties": {
+            "effects": { "type": "array", "items": { "$ref": "#/definitions/effectBlock" } }
+          }
+        },
+        "effects": {
+          "type": "array",
+          "description": "Round 200 — \"make this section fully functional\". This enchantment's OWN additional triggers, separate from onPlay.effects above — SAME real hook vocabulary (hookEffectBlock/HOOK_TRIGGERS) Relics/Mechanics/Afflictions already use for their own effects[], since EnchantmentModel extends AbstractModel and genuinely has that same 200+-method real hook surface. \"OnPlay\" is NOT a valid trigger here — same reasoning as relic.effects, plus it's already covered by this enchantment's own dedicated onPlay section above.",
+          "items": {
+            "$ref": "#/definitions/hookEffectBlock"
+          }
+        },
+        "validTargets": {
+          "type": "object",
+          "description": "Compiles to EnchantmentModel.CanEnchantCardType(CardType) / CanEnchant(CardModel) — [VERIFIED] real overrides.",
+          "properties": {
+            "types": {
+              "type": "object",
+              "properties": {
+                "attack": { "type": "boolean" },
+                "skill": { "type": "boolean" },
+                "power": { "type": "boolean" }
+              }
+            },
+            "excludeXCost": { "type": "boolean", "description": "Round 200 — now compiles for real, via CardEnergyCost.CostsX ([VERIFIED via direct ECMA-335 metadata read of CardEnergyCost])." },
+            "tags": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "shuffle": {
+          "type": "object",
+          "properties": {
+            "startAtBottomOfDraw": { "type": "boolean", "description": "Compiles to EnchantmentModel.get_ShouldStartAtBottomOfDrawPile() — [VERIFIED] real override." }
+          }
+        }
       }
     },
     "affliction": {
@@ -902,7 +969,7 @@
         },
         "keywordsWhileAfflicted": {
           "type": "array",
-          "description": "Values from CARD_KEYWORD_VALUES. NOT compiled to a real override — no confirmed AfflictionModel keyword-injection mechanism exists, so this emits as a disclosed comment in the generated source rather than a throwing ForgeActions.Todo() call (deliberately, so it can't take down other real effects in the same file — see round 30/90/190 precedent).",
+          "description": "Values from CARD_KEYWORD_VALUES. Round 199 \u2014 now compiles for real, via CardModel.AddKeyword(CardKeyword)/RemoveKeyword(CardKeyword), both [VERIFIED via direct ECMA-335 metadata read of CardModel]: applied once in AfterApplied(), reversed once in BeforeRemoved(), same apply/remove-once timing as costChange above.",
           "items": { "type": "string" }
         },
         "effectText": { "type": "string", "description": "Legacy freeform field from the original round-95 shape, kept for backward compatibility with older saved packages." },
@@ -915,9 +982,16 @@
         },
         "whilePile": {
           "type": "object",
-          "description": "Captured for design purposes only, same as enchantment.whilePile — no real AfflictionModel per-pile-trigger override has been confirmed, so this is NOT compiled into the generated C#.",
+          "description": "Round 200 — now compiles for real: merged into this affliction's own Additional Triggers mechanism below (see the `effects` property below), each entry gated by a real `this.Card.Pile?.Type == X` check ([VERIFIED via direct ECMA-335 metadata read of CardModel/CardPile]) instead of staying an uncompiled design note.",
           "properties": {
             "effects": { "type": "array", "items": { "$ref": "#/definitions/effectBlock" } }
+          }
+        },
+        "effects": {
+          "type": "array",
+          "description": "Round 199 \u2014 \"build out the full affliction section\". This affliction's OWN additional triggers, separate from onPlay.effects above (which keeps its own dedicated OnPlay-only shape unchanged) \u2014 SAME real hook vocabulary (hookEffectBlock/HOOK_TRIGGERS) Relics/Mechanics already use for their own effects[] (see relic.effects above), since AfflictionModel extends AbstractModel and genuinely has that same 200+-method real hook surface (confirmed via direct ECMA-335 metadata read, round 199). \"OnPlay\" is NOT a valid trigger here either \u2014 same reasoning as relic.effects, plus it's already covered by this affliction's own dedicated onPlay section above. Includes two hooks newly mapped this round, BeforeFlush/AfterFlush \u2014 [VERIFIED via direct ECMA-335 metadata read of AbstractModel] \u2014 the exact hook a real custom affliction found on Tyler's own machine (Afflictions/Reckless.cs) uses for its own end-of-turn hand cleanup.",
+          "items": {
+            "$ref": "#/definitions/hookEffectBlock"
           }
         },
         "validTargets": {
@@ -934,7 +1008,7 @@
                 "curse": { "type": "boolean" }
               }
             },
-            "excludeXCost": { "type": "boolean" },
+            "excludeXCost": { "type": "boolean", "description": "Round 200 — now compiles for real, via CardEnergyCost.CostsX ([VERIFIED via direct ECMA-335 metadata read of CardEnergyCost])." },
             "tags": { "type": "array", "items": { "type": "string" } }
           }
         }
@@ -1463,6 +1537,10 @@
             "type": "boolean",
             "description": "type == \"DiscardCard\"/\"ExhaustCard\" only. Tyler: \"Discard and exhaust should get an option to make them randomly selected.\" [UNVERIFIED] \u2014 same honesty tier these already had (a Todo stub either way); captures whether the card(s) affected should be chosen at random vs. left for the player to pick, so that distinction survives even though neither variant has a confirmed real API yet. Optional; omitted/false = unspecified selection (unchanged behavior \u2014 this project has never had grounding for either direction)."
           },
+          "unblockable": {
+            "type": "boolean",
+            "description": "type == \"DealDamage\" only (round 199). [VERIFIED via direct ECMA-335 field read of the real MegaCrit.Sts2.Core.ValueProps.ValueProp [Flags] enum] ValueProp.Unblockable (= 2) is real \u2014 directly evidenced by Afflictions/Reckless.cs's own real, working self-damage call, \"await CreatureCmd.Damage(choiceContext, _affOwner.Creature, 1m, ValueProp.Unblockable, _affOwner.Creature)\". KNOWN GAP: only actually takes effect when this DealDamage action has no CardModel source (a relic/mechanic/affliction's own effect, never a card's own OnPlay) \u2014 AttackCommand's own DamageProps setter (the path a card's own DealDamage goes through) is private, so there's no way to set it there; see backend/templates/ForgeActions.cs.template's DealDamage for the full evidence and the honest no-op comment emitted on that branch. Optional; omitted/false = unchanged (normal, blockable) behavior."
+          },
           "retainThisTurn": {
             "type": "boolean",
             "description": "type == \"ReturnToHand\" only. Tyler's companion checkbox: \"There should also be a check box to 'retain the card this turn' if the return to hand is selected.\" [VERIFIED via direct sts2.dll IL read] CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — its IL body is exactly `ldarg.0; ldc.i4.1; call set_HasSingleTurnRetain; ret`, and CardModel.ShouldRetainThisTurn's own real getter reads that same private flag back (`get_Keywords().Contains(<Retain keyword enum>) ? true : get_HasSingleTurnRetain()`) — i.e. a genuine, real one-turn-only version of the static Retain keyword, not an invented stand-in. When true, backend/compiler.js emits `this.GiveSingleTurnRetain();` immediately after the CardPileCmd.Add(...) return-to-hand call. Optional; omitted/false = no retain (unchanged behavior)."
@@ -1492,7 +1570,16 @@
           },
           "afflictionRef": {
             "type": "string",
-            "description": "affliction id (from this character's own afflictions[]), used when type == \"AfflictCard\" \u2014 which affliction to apply via CardCmd.Afflict<T>(this.Card/cardPlay.Card, amount) (round 197, see the `type` enum's own description above for the full evidence trail). Cross-checked against this character's own defined affliction ids in backend/validate.js. Ignored by every other action type."
+            "description": "affliction id (from this character's own afflictions[]), used when type == \"AfflictCard\" (round 197) \u2014 which affliction to apply via CardCmd.Afflict<T>(this.Card/cardPlay.Card, amount) \u2014 or type == \"ClearAfflictionFromPile\" (round 199) \u2014 which affliction type to clear from every matching card in `pile` (below) via CardCmd.ClearAffliction. See the `type` enum's own description above for the full evidence trail. Cross-checked against this character's own defined affliction ids in backend/validate.js. Ignored by every other action type."
+          },
+          "pile": {
+            "enum": [
+              "Hand",
+              "Discard",
+              "Draw",
+              "Exhaust"
+            ],
+            "description": "type == \"ClearAfflictionFromPile\" only (round 199) \u2014 which pile to scan (PileTypeExtensions.GetPile \u2014 see the `type` enum's own description above). Same real PileType enum values/PILE_TYPES list card.advancedOptions.whileInHand entries already use for their own, differently-shaped `pile` field \u2014 shared vocabulary, not a new guess. Optional; omitted defaults to \"Hand\" (compiler.js:pileTypeExpr), matching Reckless.cs's own real usage. Ignored by every other action type."
           },
           "enchantmentRef": {
             "type": "string",

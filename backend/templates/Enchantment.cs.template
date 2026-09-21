@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Linq; // [Round 199] added so ClearAfflictionFromPile's real .Where(...).ToList() pile-scan compiles here too -- see compiler.js's own comment on that action case.
 using BaseLib.Abstracts;
 using BaseLib.Utils;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -38,7 +39,8 @@ namespace {{namespace}}.Enchantments;
 // ShowAmount, CanEnchantCardType, CanEnchant, the block/damage/play-count
 // modifiers, OnEnchant, OnPlay -- keeps compiling unchanged), and adding
 // exactly one member of its own: `protected virtual string? CustomIconPath`
-// -- see {{iconOverride}} below, now wired to the Icon field the editor
+// -- see the real CustomIconPath override generated below (when this
+// enchantment has an icon set), now wired to the Icon field the editor
 // already collected but this file never used before this round.
 //
 // No [Pool(typeof(...))] attribute here, unlike Card/Relic/Power -- the
@@ -60,26 +62,47 @@ namespace {{namespace}}.Enchantments;
 //
 // Field-mapping legend used throughout this file's generator
 // (compiler.js:generateEnchantmentSource): [VERIFIED] = confirmed real
-// override with a confirmed signature, [BEST EFFORT] = confirmed real
-// override where the exact runtime SEMANTICS (e.g. what "multiplicative"
-// scales against) are Forge's own reasonable reading, not decompiled from
-// a real example, and [UNVERIFIED] = left uncompiled (a plain comment, or
-// a ForgeActions.Todo(...) stub) because no BaseLib API for it was
-// confirmed this round.
+// override with a confirmed signature. A couple of the numeric modifiers
+// below carry a [BEST EFFORT] note only in the sense that the exact
+// runtime SEMANTICS (e.g. what "multiplicative" scales against) are
+// Forge's own reasonable reading of a real, confirmed override -- not a
+// guess about whether the override itself works; every field in this
+// file is a real, confirmed override.
 //
-// Note on the three gating/freeform fields (onceOnlyPerCombat,
-// firstPlayOnly, randomizeEnergyOnDraw) specifically: these are left as
-// COMMENTS, not ForgeActions.Todo() calls, on purpose. Todo() throws the
-// instant its line actually runs (see compiler.js's own round-30
-// postmortem, where a reached Todo() call froze an entire real combat
-// turn) -- and these three would sit in front of or alongside every OTHER
-// effect below. Throwing there would break this enchantment's CONFIRMED
-// effects too, every single time it's played, not just the unconfirmed
-// part. A silent no-op comment is the more honest failure mode until a
-// real API is found for them. "Extra effects (freeform)" text IS compiled
-// as a trailing Todo() (matching actionToCSharp's own convention for
-// genuinely freeform/unrecognized content) since it's placed LAST, after
-// every confirmed per-stack effect already ran.
+// [Round 200 -- "make this section fully functional"] Three gaps closed
+// this round:
+//   1. "Exclude X-cost cards" now compiles for real, via
+//      CardEnergyCost.CostsX ([VERIFIED via direct ECMA-335 metadata read
+//      of CardEnergyCost]).
+//   2. This class now gets an "Additional Triggers" section too (see
+//      below) -- EnchantmentModel extends AbstractModel, the same common
+//      base Cards/Relics/Powers/Afflictions/Orbs all share, so it
+//      genuinely has the same 200+-method real hook surface Afflictions
+//      already got in round 199.
+//   3. "While the card waits in a pile" now compiles for real too, merged
+//      into that same Additional Triggers mechanism -- each entry gated
+//      by a real `this.Card.Pile?.Type == X` check ([VERIFIED via direct
+//      ECMA-335 metadata read of CardModel/CardPile]) instead of staying
+//      an uncompiled design note.
+//
+// [Round 201 -- correcting round 200] Round 200 removed "Add keywords"/
+// "Remove keywords on apply" outright, reasoning that since OnEnchant()
+// is this class's only lifecycle callback (no removal/unenchant hook
+// exists), a keyword change with no way to reverse it on removal would
+// be a silent bug. That reasoning had the wrong premise: Tyler supplied
+// a real, working reference enchantment ("TestRemove", a genuinely
+// different, unrelated character-creator tool's real generated output,
+// not Forge's own) that does exactly this -- adds Exhaust/Ethereal/
+// Innate and removes Retain/Sly/Eternal/Unplayable, permanently, inside
+// OnEnchant(), with no attempt at reversal on removal. Direct IL
+// disassembly of that mod's own compiled OnEnchant() body confirms real
+// CardModel.AddKeyword(CardKeyword)/RemoveKeyword(CardKeyword) calls
+// (both [VERIFIED] real, public, non-virtual -- the same pair round 199
+// already uses for Afflictions). These fields are back, correctly
+// understood this time as a PERMANENT, one-way mutation applied once on
+// enchant -- see the real OnEnchant() override generated below. Removing
+// this enchantment later does not restore/re-remove anything; the editor
+// copy says so.
 public sealed class {{className}} : CustomEnchantmentModel
 {
 {{iconOverride}}{{modifierOverrides}}
@@ -97,4 +120,5 @@ public sealed class {{className}} : CustomEnchantmentModel
 {{onPlayBody}}
         await Task.CompletedTask;
     }
-{{whilePileComment}}}
+{{extraTriggerMethods}}
+}

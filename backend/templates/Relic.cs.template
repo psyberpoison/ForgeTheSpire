@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Linq; // [Round 199] added so ClearAfflictionFromPile's real .Where(...).ToList() pile-scan compiles here too -- see compiler.js's own comment on that action case.
 using BaseLib.Utils;
 using BaseLib.Abstracts;
 using MegaCrit.Sts2.Core.Combat;
