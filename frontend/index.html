@@ -4799,6 +4799,131 @@ function migrateLegacyStatusActions(pkg){
   return pkg;
 }
 
+// Round 202 -- Tyler: "if the creator gets an update that would make it no
+// longer compatible with previously created character, it should import
+// what it can, and create a pop-up describing what was unable to be
+// imported due to the application now supporting a different version of
+// the game." Generalizes the ONE existing "fail loud, no auto-migration"
+// incompatibility in this codebase (backend/validate.js's
+// RETIRED_AMBIGUOUS_TRIGGERS -- see that file for the full evidence trail
+// on why those 13 ids can't be auto-remapped) into a graceful, self-healing
+// pass: instead of only ever surfacing as a hard compile-time rejection
+// deep into the workflow (Compile Mod -> /api/compile ->
+// showCompileErrorModal, long after the user thinks the import already
+// succeeded), this runs on EVERY load() -- same "runs every load,
+// self-heals an already-broken save" convention as the round-120
+// resourceBars prune just above -- drops just the specific effect that no
+// longer validates, and reports exactly what got dropped and why, instead
+// of leaving a stale reference sitting silently in the save until the user
+// hits a wall at export time with no idea which edit caused it.
+//
+// RETIRED_TRIGGER_REPLACEMENTS mirrors backend/validate.js's
+// RETIRED_AMBIGUOUS_TRIGGERS message text by hand (same discipline as this
+// file's own HOOK_TRIGGERS copy of that file's list) -- used only to give
+// a more actionable message than the generic fallback below when the
+// dropped trigger is one of those 13 specifically-renamed ids; any OTHER
+// now-invalid trigger (a future retirement, not just this one) still gets
+// caught and reported by the generic path, since the real check is
+// "is this trigger still in the entity's currently-valid list," not
+// "is this trigger one of these 13 by name."
+const RETIRED_TRIGGER_REPLACEMENTS = {
+  AfterDamageGiven: '"After you deal damage" or "After an enemy deals damage"',
+  OnTakeDamage: '"When you take damage" or "When an enemy takes damage"',
+  AfterBlockBroken: '"After your block is broken" or "After an enemy\'s block is broken"',
+  BeforeDamageReceived: '"Before you receive damage" or "Before an enemy receives damage"',
+  AfterBlockCleared: '"After your block is cleared" or "After an enemy\'s block is cleared"',
+  AfterBlockGained: '"After you gain block" or "After an enemy gains block"',
+  AfterCurrentHpChanged: '"After your HP changes" or "After an enemy\'s HP changes"',
+  BeforeDeath: '"Before you die" or "Before an enemy dies"',
+  AfterPowerAmountChanged: '"After you change a power\'s stacks" or "After an enemy changes a power\'s stacks"',
+  AfterPreventingDeath: '"After your death is prevented" or "After an enemy\'s death is prevented"',
+  OnTurnStart: '"At the start of your turn" or "At the start of an enemy\'s turn"',
+  OnTurnEnd: '"At the end of your turn" or "At the end of an enemy\'s turn"',
+  AfterCreatureAddedToCombat: '"After an enemy is added to combat"',
+};
+
+function dropInvalidTriggerEffects(effects, allowedTriggers, entityKind, entityName, report){
+  if(!Array.isArray(effects)) return effects;
+  return effects.filter(eff=>{
+    if(eff && allowedTriggers.includes(eff.trigger)) return true;
+    const trigger = eff && eff.trigger;
+    const replacement = RETIRED_TRIGGER_REPLACEMENTS[trigger];
+    const reason = replacement
+      ? `The "${trigger}" trigger no longer exists -- it's been split into ${replacement}. Pick one manually and re-add this effect.`
+      : `The "${trigger || '(unknown)'}" trigger isn't supported by this version of Forge anymore -- Forge's understanding of the real game's API has moved on since this was added.`;
+    report.push({ entityKind, entityName: entityName || '(unnamed)', trigger: trigger || '(unknown)', reason });
+    return false;
+  });
+}
+
+// Walks every effects[]-bearing location across the whole package (cards +
+// their own upgrade tiers, relics, mechanics, enchantments incl. their
+// whilePile additional-triggers, afflictions incl. their whilePile
+// additional-triggers) and drops any effect whose trigger id isn't in that
+// entity kind's currently-valid list. onPlay.effects (enchantment/
+// affliction) is deliberately NOT scanned -- its trigger is always the
+// fixed 'OnPlay', never user-picked, so it can't drift the way a picked
+// trigger id can. Returns the same pkg (mutated in place) plus a report
+// array -- empty when nothing was dropped, the overwhelmingly common case.
+function checkImportCompatibility(pkg){
+  const report = [];
+  (pkg.cards || []).forEach(card=>{
+    if(!card) return;
+    card.effects = dropInvalidTriggerEffects(card.effects, CARD_TRIGGERS, 'card', card.name, report);
+    (card.upgrades || []).forEach(up=>{
+      if(up) up.effects = dropInvalidTriggerEffects(up.effects, CARD_TRIGGERS, 'card', card.name, report);
+    });
+  });
+  (pkg.relics || []).forEach(r=>{ if(r) r.effects = dropInvalidTriggerEffects(r.effects, HOOK_TRIGGERS, 'relic', r.name, report); });
+  (pkg.mechanics || []).forEach(m=>{ if(m) m.effects = dropInvalidTriggerEffects(m.effects, HOOK_TRIGGERS, 'mechanic', m.name, report); });
+  (pkg.enchantments || []).forEach(en=>{
+    if(!en) return;
+    en.effects = dropInvalidTriggerEffects(en.effects, HOOK_TRIGGERS, 'enchantment', en.name, report);
+    if(en.whilePile) en.whilePile.effects = dropInvalidTriggerEffects(en.whilePile.effects, HOOK_TRIGGERS, 'enchantment', en.name, report);
+  });
+  (pkg.afflictions || []).forEach(af=>{
+    if(!af) return;
+    af.effects = dropInvalidTriggerEffects(af.effects, HOOK_TRIGGERS, 'affliction', af.name, report);
+    if(af.whilePile) af.whilePile.effects = dropInvalidTriggerEffects(af.whilePile.effects, HOOK_TRIGGERS, 'affliction', af.name, report);
+  });
+  return { pkg, report };
+}
+
+const IMPORT_COMPAT_ENTITY_LABELS = { card: 'Card', relic: 'Relic', mechanic: 'Mechanic', enchantment: 'Enchantment', affliction: 'Affliction' };
+// Same visual language as showCompileErrorModal below (reuses its
+// .compile-error-group/-head/-title/-list classes on purpose) -- this is
+// the same "here's exactly what needs attention, grouped by entity"
+// pattern, just triggered by a load-time compatibility drop instead of a
+// compile-time validation failure.
+function showImportCompatibilityModal(report){
+  const groups = new Map();
+  report.forEach(item=>{
+    const key = `${item.entityKind}|${item.entityName}`;
+    if(!groups.has(key)) groups.set(key, { kind: item.entityKind, name: item.entityName, items: [] });
+    groups.get(key).items.push(item.reason);
+  });
+  const groupHtml = [...groups.values()].map(g=>{
+    const label = IMPORT_COMPAT_ENTITY_LABELS[g.kind] || g.kind;
+    return `
+      <div class="compile-error-group">
+        <div class="compile-error-group-head">
+          <span class="compile-error-group-title">${label} "${escapeHtml(g.name)}"</span>
+        </div>
+        <ul class="compile-error-list">${g.items.map(it=>`<li>${escapeHtml(it)}</li>`).join('')}</ul>
+      </div>`;
+  }).join('');
+  openModal(`
+    <div class="modal-head"><h3 style="color:var(--danger-bright)">Imported with ${report.length} change${report.length===1?'':'s'} -- some effects no longer apply</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <div class="panel-desc" style="margin-top:0">This character was built under an older version of Forge. Everything else imported normally -- the effect(s) below were dropped because they used something the current version no longer supports. Nothing was silently kept broken; re-add each one using whatever it lists as the current equivalent, if any.</div>
+      ${groupHtml}
+    </div>
+    <div class="modal-foot"><div></div><button onclick="closeModal()">Got it</button></div>
+  `, {wide:true});
+}
+
+let pendingImportCompatibilityReport = null;
+
 // Round 118 — last-resort safety net. Tyler hit a raw, uncaught
 // "Cannot read properties of undefined (reading 'find')" after round 117's
 // image-upload changes that no amount of static review or synthetic
@@ -4826,7 +4951,17 @@ function load(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return blankState();
-    return migrateLegacyStatusActions(JSON.parse(raw));
+    const migrated = migrateLegacyStatusActions(JSON.parse(raw));
+    const { pkg, report } = checkImportCompatibility(migrated);
+    if(report.length){
+      pendingImportCompatibilityReport = report;
+      // Persist the cleaned package right away so a plain refresh (no new
+      // import) doesn't re-report the same already-handled drop on every
+      // subsequent load -- same "write the healed shape back" convention
+      // migrateLegacyStatusActions itself relies on via save() elsewhere.
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pkg)); }catch(e){ /* ignore -- still returns the cleaned pkg either way */ }
+    }
+    return pkg;
   }catch(e){ return blankState(); }
 }
 function save(){
@@ -15163,6 +15298,15 @@ renderCardKeywordDefs();
 renderPoseSheetGrid();
 renderLoreList();
 refreshGameStatus();
+
+// Round 202 -- show once, right after everything else has finished its
+// own initial render, if load() found something checkImportCompatibility
+// had to drop (a fresh "Import Project" pick, or just reopening a
+// locally-saved character after a Forge update retired something it used).
+if(pendingImportCompatibilityReport && pendingImportCompatibilityReport.length){
+  showImportCompatibilityModal(pendingImportCompatibilityReport);
+  pendingImportCompatibilityReport = null;
+}
 </script>
 </body>
 </html>
