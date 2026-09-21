@@ -223,7 +223,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT } = require('./compiler');
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -1702,6 +1702,66 @@ function validateCharacterPackage(pkg) {
           if (kw.position !== undefined && !['Before', 'After'].includes(kw.position)) {
             errors.push(`${p}.position "${kw.position}" must be "Before" or "After".`);
           }
+        });
+      }
+    }
+
+    // Chronicles/Epochs [Round 203] — Tyler: "change the name of lore to
+    // 'Chronicles'. Chronicles are a collection of items called 'Epochs'."
+    // See compiler.js's EPOCH_ERAS/EPOCH_UNLOCK_REQUIREMENT_KINDS(
+    // _NEEDING_AMOUNT) for the real, IL-confirmed vocabulary this mirrors
+    // — one source of truth, same convention as PLAYER_ONLY_ACTIONS etc.
+    // (see this file's own require() line up top).
+    if (ch.chronicles !== undefined) {
+      if (!Array.isArray(ch.chronicles)) {
+        errors.push('character.chronicles must be an array.');
+      } else {
+        const seenEpochIds = new Set();
+        ch.chronicles.forEach((chronicle, ci) => {
+          const cp = `character.chronicles[${ci}]`;
+          if (!chronicle || typeof chronicle !== 'object') { errors.push(`${cp} must be an object.`); return; }
+          if (!isNonEmptyString(chronicle.name)) errors.push(`${cp}.name must be a non-empty string.`);
+          if (!Array.isArray(chronicle.epochs) || chronicle.epochs.length < 1) {
+            errors.push(`${cp}.epochs must be a non-empty array — a Chronicle with no Epochs has nothing to show on the timeline.`);
+            return;
+          }
+          chronicle.epochs.forEach((epoch, ei) => {
+            const ep = `${cp}.epochs[${ei}]`;
+            if (!epoch || typeof epoch !== 'object') { errors.push(`${ep} must be an object.`); return; }
+            if (!isNonEmptyString(epoch.name)) errors.push(`${ep}.name must be a non-empty string.`);
+            if (epoch.id) {
+              if (seenEpochIds.has(epoch.id)) errors.push(`${ep}.id "${epoch.id}" collides with another epoch's id in this character.`);
+              seenEpochIds.add(epoch.id);
+            }
+            if (!EPOCH_ERAS.includes(epoch.era)) {
+              errors.push(`${ep}.era "${epoch.era}" is not one of the real EpochEra values: ${EPOCH_ERAS.join(', ')}.`);
+            }
+            if (!isInt(epoch.eraPosition) || epoch.eraPosition < 0 || epoch.eraPosition > 4) {
+              errors.push(`${ep}.eraPosition must be an integer between 0 (bottom row) and 4 (top row).`);
+            }
+            // Tyler: "if an epoch is added, at least one of the users
+            // created cards needs to be locked behind it."
+            if (!Array.isArray(epoch.unlockCardIds) || epoch.unlockCardIds.length < 1) {
+              errors.push(`${ep}.unlockCardIds must reference at least one of this character's own cards — an Epoch needs something for the player to unlock.`);
+            } else {
+              epoch.unlockCardIds.forEach(id => {
+                if (!cardIds.has(id)) errors.push(`${ep}.unlockCardIds references "${id}", which isn't defined in cards[].`);
+              });
+            }
+            const req = epoch.unlockRequirement;
+            if (!req || typeof req !== 'object') {
+              errors.push(`${ep}.unlockRequirement must be an object.`);
+            } else if (!EPOCH_UNLOCK_REQUIREMENT_KINDS.includes(req.kind)) {
+              errors.push(`${ep}.unlockRequirement.kind "${req.kind}" is not one of: ${EPOCH_UNLOCK_REQUIREMENT_KINDS.join(', ')}.`);
+            } else if (EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT.has(req.kind)) {
+              // Tyler: "If any option besides 'no requirement' or
+              // 'available immediately' is selected then it should pop up
+              // a number field that allows positive integers only."
+              if (!isInt(req.amount) || req.amount < 1) {
+                errors.push(`${ep}.unlockRequirement.amount must be a positive integer when kind is "${req.kind}".`);
+              }
+            }
+          });
         });
       }
     }

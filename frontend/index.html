@@ -2027,11 +2027,28 @@
      Gold/etc, so they get their own narrower modifier instead of shrinking
      .char-field itself for every field. */
   .char-field.char-field-sm{flex:0 0 50px; width:50px;}
-  .lore-entry{
-    border:1px solid var(--border-soft); border-radius:8px; padding:10px; margin-bottom:8px;
+  /* [Round 203] Chronicles/Epochs — .epoch-row is each epoch's compact
+     summary row inside the Chronicle editor modal (name/meta + Edit/
+     Remove), same visual weight as .layer-edit-row below but with its own
+     class since the two aren't otherwise related. .epoch-card-checklist
+     is the plain "which of my own cards does this epoch unlock" list —
+     no existing checkbox-grid component in this file fit a
+     variable-length, per-character card list, so this is a small
+     purpose-built one rather than a reused component. */
+  .epoch-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border:1px solid var(--border-soft); border-radius:8px; padding:8px 10px; margin-bottom:6px;
     background:var(--stone-2);
   }
-  .lore-entry .row{margin-bottom:6px;}
+  .epoch-row-main .t-name{font-weight:600; font-size:13px; margin-bottom:2px;}
+  .epoch-row-main .t-meta{font-size:11px; color:var(--parchment-dim); font-family:'JetBrains Mono',monospace;}
+  .epoch-row-actions{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
+  .epoch-card-checklist{
+    max-height:220px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px;
+    padding:8px 10px; background:var(--stone-2);
+  }
+  .epoch-card-check{display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 0;}
+  .epoch-card-check input{margin:0;}
   .layer-edit-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border-soft);}
   .layer-edit-row:last-child{border-bottom:none;}
   .layer-edit-swatch{width:36px; height:36px; border-radius:50%; border:2px solid var(--border-soft); overflow:hidden; flex:0 0 auto; background:var(--ink);}
@@ -2561,17 +2578,12 @@
             <div class="hand-art-grid" id="hand-art-grid"></div>
           </div>
 
-          <!-- [Round 106] Lore moved in here from the Character & Art text
-               column — Tyler: "move the lore section into the advanced
-               options for character/art." Same reasoning as Rest/Shop
-               sprite and Hand art above: not required to define a working
-               character, so it belongs behind the drawer rather than
-               always taking up space in the primary layout. -->
-          <div class="art-optional-col">
-            <label style="margin-top:0">Lore <span class="dim-hint">(voicelines, chronicle entries — flavor only, not compiled)</span></label>
-            <div id="lore-list"></div>
-            <button class="secondary" id="add-lore" type="button" style="margin-top:6px">+ Add lore entry</button>
-          </div>
+          <!-- [Round 203] The old Lore column that used to live here (a
+               flat, uncompiled title+text flavor list, moved into this
+               drawer back in Round 106) is gone — Chronicles/Epochs
+               replaced it entirely with a real, compiled feature big
+               enough to need its own dedicated panel instead of a small
+               drawer column; see "08 Chronicles" below, after Orbs. -->
 
           <!-- [Round 151] Custom sounds — Tyler: "lets add the ability to
                add custom 5 second wav or mp3 files that overrides the base
@@ -2931,6 +2943,35 @@
     </div>
   </section>
 
+  <!-- [Round 203] Chronicles — Tyler: "change the name of lore to
+       'Chronicles'. Chronicles are a collection of items called 'Epochs'.
+       ... Epochs are typically a way for the character to hide certain
+       cards behind playing the character for a while. They are considered
+       a part of the character's timeline." Own dedicated panel (not
+       folded into Advanced Options like the old Lore field was) because
+       this is a real, compiled, two-level feature (MegaCrit.Sts2.Core.
+       Timeline.StoryModel/EpochModel — [VERIFIED] via direct sts2.dll IL
+       disassembly and by decompiling Tyler's own updated
+       TheBurdenedNewCharacter.dll v3), not a flat flavor-text list. Same
+       tile-grid + modal-editor pattern as Pets/Orbs above
+       (renderChronicles/openChronicleEditor, near the bottom of the
+       script). -->
+  <section class="panel" id="section-chronicles">
+    <div class="panel-head">
+      <h2><span class="num">08</span> Chronicles</h2>
+      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="chronicle-count">0 chronicles</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-desc">
+        A Chronicle is a named group of Epochs shown together on your character's timeline. <strong>Compiles to a
+        real MegaCrit.Sts2.Core.Timeline.StoryModel</strong> — each Epoch inside it compiles to a real EpochModel
+        subclass, with at least one of your own cards locked behind it and a real, <em>enforced</em> unlock
+        requirement (checked against real save-file stats, e.g. wins/losses/floors climbed — not just descriptive
+        text) that decides when the epoch — and the cards behind it — actually unlocks for the player.
+      </div>
+      <div class="grid-cards" id="chronicles-grid"></div>
+    </div>
+  </section>
 
 </main>
 
@@ -4264,7 +4305,7 @@ function blankState(){
         death:{ assetRef:null, fps:12, frameCount:1, columns:0 },
         victory:{ assetRef:null, fps:12, frameCount:1, columns:0 },
       },
-      lore:[],
+      chronicles:[],
       // Starts in 'customLayers' mode so Tyler's own bundled placeholder
       // art (ORB_LAYER_DEFAULT_ASSETS) is what a brand-new character
       // actually sees by default — assetRef:null on every layer means
@@ -4573,7 +4614,9 @@ function migrateLegacyStatusActions(pkg){
     } else {
       ['allCards','attack','skill','power','legendary'].forEach(k=>{ if(pkg.character.cardFrames[k] === undefined) pkg.character.cardFrames[k] = null; });
     }
-    if(!Array.isArray(pkg.character.lore)) pkg.character.lore = [];
+    // [Round 203] character.lore's own additive-default line used to live
+    // here — removed; see the Chronicles migration block further down
+    // this function (near pkg.formatVersion = 14) for what replaced it.
     // [Round 139] vanillaCardAccess/cardKeywords — additive, same
     // convention as cardFrames just above.
     if(!pkg.character.vanillaCardAccess || typeof pkg.character.vanillaCardAccess !== 'object'){
@@ -4582,7 +4625,7 @@ function migrateLegacyStatusActions(pkg){
       ['ironclad','silent','defect','necrobinder','regent','colorless'].forEach(k=>{ if(typeof pkg.character.vanillaCardAccess[k] !== 'boolean') pkg.character.vanillaCardAccess[k] = false; });
     }
     if(!Array.isArray(pkg.character.cardKeywords)) pkg.character.cardKeywords = [];
-    // [Round 121] poseSheets — additive, same convention as handArt/lore
+    // [Round 121] poseSheets — additive, same convention as handArt
     // just above (no formatVersion bump needed). A package saved before
     // this round simply has no poseSheets key at all; back it with a
     // fully-shaped, all-unset object so every render/lookup below can
@@ -4793,6 +4836,23 @@ function migrateLegacyStatusActions(pkg){
     pkg.character.resourceBars = pkg.character.resourceBars.filter(b =>
       !(b && b.statusKind === 'custom' && !mechIds.has(b.status))
     );
+  }
+
+  // Additive only (no formatVersion bump needed) — Round 203: Tyler
+  // renamed "Lore" to "Chronicles" and gave it a completely different,
+  // real, compiled shape (name/era/eraPosition/unlockCardIds/
+  // unlockRequirement per Epoch, grouped into named Chronicles) — nothing
+  // like the old character.lore[] (a flat list of {id,title,text}
+  // flavor-text entries that was explicitly [DESIGN-TIME PREVIEW ONLY,
+  // not compiled] and never exported into a real mod). There's no
+  // sensible field-by-field migration between the two shapes, so an
+  // old save's lore[] entries are simply dropped here rather than
+  // fabricating fake Chronicles/Epochs out of them — same honest
+  // "no stubs/no best-guesses" standard this whole project holds
+  // generated C# to.
+  if(pkg.character){
+    delete pkg.character.lore;
+    if(!Array.isArray(pkg.character.chronicles)) pkg.character.chronicles = [];
   }
 
   pkg.formatVersion = 14;
@@ -7437,49 +7497,322 @@ function renderPoseSheetPreview(pose){
   if(clearBtn) clearBtn.style.display = url ? '' : 'none';
 }
 
-/* ---- lore entries (flavor only — voicelines/chronicle text, not compiled) ---- */
-function renderLoreList(){
-  const list = document.getElementById('lore-list');
-  const lore = state.character.lore || [];
-  if(lore.length === 0){
-    list.innerHTML = '<div class="empty">No lore entries yet.</div>';
-    return;
-  }
-  list.innerHTML = lore.map(entry => `
-    <div class="lore-entry" data-id="${entry.id}">
-      <div class="row">
-        <input type="text" class="lore-title" data-id="${entry.id}" placeholder="Title (e.g. Voiceline — Combat Start)" value="${escapeAttr(entry.title||'')}">
-      </div>
-      <textarea class="lore-text" data-id="${entry.id}" placeholder="Text...">${escapeHtml(entry.text||'')}</textarea>
-      <button type="button" class="ghost lore-remove" data-id="${entry.id}" style="margin-top:6px; font-size:11px;">Remove</button>
-    </div>
-  `).join('');
+// [Round 203] Lore's old renderLoreList()/#add-lore handler pair (a flat,
+// uncompiled title+text flavor-text list) is gone — replaced entirely by
+// Chronicles/Epochs below, a real compiled feature with its own dedicated
+// panel (section-chronicles).
 
-  list.querySelectorAll('.lore-title').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const entry = lore.find(l=>l.id===inp.dataset.id);
-      if(entry){ entry.title = inp.value; save(); }
-    });
+/* ---------- CHRONICLES / EPOCHS ---------- */
+// [Round 203] Tyler: "change the name of lore to 'Chronicles'. Chronicles
+// are a collection of items called 'Epochs'. Each epoch needs to have a
+// customizable name and description field with an optional 810x500px
+// image field. Each epoch has a required 'Era' and 'Row' field... The
+// rows will go from 0 to 4, with 0 being the bottom, and 4 being the
+// top. If an epoch is added, at least one of the users created cards
+// needs to be locked behind it. The unlock requirements are also
+// required... If any option besides 'no requirement' or 'available
+// immediately' is selected then it should pop up a number field that
+// allows positive integers only."
+//
+// [VERIFIED via direct ECMA-335 IL disassembly of the real installed
+// sts2.dll AND of Tyler's own updated TheBurdenedNewCharacter.dll (v3,
+// "New Chronicle" update) — see claude/round203-chronicles-epochs.md]
+// MegaCrit.Sts2.Core.Timeline.StoryModel/EpochModel are real base-game
+// classes; unlockRequirement is a REAL, enforced condition (checked
+// against real save-file stats — see backend/compiler.js's
+// chronicleUnlockConditionExpr), not just descriptive text. EPOCH_ERAS
+// here is a frontend-side copy of the same 26-value MegaCrit.Sts2.Core.
+// Timeline.EpochEra enum backend/compiler.js exports — this file runs in
+// the browser and can't require() the backend module, so it's kept in
+// sync by hand; both are derived from the same fields_dump2.py evidence.
+const EPOCH_ERA_GROUPS = [
+  { label: 'Prehistoria', eras: ['Prehistoria0', 'Prehistoria1', 'Prehistoria2'] },
+  { label: 'Seeds', eras: ['Seeds0', 'Seeds1', 'Seeds2', 'Seeds3'] },
+  { label: 'Blight', eras: ['Blight0', 'Blight1', 'Blight2'] },
+  { label: 'Flourish', eras: ['Flourish0', 'Flourish1', 'Flourish2', 'Flourish3'] },
+  { label: 'Invitation', eras: ['Invitation0', 'Invitation1', 'Invitation2', 'Invitation3', 'Invitation4', 'Invitation5', 'Invitation6', 'Invitation7'] },
+  { label: 'Peace', eras: ['Peace0', 'Peace1'] },
+  { label: 'Far Future', eras: ['FarFuture0', 'FarFuture1'] },
+];
+const EPOCH_ERAS = EPOCH_ERA_GROUPS.flatMap(g => g.eras);
+
+// Matches Tyler's uploaded screenshot of the in-game "Unlock requirement"
+// dropdown's 7 options, in the same order. needsAmount marks the 5 kinds
+// that pop up the positive-integer amount field — the other 2 (none/
+// immediate) don't, per Tyler's spec quoted above.
+const EPOCH_UNLOCK_REQUIREMENT_OPTIONS = [
+  { id: 'none', label: 'No requirement — cards always available', needsAmount: false },
+  { id: 'immediate', label: 'Available immediately', needsAmount: false },
+  { id: 'winThisCharacter', label: 'Win runs with this character', needsAmount: true },
+  { id: 'finishThisCharacter', label: 'Finish runs with this character', needsAmount: true },
+  { id: 'winAnyCharacter', label: 'Win runs with any character', needsAmount: true },
+  { id: 'finishAnyCharacter', label: 'Finish runs with any character', needsAmount: true },
+  { id: 'climbFloors', label: 'Climb floors across all runs', needsAmount: true },
+];
+const EPOCH_PORTRAIT_WIDTH = 810, EPOCH_PORTRAIT_HEIGHT = 500;
+
+const chronicleGrid = document.getElementById('chronicles-grid');
+
+function renderChronicles(){
+  if(!Array.isArray(state.character.chronicles)) state.character.chronicles = [];
+  const chronicles = state.character.chronicles;
+  chronicleGrid.innerHTML = '';
+  chronicles.forEach(c=>{
+    const t = document.createElement('div');
+    t.className = 'tile';
+    const n = Array.isArray(c.epochs) ? c.epochs.length : 0;
+    t.innerHTML = `<div class="t-name">${escapeHtml(c.name||'Untitled Chronicle')}</div><div class="t-meta">${n} epoch${n===1?'':'s'}</div>`;
+    t.onclick = ()=> openChronicleEditor(c.id);
+    chronicleGrid.appendChild(t);
   });
-  list.querySelectorAll('.lore-text').forEach(ta=>{
-    ta.addEventListener('input', ()=>{
-      const entry = lore.find(l=>l.id===ta.dataset.id);
-      if(entry){ entry.text = ta.value; save(); }
-    });
-  });
-  list.querySelectorAll('.lore-remove').forEach(btn=>{
-    btn.onclick = ()=>{
-      state.character.lore = lore.filter(l=>l.id !== btn.dataset.id);
-      save();
-      renderLoreList();
-    };
-  });
+  const addTile = document.createElement('div');
+  addTile.className = 'tile add-tile';
+  addTile.textContent = '+';
+  addTile.onclick = ()=>{
+    const c = { id: uid('chronicle'), name:'New Chronicle', description:'', epochs:[] };
+    chronicles.push(c);
+    save(); renderChronicles();
+    openChronicleEditor(c.id);
+  };
+  chronicleGrid.appendChild(addTile);
+  document.getElementById('chronicle-count').textContent = `${chronicles.length} chronicle${chronicles.length===1?'':'s'}`;
 }
-document.getElementById('add-lore').onclick = ()=>{
-  state.character.lore.push({ id: uid('lore'), title:'', text:'' });
-  save();
-  renderLoreList();
-};
+
+function openChronicleEditor(chronicleId){
+  const c = state.character.chronicles.find(x=>x.id===chronicleId);
+  if(!c) return;
+  if(!Array.isArray(c.epochs)) c.epochs = [];
+  openModal(`
+    <div class="modal-head"><h3>Edit Chronicle</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <label>Name</label><input type="text" id="chr-name" value="${escapeAttr(c.name||'')}">
+      <label>Description</label><textarea id="chr-desc">${escapeHtml(c.description||'')}</textarea>
+      <label style="margin-top:14px">Epochs</label>
+      <div id="chr-epoch-list"></div>
+      <button class="secondary" id="chr-add-epoch" type="button" style="margin-top:8px">+ Add Epoch</button>
+    </div>
+    <div class="modal-foot">
+      <button class="danger" id="delete-chronicle">Delete Chronicle</button>
+      <button id="save-chronicle">Done</button>
+    </div>
+  `);
+
+  function renderEpochList(){
+    const list = document.getElementById('chr-epoch-list');
+    if(!list) return;
+    if(c.epochs.length === 0){
+      list.innerHTML = '<div class="empty">No epochs yet — add one below. A Chronicle needs at least one Epoch to appear on the timeline.</div>';
+      return;
+    }
+    list.innerHTML = c.epochs.map(e=>{
+      const reqOpt = EPOCH_UNLOCK_REQUIREMENT_OPTIONS.find(o=>o.id===(e.unlockRequirement&&e.unlockRequirement.kind)) || EPOCH_UNLOCK_REQUIREMENT_OPTIONS[0];
+      const cardCount = Array.isArray(e.unlockCardIds) ? e.unlockCardIds.length : 0;
+      return `
+      <div class="epoch-row" data-id="${e.id}">
+        <div class="epoch-row-main">
+          <div class="t-name">${escapeHtml(e.name||'Untitled Epoch')}</div>
+          <div class="t-meta">${e.era||'(no era)'} · row ${Number.isFinite(e.eraPosition)?e.eraPosition:0} · ${cardCount} card${cardCount===1?'':'s'} unlocked · ${escapeHtml(reqOpt.label)}</div>
+        </div>
+        <div class="epoch-row-actions">
+          <button type="button" class="ghost epoch-edit" data-id="${e.id}">Edit</button>
+          <button type="button" class="ghost icon-btn icon-btn-danger epoch-remove" data-id="${e.id}" title="Remove" aria-label="Remove">&times;</button>
+        </div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.epoch-edit').forEach(btn=>{
+      btn.onclick = ()=> openEpochEditor(c.id, btn.dataset.id);
+    });
+    list.querySelectorAll('.epoch-remove').forEach(btn=>{
+      btn.onclick = ()=>{
+        const removed = c.epochs.find(x=>x.id===btn.dataset.id);
+        if(removed && removed.imageAssetRef) state.assets = state.assets.filter(a=>a.id!==removed.imageAssetRef);
+        c.epochs = c.epochs.filter(x=>x.id!==btn.dataset.id);
+        save(); renderEpochList();
+      };
+    });
+  }
+  renderEpochList();
+
+  document.getElementById('chr-add-epoch').onclick = ()=>{
+    const e = { id: uid('epoch'), name:'New Epoch', description:'', imageAssetRef:null, era:'Seeds0', eraPosition:0, unlockCardIds:[], unlockRequirement:{kind:'none', amount:null} };
+    c.epochs.push(e);
+    save(); renderEpochList();
+    openEpochEditor(c.id, e.id);
+  };
+
+  document.getElementById('delete-chronicle').onclick = ()=>{
+    (c.epochs||[]).forEach(e=>{
+      if(e.imageAssetRef) state.assets = state.assets.filter(a=>a.id!==e.imageAssetRef);
+    });
+    state.character.chronicles = state.character.chronicles.filter(x=>x.id!==chronicleId);
+    save(); renderChronicles(); closeModal();
+  };
+  document.getElementById('save-chronicle').onclick = ()=>{
+    c.name = document.getElementById('chr-name').value;
+    c.description = document.getElementById('chr-desc').value;
+    save(); renderChronicles(); closeModal();
+  };
+}
+
+// undefined = untouched this modal session (keep the existing asset, if
+// any); null = explicitly cleared; a data: URL string = a fresh upload
+// pending commit on Save. Same 3-state convention pendingArtDataUrl uses
+// for card art (see openCardEditor's own save handler).
+let pendingEpochPortraitDataUrl = undefined;
+
+function openEpochEditor(chronicleId, epochId){
+  const c = state.character.chronicles.find(x=>x.id===chronicleId);
+  if(!c) return;
+  const e = c.epochs.find(x=>x.id===epochId);
+  if(!e) return;
+  if(!e.unlockRequirement || typeof e.unlockRequirement !== 'object') e.unlockRequirement = { kind:'none', amount:null };
+  if(!Array.isArray(e.unlockCardIds)) e.unlockCardIds = [];
+  pendingEpochPortraitDataUrl = undefined;
+
+  const eraOptionsHtml = EPOCH_ERA_GROUPS.map(g=>`<optgroup label="${escapeAttr(g.label)}">${g.eras.map(era=>`<option value="${era}"${era===e.era?' selected':''}>${era}</option>`).join('')}</optgroup>`).join('');
+  const reqOptionsHtml = EPOCH_UNLOCK_REQUIREMENT_OPTIONS.map(o=>`<option value="${o.id}"${o.id===e.unlockRequirement.kind?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
+  const cardChecklistHtml = state.cards.length === 0
+    ? '<div class="empty">No cards defined yet — add cards in the Cards section first.</div>'
+    : state.cards.map(card=>`
+        <label class="epoch-card-check">
+          <input type="checkbox" class="epoch-card-cb" value="${escapeAttr(card.id)}"${e.unlockCardIds.includes(card.id)?' checked':''}>
+          ${escapeHtml(card.name||'Untitled')}
+        </label>`).join('');
+  const currentReqOpt = EPOCH_UNLOCK_REQUIREMENT_OPTIONS.find(o=>o.id===e.unlockRequirement.kind) || EPOCH_UNLOCK_REQUIREMENT_OPTIONS[0];
+
+  openModal(`
+    <div class="modal-head"><h3>Edit Epoch</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <label>Name</label><input type="text" id="ep-name" value="${escapeAttr(e.name||'')}">
+      <label>Description</label><textarea id="ep-desc">${escapeHtml(e.description||'')}</textarea>
+
+      <label style="margin-top:14px">Portrait image <span class="dim-hint">(optional, ${EPOCH_PORTRAIT_WIDTH}&times;${EPOCH_PORTRAIT_HEIGHT}px)</span></label>
+      <div class="art-preview-frame" id="ep-art-frame" style="aspect-ratio:${EPOCH_PORTRAIT_WIDTH}/${EPOCH_PORTRAIT_HEIGHT}; max-width:340px; cursor:pointer;">
+        <img id="ep-art-img" style="display:none">
+        <div class="art-placeholder" id="ep-art-placeholder">Click to upload (optional)</div>
+        <div class="art-click-hint">Click to change</div>
+        <div class="art-icon-overlay">
+          <button class="ghost icon-btn icon-btn-danger" id="ep-art-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+          </button>
+        </div>
+      </div>
+      <input type="file" class="art-upload-input" id="ep-art-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+      <div class="art-field-error" id="ep-art-error"></div>
+
+      <div style="display:flex; gap:12px; margin-top:14px;">
+        <div style="flex:1">
+          <label>Era</label>
+          <select id="ep-era">${eraOptionsHtml}</select>
+        </div>
+        <div style="flex:0 0 120px">
+          <label>Row <span class="dim-hint">(0=bottom, 4=top)</span></label>
+          <select id="ep-row">${[0,1,2,3,4].map(n=>`<option value="${n}"${n===(Number.isFinite(e.eraPosition)?e.eraPosition:0)?' selected':''}>${n}</option>`).join('')}</select>
+        </div>
+      </div>
+
+      <label style="margin-top:14px">Unlock requirement</label>
+      <select id="ep-unlock-kind">${reqOptionsHtml}</select>
+      <div id="ep-unlock-amount-wrap" style="margin-top:8px; display:${currentReqOpt.needsAmount?'block':'none'}">
+        <label>Amount</label>
+        <input type="number" id="ep-unlock-amount" min="1" step="1" value="${Number.isFinite(e.unlockRequirement.amount)&&e.unlockRequirement.amount>=1?e.unlockRequirement.amount:1}">
+      </div>
+
+      <label style="margin-top:14px">Cards unlocked by this epoch <span class="dim-hint">(at least 1 required)</span></label>
+      <div id="ep-card-checklist" class="epoch-card-checklist">${cardChecklistHtml}</div>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" id="ep-back">&larr; Back to Chronicle</button>
+      <button class="danger" id="ep-delete">Delete Epoch</button>
+      <button id="ep-save">Done</button>
+    </div>
+  `);
+
+  // Portrait preview/upload — same readFileAsDataUrl + resizeDataUrlToExact
+  // + commitAsset pattern every other fixed-size art field in this file
+  // uses (see wireArtField above), just wired by hand here since this
+  // modal is generated per-epoch rather than having its own fixed DOM ids.
+  const artFrame = document.getElementById('ep-art-frame');
+  const artImg = document.getElementById('ep-art-img');
+  const artPh = document.getElementById('ep-art-placeholder');
+  const artUpload = document.getElementById('ep-art-upload');
+  const artClear = document.getElementById('ep-art-clear');
+  const artError = document.getElementById('ep-art-error');
+
+  function refreshArtPreview(){
+    const url = pendingEpochPortraitDataUrl !== undefined
+      ? pendingEpochPortraitDataUrl
+      : findAssetDataUrl(e.imageAssetRef, 'epochPortrait');
+    if(url){ artImg.src = url; artImg.style.display = ''; artPh.style.display = 'none'; artClear.style.display = ''; }
+    else { artImg.style.display = 'none'; artImg.removeAttribute('src'); artPh.style.display = ''; artClear.style.display = 'none'; }
+  }
+  refreshArtPreview();
+  artFrame.addEventListener('click', ()=> artUpload.click());
+  artUpload.addEventListener('change', ev=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    artError.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, EPOCH_PORTRAIT_WIDTH, EPOCH_PORTRAIT_HEIGHT)).then(result=>{
+      if(result.resized){
+        artError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${EPOCH_PORTRAIT_WIDTH}×${EPOCH_PORTRAIT_HEIGHT}px.`;
+        artError.classList.add('art-field-note');
+        artError.style.display = 'block';
+      } else {
+        artError.classList.remove('art-field-note');
+      }
+      pendingEpochPortraitDataUrl = result.dataUrl;
+      refreshArtPreview();
+    }).catch(err=>{
+      artError.classList.remove('art-field-note');
+      artError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+      artError.style.display = 'block';
+      artUpload.value = '';
+    });
+  });
+  artClear.onclick = (ev)=>{
+    ev.stopPropagation();
+    pendingEpochPortraitDataUrl = null;
+    refreshArtPreview();
+  };
+
+  document.getElementById('ep-unlock-kind').addEventListener('change', ev=>{
+    const opt = EPOCH_UNLOCK_REQUIREMENT_OPTIONS.find(o=>o.id===ev.target.value);
+    document.getElementById('ep-unlock-amount-wrap').style.display = (opt && opt.needsAmount) ? 'block' : 'none';
+  });
+
+  function saveEpochFields(){
+    e.name = document.getElementById('ep-name').value;
+    e.description = document.getElementById('ep-desc').value;
+    e.era = document.getElementById('ep-era').value;
+    e.eraPosition = parseInt(document.getElementById('ep-row').value, 10) || 0;
+    const kind = document.getElementById('ep-unlock-kind').value;
+    const opt = EPOCH_UNLOCK_REQUIREMENT_OPTIONS.find(o=>o.id===kind) || EPOCH_UNLOCK_REQUIREMENT_OPTIONS[0];
+    let amount = null;
+    if(opt.needsAmount){
+      amount = Math.max(1, parseInt(document.getElementById('ep-unlock-amount').value, 10) || 1);
+    }
+    e.unlockRequirement = { kind, amount };
+    e.unlockCardIds = Array.from(document.querySelectorAll('.epoch-card-cb:checked')).map(cb=>cb.value);
+    if(pendingEpochPortraitDataUrl !== undefined){
+      e.imageAssetRef = commitAsset(pendingEpochPortraitDataUrl, e.imageAssetRef, 'epochPortrait');
+    }
+  }
+
+  function backToChronicle(){ openChronicleEditor(chronicleId); }
+
+  document.getElementById('ep-back').onclick = ()=>{ saveEpochFields(); save(); backToChronicle(); };
+  document.getElementById('ep-delete').onclick = ()=>{
+    if(e.imageAssetRef) state.assets = state.assets.filter(a=>a.id!==e.imageAssetRef);
+    c.epochs = c.epochs.filter(x=>x.id!==epochId);
+    save();
+    backToChronicle();
+  };
+  document.getElementById('ep-save').onclick = ()=>{
+    saveEpochFields();
+    save();
+    backToChronicle();
+  };
+}
 
 /* ---------- generic modal ---------- */
 const overlay = document.getElementById('overlay');
@@ -15296,7 +15629,7 @@ renderCardFrameGrid();
 renderVanillaCardAccess();
 renderCardKeywordDefs();
 renderPoseSheetGrid();
-renderLoreList();
+renderChronicles();
 refreshGameStatus();
 
 // Round 202 -- show once, right after everything else has finished its

@@ -321,26 +321,10 @@
             "victory": { "$ref": "#/definitions/poseSheetEntry" }
           }
         },
-        "lore": {
+        "chronicles": {
           "type": "array",
-          "description": "[DESIGN-TIME PREVIEW ONLY, not compiled] flavor text entries (voicelines, chronicle entries, etc.) \u2014 purely organizational, Forge doesn't generate real in-game text yet.",
-          "items": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "text": {
-                "type": "string"
-              }
-            }
-          }
+          "description": "[Round 203, replaces the old DESIGN-TIME-PREVIEW-ONLY lore[] field \u2014 Tyler: \"change the name of lore to 'Chronicles'. Chronicles are a collection of items called 'Epochs'.\"] [VERIFIED real, compiled, ENFORCED game mechanic \u2014 MegaCrit.Sts2.Core.Timeline.StoryModel/EpochModel, confirmed via direct sts2.dll IL disassembly and by decompiling Tyler's own updated TheBurdenedNewCharacter.dll v3.] A Chronicle (StoryModel) is a named group of Epochs shown together on the character's timeline; see #/definitions/chronicle and #/definitions/epoch.",
+          "items": { "$ref": "#/definitions/chronicle" }
         },
         "orb": {
           "type": "object",
@@ -483,7 +467,8 @@
               "shopSprite",
               "cardFrame",
               "selectSfx",
-              "deathSfx"
+              "deathSfx",
+              "epochPortrait"
             ]
           },
           "dataUrl": {
@@ -524,6 +509,69 @@
           "minimum": 0,
           "default": 0,
           "description": "Grid columns for slicing the sheet — 0 (or omitted) means the legacy single-row layout (every frame side by side, sheet height IS frame height), matching Tyler's own reference TheBurdened.cs's MakeAtlasFrame default. A grid divides both axes, keeping a long animation's individual frames sharp under the game's per-image upload width cap instead of one extremely wide single-row sheet."
+        }
+      }
+    },
+    "chronicle": {
+      "type": "object",
+      "description": "One Chronicle \u2014 Tyler's term for what compiles to a real MegaCrit.Sts2.Core.Timeline.StoryModel subclass. \"Epochs are typically a way for the character to hide certain cards behind playing the character for a while. They are considered a part of the character's timeline.\"",
+      "required": ["id", "name", "epochs"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Display name \u2014 compiles to the real StoryTitle LocString (localization key STORY_<generated story id>)." },
+        "description": { "type": "string" },
+        "epochs": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Tyler: \"if an epoch is added, at least one of the user's created cards needs to be locked behind it\" \u2014 enforced per-epoch, see epoch.unlockCardIds' own minItems below, not here.",
+          "items": { "$ref": "#/definitions/epoch" }
+        }
+      }
+    },
+    "epoch": {
+      "type": "object",
+      "description": "One Epoch \u2014 compiles to a real MegaCrit.Sts2.Core.Timeline.EpochModel subclass. [VERIFIED via IL] Id/Era/EraPosition/StoryId are real abstract/virtual overrides; Title/Description/UnlockInfo resolve via LocString from the compiled epoch id, written to localization/eng/epochs.json.",
+      "required": ["id", "name", "era", "eraPosition", "unlockCardIds", "unlockRequirement"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Display name \u2014 compiles to this epoch's real Title LocString." },
+        "description": { "type": "string", "description": "Compiles to this epoch's real Description LocString." },
+        "imageAssetRef": {
+          "type": ["string", "null"],
+          "description": "Optional. asset id, see assets[] (kind:'epochPortrait'), exactly 810\u00d7500px. [VERIFIED via IL disassembly of EpochModel::RealPortraitPath/PackedPortraitPath, cross-checked against the reference mod's .pck] On compile, written to pack/images/timeline/epoch_portraits/<this epoch's compiled id, lowercased>.png. The base game's own default Portrait getter only ever looks in a vanilla sprite atlas that never contains a mod's custom ids, so a real Harmony patch on EpochModel.Portrait (ChroniclePortrait, generated once per character with any epoch portraits) redirects it to the uploaded PNG \u2014 without an uploaded image, this epoch simply has no portrait (falls through to the vanilla atlas lookup, same as an epoch with no art in the reference mod)."
+        },
+        "era": {
+          "enum": ["Prehistoria0", "Prehistoria1", "Prehistoria2", "Seeds0", "Seeds1", "Seeds2", "Seeds3", "Blight0", "Blight1", "Blight2", "Flourish0", "Flourish1", "Flourish2", "Flourish3", "Invitation0", "Invitation1", "Invitation2", "Invitation3", "Invitation4", "Invitation5", "Invitation6", "Invitation7", "Peace0", "Peace1", "FarFuture0", "FarFuture1"],
+          "description": "[VERIFIED, exact real MegaCrit.Sts2.Core.Timeline.EpochEra enum \u2014 26 named members, confirmed via direct fields_dump2.py read of the real installed sts2.dll, matching Tyler's 3 uploaded screenshots of the in-game Era dropdown 26-for-26.] Which point in the game's real timeline this epoch is anchored to."
+        },
+        "eraPosition": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Tyler: \"The rows will go from 0 to 4, with 0 being the bottom, and 4 being the top.\" Compiles to the real EpochModel.EraPosition override."
+        },
+        "unlockCardIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Tyler: \"if an epoch is added, at least one of the users created cards needs to be locked behind it.\" References this character's own cards[].id. [VERIFIED] Membership in the compiled epoch's Cards list is what the base game's own card-pool logic uses to gate these cards behind this epoch being obtained \u2014 also drives the real, auto-generated UnlockText (CreateCardUnlockText(Cards))."
+        },
+        "unlockRequirement": { "$ref": "#/definitions/epochUnlockRequirement" }
+      }
+    },
+    "epochUnlockRequirement": {
+      "type": "object",
+      "description": "[VERIFIED via direct IL disassembly of ChronicleProgress.Evaluate in Tyler's own updated TheBurdenedNewCharacter.dll v3] A REAL, enforced condition \u2014 not just descriptive text. The reference mod compiles a generated Evaluate() method, Harmony-hooked into 4 real SaveManager/NTimelineScreen entry points, that checks this exact condition against real save-file stats and calls the real ProgressState.ObtainEpoch()/UnlockSlot() APIs. Matches Tyler's uploaded screenshot of the in-game 'Unlock requirement' dropdown's 7 options exactly.",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["none", "immediate", "winThisCharacter", "finishThisCharacter", "winAnyCharacter", "finishAnyCharacter", "climbFloors"],
+          "description": "none = \"No requirement \u2014 cards always available\"; immediate = \"Available immediately\"; winThisCharacter = \"Win runs with this character\"; finishThisCharacter = \"Finish runs with this character\" [VERIFIED real example: TotalWins+TotalLosses>=amount]; winAnyCharacter = \"Win runs with any character\"; finishAnyCharacter = \"Finish runs with any character\"; climbFloors = \"Climb floors across all runs\" [VERIFIED real example: FloorsClimbed>=amount]."
+        },
+        "amount": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Tyler: \"If any option besides 'no requirement' or 'available immediately' is selected then it should pop up a number field that allows positive integers only.\" Required (positive integer) for every kind except none/immediate \u2014 enforced in validate.js, not here (see EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT)."
         }
       }
     },

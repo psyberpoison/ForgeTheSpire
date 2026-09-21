@@ -5039,10 +5039,15 @@ function generateCardLocalization(card) {
 //   Everything else (AromaPrinciple, EndTurnPingAlive/Dead,
 //   EventDeathPrevention, GoldMonologue, CardsModifierTitle/Description)
 //                            <- no schema field collects this narrative/
-//                               flavor text yet (unlike lore[], which is
-//                               explicitly [DESIGN-TIME PREVIEW ONLY, not
-//                               compiled] and deliberately NOT reused
-//                               here). Defaulted to character.shortDescription
+//                               flavor text yet. [Round 203] character.lore
+//                               (design-preview-only) was renamed/replaced
+//                               by character.chronicles — a different,
+//                               structurally distinct concept (per-epoch
+//                               title/description/unlockInfo, compiled for
+//                               real into localization/eng/epochs.json —
+//                               see generateChronicleLocalization) that
+//                               was never a fit for this character-wide
+//                               narrative text either. Defaulted to character.shortDescription
 //                               (or character.name where a short label
 //                               reads better) so the character compiles
 //                               and registers with REAL text everywhere
@@ -7977,12 +7982,166 @@ function writeCardArt(card, characterPackage, modIdLower, writeBinary) {
   return { override, reportLine: `- ${card.name}: card art exported to \`${rel}\`, \`CustomPortraitPath\` override added. [VERIFIED]` };
 }
 
+// [Round 203 — Tyler: "change the name of lore to 'Chronicles'. Chronicles
+// are a collection of items called 'Epochs'."] MegaCrit.Sts2.Core.Timeline.
+// EpochEra — [VERIFIED via direct fields_dump2.py read of the real
+// installed sts2.dll: 26 named literal members + the enum's own value__
+// field]. Exact real int values (not used here, just documented for
+// evidence): Prehistoria0=-20000..Prehistoria2=-19998, Seeds0=0..Seeds3=3,
+// Blight0=1201..Blight2=1203, Flourish0=1800..Flourish3=1803,
+// Invitation0=2733..Invitation7=2740, Peace0=3000..Peace1=3001,
+// FarFuture0=10000..FarFuture1=10001. Matches Tyler's own 3 uploaded
+// screenshots of the in-game Era dropdown exactly, 26-for-26.
+const EPOCH_ERAS = [
+  'Prehistoria0', 'Prehistoria1', 'Prehistoria2',
+  'Seeds0', 'Seeds1', 'Seeds2', 'Seeds3',
+  'Blight0', 'Blight1', 'Blight2',
+  'Flourish0', 'Flourish1', 'Flourish2', 'Flourish3',
+  'Invitation0', 'Invitation1', 'Invitation2', 'Invitation3', 'Invitation4', 'Invitation5', 'Invitation6', 'Invitation7',
+  'Peace0', 'Peace1',
+  'FarFuture0', 'FarFuture1',
+];
+
+// [VERIFIED via direct IL disassembly of EpochModel::get_RealPortraitPath /
+// get_PackedPortraitPath in the real sts2.dll, AND independently confirmed
+// by strings-dumping the reference mod's .pck] An epoch portrait's real
+// convention path is `images/timeline/epoch_portraits/<id-lowercased>.png`
+// — NOT `<modid>_<epochid>.png` like card art; the epoch's OWN Id (already
+// mod-prefixed, see generateEpochSource) is the entire filename once
+// lowercased. EpochModel.Portrait's own DEFAULT getter loads from a
+// vanilla sprite atlas that never contains a mod's custom ids though, so
+// this path alone isn't enough — see ChronicleProgress.cs.template's
+// ChroniclePortrait Harmony patch (real IL-confirmed necessity, not a
+// guess) for the other half of this.
+const EPOCH_PORTRAIT_PREFIX = 'images/timeline/epoch_portraits/';
+
+function writeEpochPortrait(epoch, epochId, characterPackage, writeBinary) {
+  const url = findAssetDataUrl(characterPackage, epoch.imageAssetRef, 'epochPortrait');
+  if (!url) return null;
+  const rel = `${EPOCH_PORTRAIT_PREFIX}${epochId.toLowerCase()}.png`;
+  writeBinary(`pack/${rel}`, dataUrlToBuffer(url));
+  return rel;
+}
+
+// [VERIFIED via direct IL disassembly of ChronicleProgress.Evaluate in
+// Tyler's own updated TheBurdenedNewCharacter.dll v3 — see
+// ChronicleProgress.cs.template's header for the full trace] Two of these
+// 7 branches (finishThisCharacter, climbFloors) are a literal reproduction
+// of the reference mod's own real compiled condition expressions. The
+// other 4 non-trivial kinds (winThisCharacter/winAnyCharacter/
+// finishAnyCharacter, plus none/immediate) are [BEST EFFORT] — built the
+// same way from the same real, confirmed ProgressState/CharacterStats
+// members (GetStatsForCharacter/TotalWins/TotalLosses/Wins/Losses/
+// FloorsClimbed — all independently confirmed via ecma_dump_ext.py against
+// the real sts2.dll), just not each individually exercised by a real
+// compiled example the way the other two were.
+function chronicleUnlockConditionExpr(requirement, characterClassFull) {
+  const kind = (requirement && requirement.kind) || 'none';
+  const amount = Math.max(1, parseInt(requirement && requirement.amount, 10) || 1);
+  const statsExpr = `progress.GetStatsForCharacter(ModelDb.GetId(typeof(${characterClassFull})))`;
+  switch (kind) {
+    case 'winThisCharacter': return `((${statsExpr})?.TotalWins ?? 0) >= ${amount}`;
+    case 'finishThisCharacter': return `(((${statsExpr})?.TotalWins ?? 0) + ((${statsExpr})?.TotalLosses ?? 0)) >= ${amount}`;
+    case 'winAnyCharacter': return `progress.Wins >= ${amount}`;
+    case 'finishAnyCharacter': return `(progress.Wins + progress.Losses) >= ${amount}`;
+    case 'climbFloors': return `progress.FloorsClimbed >= ${amount}`;
+    case 'immediate':
+    case 'none':
+    default:
+      return 'true';
+  }
+}
+
+// Human-readable UnlockInfo text — [VERIFIED phrasing for
+// finishThisCharacter/climbFloors, copied near-verbatim from the real
+// localization strings found in the reference mod's .pck ("Finish 5 runs
+// as The Burdened (wins or losses)." / "Climb 3 floors across all
+// runs."); the other kinds are [BEST EFFORT] phrasing in the same style,
+// not independently confirmed against a real compiled example.
+function buildUnlockInfoText(requirement, characterName) {
+  const kind = (requirement && requirement.kind) || 'none';
+  const amount = Math.max(1, parseInt(requirement && requirement.amount, 10) || 1);
+  const plural = amount === 1 ? '' : 's';
+  switch (kind) {
+    case 'immediate': return 'Available immediately.';
+    case 'winThisCharacter': return `Win ${amount} run${plural} as ${characterName}.`;
+    case 'finishThisCharacter': return `Finish ${amount} run${plural} as ${characterName} (wins or losses).`;
+    case 'winAnyCharacter': return `Win ${amount} run${plural} with any character.`;
+    case 'finishAnyCharacter': return `Finish ${amount} run${plural} with any character (wins or losses).`;
+    case 'climbFloors': return `Climb ${amount} floor${plural} across all runs.`;
+    case 'none':
+    default:
+      return 'No requirement \u2014 always available.';
+  }
+}
+
+function epochUnlockCardInstances(epoch, cardClassById) {
+  const ids = Array.isArray(epoch.unlockCardIds) ? epoch.unlockCardIds : [];
+  const lines = ids.map(id => {
+    const cls = cardClassById.get(id);
+    return cls ? `        new ${cls}(),` : null;
+  }).filter(Boolean);
+  return lines.join('\n') || '        // (no unlocked cards configured)';
+}
+
+function generateEpochSource(epoch, namespace, className, epochId, storyId, cardClassById) {
+  const tpl = loadTemplate('Epoch.cs.template');
+  return fillTemplate(tpl, {
+    namespace,
+    className,
+    epochId,
+    era: EPOCH_ERAS.includes(epoch.era) ? epoch.era : 'Seeds0',
+    eraPosition: String(Number.isFinite(epoch.eraPosition) ? Math.max(0, Math.min(4, Math.trunc(epoch.eraPosition))) : 0),
+    storyId,
+    cardInstances: epochUnlockCardInstances(epoch, cardClassById),
+  });
+}
+
+function generateStorySource(namespace, className, storyId, epochClassNames) {
+  const tpl = loadTemplate('Story.cs.template');
+  const epochInstances = epochClassNames.map(cn => `        new ${cn}(),`).join('\n');
+  return fillTemplate(tpl, { namespace, className, storyId, epochInstances });
+}
+
+function generateChronicleRegistrarSource(namespace, epochEntries, storyClassNames) {
+  const tpl = loadTemplate('ChronicleRegistrar.cs.template');
+  const epochRegistrations = epochEntries.map(e => `            AddEpoch("${e.epochId}", typeof(${e.className}));`).join('\n');
+  const storyRegistrations = storyClassNames.map(cn => `            AddStory(typeof(${cn}));`).join('\n');
+  const epochIdList = epochEntries.map(e => `"${e.epochId}"`).join(', ');
+  return fillTemplate(tpl, { namespace, epochRegistrations, storyRegistrations, epochIdList });
+}
+
+function generateChronicleProgressSource(namespace, epochEntries, characterClassFull, epochIdsWithArt) {
+  const tpl = loadTemplate('ChronicleProgress.cs.template');
+  const perEpochChecks = epochEntries.map(e => {
+    const cond = chronicleUnlockConditionExpr(e.unlockRequirement, characterClassFull);
+    return `        UpdateEpoch(progress, "${e.epochId}", ${cond});`;
+  }).join('\n');
+  const epochIdsWithArtLines = epochIdsWithArt.length
+    ? epochIdsWithArt.map(id => `        "${id}",`).join('\n')
+    : '        // (no epoch portraits uploaded)';
+  return fillTemplate(tpl, { namespace, perEpochChecks, epochIdsWithArt: epochIdsWithArtLines });
+}
+
+function generateChronicleLocalization(storyEntries, epochEntries, characterName) {
+  const rows = {};
+  for (const s of storyEntries) {
+    rows[`STORY_${s.storyId}`] = String(s.name || '');
+  }
+  for (const e of epochEntries) {
+    rows[`${e.epochId}.title`] = String(e.name || '');
+    rows[`${e.epochId}.description`] = String(e.description || '');
+    rows[`${e.epochId}.unlockInfo`] = buildUnlockInfoText(e.unlockRequirement, characterName);
+  }
+  return JSON.stringify(rows, null, 2) + '\n';
+}
+
 function generateProject(characterPackage, outDir, opts = {}) {
   const modId = pascalCase(characterPackage.character.id || 'CustomCharacter');
   const namespace = modId;
   const written = [];
 
-  const dirs = ['Cards', 'Relics', 'Powers', 'Enchantments', 'Characters', 'CardPools', 'RelicPools', 'PotionPools', 'Generated', 'pack'];
+  const dirs = ['Cards', 'Relics', 'Powers', 'Enchantments', 'Characters', 'CardPools', 'RelicPools', 'PotionPools', 'Generated', 'Timeline', 'pack'];
   for (const d of dirs) fs.mkdirSync(path.join(outDir, d), { recursive: true });
 
   const write = (relPath, content) => {
@@ -8063,7 +8222,28 @@ function generateProject(characterPackage, outDir, opts = {}) {
   write(`pack/${modId}.sln`, fillTemplate(loadTemplate('PackProject.sln.template'), { modName: modId }));
 
   // Mod entry point (Harmony bootstrap).
-  write('ModEntry.cs', fillTemplate(loadTemplate('ModEntry.cs.template'), { harmonyId: `${modId.toLowerCase()}.patch` }));
+  // [Round 203] Chronicles (see the big comment further down, right
+  // after Characters/<ModId>Character.cs is written, for the full
+  // evidence trail) need one explicit call from ModEntry.Initialize() —
+  // ChronicleRegistrar.Register() is plain reflection, not a
+  // [HarmonyPatch]-attributed type, so the patch-discovery loop below
+  // would never find it on its own. Computed here (rather than after
+  // cardClassById, where the rest of Chronicles generation happens) since
+  // ModEntry.cs itself is written before cardClassById exists — this
+  // slot only needs to know WHETHER chronicles exist, not their content.
+  const hasChronicles = Array.isArray(characterPackage.character.chronicles) && characterPackage.character.chronicles.length > 0;
+  const chronicleRegistrarCall = hasChronicles
+    ? `        try
+        {
+            ${namespace}.Timeline.ChronicleRegistrar.Register();
+        }
+        catch (Exception e)
+        {
+            GD.PrintErr($"[Forge] Chronicle registration failed: {e.Message}");
+        }
+`
+    : '';
+  write('ModEntry.cs', fillTemplate(loadTemplate('ModEntry.cs.template'), { harmonyId: `${modId.toLowerCase()}.patch`, chronicleRegistrarCall }));
 
   // Class-name maps, computed up front since both the pools (GenerateAllCards/
   // GenerateAllRelics, confirmed required by reflect-baselib) and the
@@ -8220,6 +8400,68 @@ function generateProject(characterPackage, outDir, opts = {}) {
     artOverrides,
     localizationOverride: generateCharacterLocalization(characterPackage.character),
   }));
+
+  // Chronicles (Tyler's "Epochs" spec, Round 203 — "change the name of
+  // lore to 'Chronicles'. Chronicles are a collection of items called
+  // 'Epochs'.") — see claude/round203-chronicles-epochs.md for the full
+  // research trail. MegaCrit.Sts2.Core.Timeline.EpochModel/StoryModel are
+  // real base-game classes, [VERIFIED] via direct sts2.dll IL disassembly
+  // AND by decompiling Tyler's own updated TheBurdenedNewCharacter.dll
+  // (v3, "New Chronicle" update) — including the fact that
+  // unlockRequirement is a REAL, enforced mechanic (ChronicleProgress.
+  // Evaluate/UpdateEpoch, Harmony-hooked into 4 real SaveManager/
+  // NTimelineScreen entry points — see ChronicleProgress.cs.template's own
+  // header), not just descriptive text, and that a custom epoch's
+  // portrait needs its own Harmony patch on EpochModel.Portrait to ever
+  // display (the base game's own default Portrait getter only looks in a
+  // vanilla sprite atlas that never has this mod's ids in it).
+  {
+    const chronicles = Array.isArray(characterPackage.character.chronicles) ? characterPackage.character.chronicles : [];
+    if (chronicles.length) {
+      const modIdUpper = modId.toUpperCase();
+      const characterClassFull = `${namespace}.Characters.${modId}Character`;
+      const characterName = characterPackage.character.name || 'this character';
+
+      const epochEntries = [];
+      const storyEntries = [];
+      let epochArtHeaderAdded = false;
+
+      for (const chronicle of chronicles) {
+        const storyClassName = `${pascalCase(chronicle.name)}Story`;
+        const storyId = `${modIdUpper}_${slugifyClassName(pascalCase(chronicle.name))}`;
+        const epochClassNames = [];
+
+        for (const epoch of (Array.isArray(chronicle.epochs) ? chronicle.epochs : [])) {
+          const className = `${pascalCase(epoch.name)}Epoch`;
+          const epochId = `${modIdUpper}_${slugifyClassName(pascalCase(epoch.name))}_EPOCH`;
+          epochClassNames.push(className);
+
+          // Portrait art — same per-entity report-line pattern as
+          // writeCardArt above. [VERIFIED convention path, see
+          // writeEpochPortrait's own header comment.]
+          const portraitRel = writeEpochPortrait(epoch, epochId, characterPackage, writeBinary);
+          if (portraitRel) {
+            if (!epochArtHeaderAdded) { artReport.push('', '**Epoch portraits:**'); epochArtHeaderAdded = true; }
+            artReport.push(`- ${epoch.name}: epoch portrait exported to \`${portraitRel}\`. [VERIFIED]`);
+          }
+
+          write(`Timeline/${className}.cs`, generateEpochSource(epoch, namespace, className, epochId, storyId, cardClassById));
+
+          epochEntries.push({
+            epochId, className, name: epoch.name, description: epoch.description,
+            unlockRequirement: epoch.unlockRequirement, hasPortrait: !!portraitRel,
+          });
+        }
+
+        write(`Timeline/${storyClassName}.cs`, generateStorySource(namespace, storyClassName, storyId, epochClassNames));
+        storyEntries.push({ storyId, className: storyClassName, name: chronicle.name });
+      }
+
+      write('Timeline/ChronicleRegistrar.cs', generateChronicleRegistrarSource(namespace, epochEntries, storyEntries.map(s => s.className)));
+      write('Timeline/ChronicleProgress.cs', generateChronicleProgressSource(namespace, epochEntries, characterClassFull, epochEntries.filter(e => e.hasPortrait).map(e => e.epochId)));
+      write('localization/eng/epochs.json', generateChronicleLocalization(storyEntries, epochEntries, characterName));
+    }
+  }
 
   // Placeholder files that establish the `{{namespace}}.Cards` / `.Relics`
   // namespaces even when there are zero cards or zero relics. Real bug
@@ -8393,13 +8635,27 @@ function generateProject(characterPackage, outDir, opts = {}) {
     "anyone else) can pick this character back up later.\n\n" +
     "**To keep editing this character:** open Forge, click **Import project** in\n" +
     "the top bar, and select this file. Everything — cards, relics, mechanics,\n" +
-    "art, lore, the works — loads back in exactly as it was.\n");
+    "art, chronicles, the works — loads back in exactly as it was.\n");
 
   return { written, modId, modName: modId, artReport };
 }
 
+// [Round 203] The 7 real unlockRequirement kinds — one source of truth,
+// exported below so validate.js enforces the exact same vocabulary
+// (including which kinds need a positive-integer amount) instead of
+// keeping its own copy that could drift out of sync.
+const EPOCH_UNLOCK_REQUIREMENT_KINDS = ['none', 'immediate', 'winThisCharacter', 'finishThisCharacter', 'winAnyCharacter', 'finishAnyCharacter', 'climbFloors'];
+const EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT = new Set(['winThisCharacter', 'finishThisCharacter', 'winAnyCharacter', 'finishAnyCharacter', 'climbFloors']);
+
 module.exports = {
   generateProject, actionToCSharp, effectBlockToCSharp,
+  // [Round 203] Chronicles/Epochs — EPOCH_ERAS is the confirmed-real,
+  // 26-value MegaCrit.Sts2.Core.Timeline.EpochEra enum (see EPOCH_ERAS'
+  // own comment above for the fields_dump2.py evidence); the requirement
+  // kind lists are this file's own vocabulary (see
+  // chronicleUnlockConditionExpr/buildUnlockInfoText). validate.js uses
+  // both instead of keeping its own copies.
+  EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT,
   // Exported so backend/validate.js can enforce the exact same rules
   // up-front (clear 400 response) instead of only finding out when
   // generateProject() throws deep inside a compile — one source of truth
