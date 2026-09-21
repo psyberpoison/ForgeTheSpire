@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using BaseLib.Abstracts;
 using BaseLib.Utils;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -23,28 +24,39 @@ namespace {{namespace}}.Enchantments;
 // claude/feature-backlog.md group C) -- see claude/round190-enchantments-
 // real-codegen.md for the full reflection dump this template is built from.
 //
+// [Round 198 -- "wire up enchantments/afflictions for real"] Base class
+// upgraded from plain EnchantmentModel to BaseLib.Abstracts.
+// CustomEnchantmentModel. [VERIFIED via decompiling a real, working
+// "STS2 Character Creator"-generated mod found on Tyler's own machine --
+// a genuinely different, unrelated tool's real generated output, not
+// Forge's own -- Enchantments/{AddedWeight,Mighty,Thrifty,Tough}.cs, ALL
+// FOUR of that mod's real enchantments, extend CustomEnchantmentModel,
+// never plain EnchantmentModel] AND cross-confirmed via a direct ECMA-335
+// metadata read of the installed BaseLib.dll: CustomEnchantmentModel is a
+// real, concrete class, itself extending MegaCrit.Sts2.Core.Models.
+// EnchantmentModel (so every override this file already had -- IsStackable,
+// ShowAmount, CanEnchantCardType, CanEnchant, the block/damage/play-count
+// modifiers, OnEnchant, OnPlay -- keeps compiling unchanged), and adding
+// exactly one member of its own: `protected virtual string? CustomIconPath`
+// -- see {{iconOverride}} below, now wired to the Icon field the editor
+// already collected but this file never used before this round.
+//
 // No [Pool(typeof(...))] attribute here, unlike Card/Relic/Power -- the
 // reflected metadata has no CustomXPoolModel-shaped container for
 // enchantments, and ModelDb.Enchantment<T>() (the confirmed real generic,
 // same shape as ModelDb.Card<T>()/ModelDb.Relic<T>()) doesn't take one
-// either. EnchantmentModel is presumed [BEST EFFORT] to be discovered by
-// the same generic AbstractModel-subclass reflection scan Card.cs.template's
-// own header describes for ModelDb.Init_Patch9 (Pool ties a class to a
-// per-character POOL for selection UI; it isn't what makes a class
-// discoverable in the first place) -- not separately confirmed this round.
+// either. CustomEnchantmentModel subclasses are presumed [BEST EFFORT] to
+// be discovered by the same generic AbstractModel-subclass reflection scan
+// Card.cs.template's own header describes for ModelDb.Init_Patch9 (Pool
+// ties a class to a per-character POOL for selection UI; it isn't what
+// makes a class discoverable in the first place) -- not separately
+// confirmed via IL disassembly this round, but every real example found
+// follows this exact base-class convention, which is the strongest
+// evidence this project's history treats as sufficient (see round 197's
+// CardCmd findings for the same evidence tier).
 //
-// IMPORTANT KNOWN GAP, please read before relying on this: this class's
-// logic is real and will run once something in-game actually attaches an
-// instance of it to a CardModel -- but Forge has NO action or mechanism
-// yet (no card effect, no relic effect, no event) that GRANTS this
-// enchantment to a card at runtime. Until a future round adds one (e.g. a
-// "GrantEnchantment" card/relic action referencing
-// ModelDb.Enchantment<{{className}}>(), the same reference-expression
-// pattern actionToCSharp's CreateCard case already uses for
-// ModelDb.Card<T>()), this class compiles and is logically correct but is
-// never actually instantiated by your mod. See this enchantment's own
-// entry in Enchantments/README.md for the plain-language version of this
-// caveat.
+// Round 197 already closed the other half of the old "nothing GRANTS this
+// enchantment to a card" gap -- the EnchantCard/RemoveEnchantment actions.
 //
 // Field-mapping legend used throughout this file's generator
 // (compiler.js:generateEnchantmentSource): [VERIFIED] = confirmed real
@@ -68,9 +80,9 @@ namespace {{namespace}}.Enchantments;
 // as a trailing Todo() (matching actionToCSharp's own convention for
 // genuinely freeform/unrecognized content) since it's placed LAST, after
 // every confirmed per-stack effect already ran.
-public sealed class {{className}} : EnchantmentModel
+public sealed class {{className}} : CustomEnchantmentModel
 {
-{{modifierOverrides}}
+{{iconOverride}}{{modifierOverrides}}
 {{onEnchantMethod}}
     // [VERIFIED signature] OnPlay(PlayerChoiceContext, CardPlay) -- the
     // same real hook Inky/Sown both override; cardPlay.Player/.Card follow

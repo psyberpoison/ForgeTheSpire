@@ -29,7 +29,29 @@ namespace {{namespace}}.Afflictions;
 // it to a CardModel -- but Forge has NO action or mechanism yet that
 // GRANTS this affliction to a card at runtime. See this affliction's own
 // entry in Afflictions/README.md for the plain-language version of this
-// caveat.
+// caveat. Round 197 already closed this gap (AfflictCard/RemoveAffliction).
+//
+// [Round 198 -- "wire up enchantments/afflictions for real"] the
+// [BaseLib.Utils.Attributes.CustomID("...")] attribute right above the
+// class declaration below -- unlike every other custom-content category
+// (Cards, Relics, Powers, Orbs, and now Enchantments too -- see round
+// 198's Enchantment.cs.template header), BaseLib provides NO
+// CustomAfflictionModel wrapper for AfflictionModel to extend (confirmed
+// via a direct ECMA-335 scan of every BaseLib.Abstracts.Custom* class --
+// there is a CustomEnchantmentModel, CustomCardModel, CustomRelicModel,
+// CustomPowerModel, CustomOrbModel, etc., but genuinely no
+// CustomAfflictionModel). [VERIFIED via decompiling a real, working "STS2
+// Character Creator"-generated mod found on Tyler's own machine --
+// Afflictions/Reckless.cs, the one real custom affliction found in that
+// project] this attribute -- BaseLib.Utils.Attributes.CustomID(string id)
+// -- is the real alternate registration mechanism real custom afflictions
+// use instead, with a real ID of the shape "MODID-CLASSNAME" (that file's
+// real, working ID: "THEBURDENEDNEWCHARACTER-RECKLESS"). This file's own
+// id is built the same "{namespace, uppercased}-{class name, slugified}"
+// shape, using slugifyClassName -- the SAME [VERIFIED via real sts2.dll
+// IL disassembly] algorithm the game itself uses to turn a class name
+// into its ModelId.Entry (see compiler.js's own slugifyClassName header)
+// -- rather than inventing a new naming scheme.
 //
 // Field-mapping legend (compiler.js:generateAfflictionSource):
 // [VERIFIED] = confirmed real override with a confirmed signature,
@@ -45,7 +67,7 @@ namespace {{namespace}}.Afflictions;
 // surface the way it exposes OnPlay, so those two apply once, at the
 // moment this affliction attaches to a card, unconditionally. See
 // costChangeLines'/keywordLines' own comments below.
-public sealed class {{className}} : AfflictionModel
+{{classAttribute}}public sealed class {{className}} : AfflictionModel
 {
 {{modifierOverrides}}
 {{applyRemoveMethods}}

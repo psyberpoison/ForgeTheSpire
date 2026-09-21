@@ -5329,7 +5329,7 @@ function generateMechanicSource(mechanic, namespace, refMaps) {
 // is a fixed set of typed number/boolean fields, not an {trigger,
 // conditions[], actions[]} effect list like cards/relics/mechanics have,
 // so there's no action-object list for actionToCSharp to walk here.
-function generateEnchantmentSource(enchantment, namespace, refMaps) {
+function generateEnchantmentSource(enchantment, namespace, refMaps, assetCtx) {
   if (!enchantment.name || !pascalCase(enchantment.name)) {
     throw new Error('Enchantment has no usable name -- every enchantment needs a name to generate a C# class from.');
   }
@@ -5343,6 +5343,27 @@ function generateEnchantmentSource(enchantment, namespace, refMaps) {
   const sh = enchantment.shuffle || {};
   const perStack = !!mo.perStack;
   const stacksSuffix = perStack ? ' * this.Amount' : '';
+
+  // [Round 198] Icon -- the editor has always collected this (see
+  // frontend/index.html's ench-icon-box / commitAsset(..., 'enchantmentIcon'))
+  // but nothing in this generator ever read it back -- a real gap, same
+  // "captured by the UI but never compiled" shape round 193's doc flagged
+  // for the old energyReductionPerTurn field. Now wired: exported to a
+  // real PNG under the real path convention a genuine working mod uses
+  // (see ART_ENCHANTMENT_PREFIX's own comment), and CustomIconPath (the
+  // one member CustomEnchantmentModel adds over plain EnchantmentModel --
+  // see this file's own base-class comment above) points at it.
+  let iconOverride = '';
+  if (assetCtx) {
+    const iconUrl = findAssetDataUrl(assetCtx.characterPackage, enchantment.icon, 'enchantmentIcon');
+    if (iconUrl) {
+      const rel = `${ART_ENCHANTMENT_PREFIX}${assetCtx.modIdLower}_${slugifyClassName(pascalCase(enchantment.name)).toLowerCase()}.png`;
+      assetCtx.writeBinary(`pack/${rel}`, dataUrlToBuffer(iconUrl));
+      iconOverride = `    // [VERIFIED via decompiling a real, working "STS2 Character Creator"-generated mod on Tyler's own machine (Enchantments/AddedWeight.cs et al, round 198) -- CustomEnchantmentModel.CustomIconPath is the real override point real custom enchantments use for their icon.
+    protected override string? CustomIconPath => "res://${rel}";
+`;
+    }
+  }
 
   const overrides = [];
 
@@ -5471,6 +5492,7 @@ ${checks.join('\n')}
   return fillTemplate(tpl, {
     namespace,
     className: pascalCase(enchantment.name) + 'Enchantment',
+    iconOverride,
     modifierOverrides: overrides.length ? overrides.join('\n\n') + '\n' : '',
     onEnchantMethod,
     perStackFlag: perStack ? 'true' : 'false',
@@ -5646,9 +5668,22 @@ ${checks.join('\n')}
     ? `    // [UNVERIFIED] ${whilePileEffects.length} "while in a pile" effect(s) authored in the editor -- NOT compiled. No confirmed AfflictionModel hook exists for "while a card carrying this affliction sits in a pile". See Afflictions/README.md for exactly what was authored here.\n`
     : '';
 
+  // [Round 198] Registration -- AfflictionModel has no CustomAfflictionModel
+  // wrapper in BaseLib (unlike every other custom-content category), so a
+  // real, working example (Afflictions/Reckless.cs, a genuinely different
+  // "STS2 Character Creator"-generated mod on Tyler's own machine) uses an
+  // explicit [CustomID("...")] attribute instead. Same real ID shape that
+  // file uses ("MODID-CLASSNAME"), built with slugifyClassName -- the
+  // [VERIFIED via real sts2.dll IL disassembly] algorithm the game itself
+  // uses for ModelId.Entry -- rather than inventing a new naming scheme.
+  const afflictionCustomId = `${namespace.toUpperCase()}-${slugifyClassName(pascalCase(affliction.name))}`;
+  const classAttribute = `[BaseLib.Utils.Attributes.CustomID(${csharpStringLiteral(afflictionCustomId)})] // [VERIFIED via decompiling a real, working "STS2 Character Creator"-generated mod on Tyler's own machine (Afflictions/Reckless.cs, round 198) -- the real registration mechanism real custom afflictions use, since AfflictionModel has no CustomAfflictionModel wrapper to extend.
+`;
+
   return fillTemplate(tpl, {
     namespace,
     className: pascalCase(affliction.name) + 'Affliction',
+    classAttribute,
     modifierOverrides: overrides.length ? overrides.join('\n\n') + '\n' : '',
     applyRemoveMethods,
     requiresStatusGuard,
@@ -6032,6 +6067,11 @@ const ART_ENERGY_PREFIX = 'images/packed/energy_counters/';
 // instead of that mod's own unconfirmed raw-PCM convention (see
 // writeCharacterSfx's own header comment for why).
 const ART_AUDIO_PREFIX = 'audio/';
+// [Round 198] Enchantment icon export -- real path convention confirmed
+// via a real, working "STS2 Character Creator"-generated mod on Tyler's
+// own machine (res://images/enchantments/theburdenednewcharacter_addedweight.png
+// et al) -- see generateEnchantmentSource's own CustomIconPath wiring.
+const ART_ENCHANTMENT_PREFIX = 'images/enchantments/';
 
 // Real filename suffix per real BaseLib.Abstracts.CustomEnergyCounter arm
 // texture getter [VERIFIED both DLLs]. Forge's own schema/state key is the
@@ -7993,7 +8033,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // real .cs file, same "per-entity .cs file + one README" pattern Orbs
   // already uses just above.
   for (const enchantment of characterPackage.enchantments || []) {
-    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
+    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById }, { characterPackage, writeBinary, modIdLower: modId.toLowerCase() });
     write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
   }
   if ((characterPackage.enchantments || []).length) {
