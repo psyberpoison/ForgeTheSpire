@@ -887,6 +887,21 @@
      right of a real 1-2 digit position number, unlike every other pill
      in the row. */
   .condition-row .c-hand-position{width:auto; min-width:0; field-sizing:content;}
+  /* [Tyler, this round] "it lost length, but the height is still too
+     large, lets keep the length how it was" — width was right
+     (field-sizing:content above), the actual culprit is the native
+     number-input spin-button UI, which reserves extra vertical room
+     for its stacked up/down arrows once the box shrinks down to a
+     1-2-digit width, making it taller than the plain pill selects
+     beside it. Exact same real cause and fix Round 103 already used
+     for the char-stats boxes (Tyler: "can we get rid of the up and
+     down arrows in the hp box? it is taking up box space") — hides
+     the spinner, typing/scroll/JS +- still work the same. */
+  .condition-row .c-hand-position{-moz-appearance:textfield;}
+  .condition-row .c-hand-position::-webkit-outer-spin-button,
+  .condition-row .c-hand-position::-webkit-inner-spin-button{
+    -webkit-appearance:none; margin:0;
+  }
   .condition-row .c-remove{margin-left:auto; padding:2px 7px; font-size:12px;}
   /* Static words inside a condition row's sentence (the leading "If", the
      "of" between a status kind and which status/mechanic, and the
