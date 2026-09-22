@@ -155,6 +155,13 @@
     grid-template-columns:repeat(auto-fill, minmax(150px,1fr));
     gap:14px;
   }
+  /* [Round 204] Tyler: "lets see about moving enchantments and
+     afflictions side-by-side instead of above and below." Same
+     wrap-on-narrow flex pattern .editor-grid already uses elsewhere
+     (not a plain 2-col grid, so a narrow window still stacks instead of
+     squeezing tiles unreadably thin). */
+  .ench-afflict-columns{display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;}
+  .ench-afflict-col{flex:1 1 280px; min-width:0;}
   .tile{
     background:var(--ink);
     border:1px solid var(--border);
@@ -2824,28 +2831,32 @@
            and compile to real C#; see each editor's own in-modal banner
            for the exact evidence tier per field. Two grids in one
            section (Tyler grouped them together, not as separate
-           sections) — layout/styling is placeholder, per Tyler's own
-           "we'll modify how it looks later." UPDATED round 199, Tyler:
-           "lets remove this [old panel-desc text, including its now-stale
-           'nothing can grant/apply either yet' known-gap line -- closed
-           by round 197's AfflictCard/EnchantCard actions] ... put in a
-           section of information that tells the user that enchantments
-           persist unless removed, and afflictions are only per-combat." -->
+           sections). UPDATED round 199, Tyler: "lets remove this [old
+           panel-desc text, including its now-stale 'nothing can
+           grant/apply either yet' known-gap line -- closed by round
+           197's AfflictCard/EnchantCard actions] ... put in a section of
+           information that tells the user that enchantments persist
+           unless removed, and afflictions are only per-combat." UPDATED
+           round 204, Tyler: "lets see about moving enchantments and
+           afflictions side-by-side instead of above and below. also
+           lets remove the [general intro] text" — panel-desc trimmed to
+           just the persist/per-combat behavior notes, and the two grids
+           moved into side-by-side columns (see .ench-afflict-columns). -->
       <div class="panel-desc">
-        Card- or relic-granted modifiers a run can pick up mid-game — Enchantments (positive) and Afflictions
-        (negative). Both compile to real C# (Enchantments since Round 190, Afflictions since Round 196) and can
-        be granted to a card via the Afflict Card / Enchant Card actions (Round 197) — see each editor's own
-        banner for exactly which fields map to a confirmed override. A design doc still exports alongside the
-        code (Enchantments/README.md, Afflictions/README.md in the compiled mod).
-        <br><br>
         <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment
         action) — they don't wear off on their own.
         <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat.
       </div>
-      <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
-      <div class="grid-cards" id="enchantments-grid"></div>
-      <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Afflictions <span class="mono" style="font-size:11px" id="affliction-count">0</span></h3>
-      <div class="grid-cards" id="afflictions-grid"></div>
+      <div class="ench-afflict-columns">
+        <div class="ench-afflict-col">
+          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
+          <div class="grid-cards" id="enchantments-grid"></div>
+        </div>
+        <div class="ench-afflict-col">
+          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Afflictions <span class="mono" style="font-size:11px" id="affliction-count">0</span></h3>
+          <div class="grid-cards" id="afflictions-grid"></div>
+        </div>
+      </div>
     </div>
   </section>
 
