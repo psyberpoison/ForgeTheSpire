@@ -450,6 +450,19 @@
      overrides both for every item here, uniformly. */
   .vanilla-card-access-item{display:flex; align-items:center; gap:6px; font-size:12.5px; margin:0;}
   .vanilla-card-access-item input[type=checkbox]{margin:0;}
+  /* Same global-label-rule trap as the Round 150 comment above, hitting
+     the Starting Relics checkbox row: Tyler: "the check boxes for
+     starting relics dont line up." #c-starting-relics's checkbox labels
+     (renderStartingRelicPicker) are flex ROW items sitting side by side,
+     but the global `label{margin:14px 0 6px}` + `label:first-child
+     {margin-top:0}` pair still applied to them -- only the first relic's
+     label is actually a :first-child of the row, so it alone lost its
+     14px top margin while its siblings kept theirs, shifting just that
+     one checkbox/label up relative to the others. Explicit margin:0 here
+     (ID selector beats the plain-type/pseudo-class global rules on
+     specificity, same fix shape as .vanilla-card-access-item above)
+     overrides both for every item uniformly. */
+  #c-starting-relics label{margin:0;}
   .keyword-def-list{display:flex; flex-direction:column;}
   .keyword-def-row{display:flex; align-items:center; gap:8px; padding:6px 0;}
   .keyword-def-row + .keyword-def-row{border-top:1px solid var(--border-soft);}
