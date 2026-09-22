@@ -811,10 +811,20 @@
      the file. */
   .eb-trigger-picker .trig-picker-list{
     position:absolute; z-index:30; top:100%; left:0; margin-top:4px;
-    width:300px; max-height:none; overflow:visible; padding:4px;
+    /* [Tyler: "reduce the width...so the user doesn't have to worry
+       about dragging the mouse over another option"] Fixed 300px left
+       a lot of dead space to the right of shorter labels, which the
+       cursor had to cross (risking a hover on the wrong row, flipping
+       to its own submenu) just to reach the flyout arrow/submenu.
+       width:max-content shrinks the box to exactly the widest category
+       label's natural width instead, so there's no more empty runway
+       to cross than the longest label needs. white-space:nowrap on
+       each row guarantees no label wraps to a second line under this
+       tighter sizing. */
+    width:max-content; max-width:260px; max-height:none; overflow:visible; padding:4px;
     box-shadow:0 8px 24px rgba(0,0,0,.45);
   }
-  .trig-cat-row{position:relative; color:var(--cat-color); font-weight:600;}
+  .trig-cat-row{position:relative; color:var(--cat-color); font-weight:600; white-space:nowrap;}
   .trig-cat-row-arrow{opacity:.6; font-weight:400;}
   .trig-sub-list{
     display:none; position:absolute; left:100%; top:-5px; margin-left:4px;
