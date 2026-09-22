@@ -1675,10 +1675,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // `fromHandDraw: false` is Tyler's own explicit choice (2026-08-30) —
       // treating this as a triggered-effect draw, not the start-of-turn
       // hand draw step; the exact semantics of that flag aren't pinned
-      // down by any witnessed real call. `drawNextTurn` (Tyler: "show a
-      // check box for 'Next turn'...") still has NO real "schedule a draw
-      // for next turn" API found anywhere, so that mode stays an honest
-      // stub — only the immediate-draw path is real.
+      // down by any witnessed real call.
       //
       // [Fix, round 30 — real crash: godot.log showed
       // `System.NotImplementedException: Forge: "DrawCard 6" has no
@@ -1698,9 +1695,25 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // So the non-cardPlayBound branch was never actually blocked on
       // missing evidence, just never updated when resolvePlayerExpr was
       // introduced — DrawCard now always emits the real call.
-      return action.drawNextTurn
-        ? `        ForgeActions.Todo("DrawCard ${describeAmountForStub(action)} (next turn)"); // [UNVERIFIED] no real \`schedule a draw for next turn\` API found — see compiler.js's own comment on this case`
-        : `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${resolveAmountExpr(action)}, ${resolvePlayerExpr(ctx)}, false); // [Fix, round 30] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
+      //
+      // `drawNextTurn` retired this round (Tyler uploaded his own real,
+      // compiled "Star Cost" card from The Burdened v3 to settle it) — it
+      // was solving the wrong problem. There is no "schedule a draw for
+      // next turn" API and there was never going to be one to find,
+      // because that isn't how the real game does this: the uploaded
+      // card's OnPlay applies the vanilla BaseLib power
+      // `DrawCardsNextTurnPower` (MegaCrit.Sts2.Core.Models.Powers,
+      // confirmed via direct TypeRef/MemberRef inspection of the shipped
+      // DLL) instead of calling any draw-scheduling method at all — and
+      // that class was ALREADY in BUILTIN_POWER_CLASS_MAP/BUILTIN_STATUSES
+      // above (as "DrawCardsNextTurn") and isn't one of the 3
+      // protected-ctor exclusions, so ModifyStatus -> Apply ->
+      // "DrawCardsNextTurn" already compiles for real via the existing
+      // generic ForgeActions.ApplyStatus<T>() path today. "Draw next
+      // turn" was never a DrawCard variant — it's a status application.
+      // See validate.js/character.schema.json for the matching
+      // drawNextTurn retirement.
+      return `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${resolveAmountExpr(action)}, ${resolvePlayerExpr(ctx)}, false); // [Fix, round 30] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     case 'ModifyEnergy': {
       // [Round 160] Tyler reconsidered round 159's sign-based design after
       // being asked to choose between it and a mode dropdown for the new

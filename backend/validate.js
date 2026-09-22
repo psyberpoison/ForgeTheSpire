@@ -842,19 +842,24 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         });
       }
     }
-    // drawNextTurn / doubleEnergy / random — simple type-restricted
-    // booleans, one per newly-split-out checkbox Tyler asked for (DrawCard/
-    // ModifyEnergy/DiscardCard+ExhaustCard respectively; ModifyEnergy was
-    // "GainEnergy" before round 159's sign-based Gain/Lose consolidation —
-    // see compiler.js's ModifyEnergy case for the full reasoning).
-    // All [UNVERIFIED] — see their schema descriptions — validated here
-    // purely for shape and applicability, same "reject clearly rather than
-    // silently accept something broken" convention as hitCount/hitCountIsX
-    // above.
-    if (act.drawNextTurn !== undefined) {
-      if (typeof act.drawNextTurn !== 'boolean') errors.push(`${p}.drawNextTurn must be a boolean if present.`);
-      if (act.type !== 'DrawCard') errors.push(`${p}: drawNextTurn is only meaningful on "DrawCard" — action type is "${act.type}".`);
-    }
+    // doubleEnergy / random — simple type-restricted booleans, one per
+    // newly-split-out checkbox Tyler asked for (ModifyEnergy/
+    // DiscardCard+ExhaustCard respectively; ModifyEnergy was "GainEnergy"
+    // before round 159's sign-based Gain/Lose consolidation — see
+    // compiler.js's ModifyEnergy case for the full reasoning). Validated
+    // here purely for shape and applicability, same "reject clearly rather
+    // than silently accept something broken" convention as hitCount/
+    // hitCountIsX above.
+    //
+    // drawNextTurn (DrawCard's old "Next turn" checkbox) used to live in
+    // this same group — retired this round. It compiled to an honest
+    // stub because "schedule a draw for next turn" was never a real API
+    // to find; Tyler's uploaded real "Star Cost" card (The Burdened v3)
+    // confirmed the actual mechanism is applying the vanilla
+    // DrawCardsNextTurn status via ModifyStatus, which already compiles
+    // for real today. No validation needed for a field the editor no
+    // longer writes; a stray `drawNextTurn` left over in an old save is
+    // simply ignored by compiler.js now rather than rejected here.
     if (act.doubleEnergy !== undefined) {
       if (typeof act.doubleEnergy !== 'boolean') errors.push(`${p}.doubleEnergy must be a boolean if present.`);
       if (act.type !== 'ModifyEnergy') errors.push(`${p}: doubleEnergy is only meaningful on "ModifyEnergy" — action type is "${act.type}".`);
