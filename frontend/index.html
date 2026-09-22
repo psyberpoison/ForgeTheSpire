@@ -245,10 +245,13 @@
      tile-has-icon's padding-right reserves room so the name/rarity text
      wraps before reaching under the thumbnail instead of running beneath
      it, same reasoning as .tile-card .t-name's padding-right above. */
-  .tile.tile-has-icon{padding-right:56px;}
+  /* Tyler: "lets make it bigger" (56x56, up from the initial 36x36) --
+     padding-right/right-offset grown to match so the larger thumbnail
+     still clears the name/rarity text with the same gap as before. */
+  .tile.tile-has-icon{padding-right:78px;}
   .tile-icon-preview{
-    position:absolute; top:50%; right:10px; transform:translateY(-50%);
-    width:36px; height:36px; border-radius:4px;
+    position:absolute; top:50%; right:8px; transform:translateY(-50%);
+    width:56px; height:56px; border-radius:6px;
     border:1px solid var(--border-soft, var(--border));
     object-fit:cover; background:var(--stone-2);
   }
