@@ -881,6 +881,12 @@
      .a-scale-subject for the identical complaint — sizes to the current
      selection instead. */
   .condition-row .c-kind{field-sizing:content;}
+  /* [Tyler, this round] "lets fix the 1 from this line. that box is a
+     different size" — same field-sizing:content fix as .c-kind just
+     above: the fixed width:4em inline style left dead space to the
+     right of a real 1-2 digit position number, unlike every other pill
+     in the row. */
+  .condition-row .c-hand-position{width:auto; min-width:0; field-sizing:content;}
   .condition-row .c-remove{margin-left:auto; padding:2px 7px; font-size:12px;}
   /* Static words inside a condition row's sentence (the leading "If", the
      "of" between a status kind and which status/mechanic, and the
@@ -11984,7 +11990,7 @@ function renderConditionRowFields(row, cond, eff){
       ${needsCardRef ? (state.cards.length
         ? `<select class="c-card-ref">${state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${c.id===cond.cardRef?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('')}</select>`
         : `<select class="c-card-ref" disabled><option value="">— no cards defined yet —</option></select>`) : ''}
-      ${needsHandPosition ? `<input class="c-hand-position" type="number" min="1" step="1" value="${cond.position??1}" style="width:4em" title="1 = the edge card itself, 2 = one in from the edge, etc.">
+      ${needsHandPosition ? `<input class="c-hand-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = the edge card itself, 2 = one in from the edge, etc.">
       <select class="c-hand-edge">
         <option value="Left" ${cond.edge!=='Right'?'selected':''}>from the left</option>
         <option value="Right" ${cond.edge==='Right'?'selected':''}>from the right</option>
