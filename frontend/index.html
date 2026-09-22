@@ -14454,7 +14454,7 @@ function makeAfflictionSection(opts){
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
-      <div class="modal-body ench-modal-body" style="max-height:82vh">
+      <div class="modal-body ench-modal-body" style="max-height:calc(90vh - 160px)">
         <div class="panel-desc ench-flush" style="margin-top:0">
           <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat. Use the Afflict Card / Remove Affliction actions (available in any effect block) to attach or detach this affliction at runtime.
         </div>
@@ -14728,7 +14728,7 @@ function makeRichEntitySection(opts){
 
     openModal(`
       <div class="modal-head"><h3>Edit ${singular}</h3><span class="close" onclick="closeModal()">&times;</span></div>
-      <div class="modal-body ench-modal-body" style="max-height:82vh">
+      <div class="modal-body ench-modal-body" style="max-height:calc(90vh - 160px)">
         <div class="panel-desc ench-flush" style="margin-top:0">
           <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment action) — they don't wear off on their own. Use the Enchant Card / Remove Enchantment actions (available in any effect block) to attach or detach this enchantment at runtime.
         </div>
