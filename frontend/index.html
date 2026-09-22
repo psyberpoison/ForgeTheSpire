@@ -8492,11 +8492,17 @@ const CONDITION_KINDS = [
     hint:'Reads Player.PlayerCombatState.Stars — a real, live, current-Stars count, distinct from card.starCost (that\'s a CARD\'s own cost, not how many the player has). [VERIFIED via reflect-baselib round 14a/14b]. Compiles for real wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; the one narrow exception is a relic/mechanic\'s "on take damage" hook, which still compiles but throws at runtime there only.' },
   { id:'CardsInHand', label:'Cards in hand', real:true,
     hint:'Counts your current hand size. [BEST EFFORT via decompiling TheBurdenedNewCharacter.dll] — PileType.Hand.GetPile(Player).Cards is a real, countable collection, seen directly in real compiled cards/relics. Compiles for real wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; falls back to an honest stub on the one hook with no cardPlay in scope (a relic/mechanic\'s OnTakeDamage), same as EnergyRemaining/StarsRemaining.' },
-  { id:'PlayedCardHasKeyword', label:'Played card has keyword', real:true, requiresTrigger:'OnAnyCardPlayed',
+  // [Tyler, this round] "this is just a verbage change, but lets remove
+  // 'played card' from each option here" — now that these three only
+  // ever show up in the kind dropdown once "That Card" is already picked
+  // as the subject (see THAT_CARD_ONLY_CONDITION_KINDS above), repeating
+  // "Played card" in the label itself is redundant with what's already
+  // showing right next to it.
+  { id:'PlayedCardHasKeyword', label:'Has keyword', real:true, requiresTrigger:'OnAnyCardPlayed',
     hint:'Checks the card that triggered this hook for a real CardKeyword. [VERIFIED via reflect-baselib rounds 2/3/9]. Only valid on the "OnAnyCardPlayed" trigger — cardPlay isn\'t in scope anywhere else.' },
-  { id:'PlayedCardHasTag', label:'Played card has (gameplay) tag', real:true, requiresTrigger:'OnAnyCardPlayed',
+  { id:'PlayedCardHasTag', label:'Has (gameplay) tag', real:true, requiresTrigger:'OnAnyCardPlayed',
     hint:'Checks the card that triggered this hook for a TRUE custom tag (a Gameplay Tag you typed in a card editor) — NOT BaseLib\'s real CardTag enum, which reflect-baselib round 10 confirmed is closed (5 fixed values, no way for a mod to add new ones). [VERIFIED via reflect-baselib round 10 — see Generated/IForgeTaggedCard.cs]. Only valid on the "OnAnyCardPlayed" trigger.' },
-  { id:'PlayedCardHasType', label:'Played card is type', real:true, requiresTrigger:'OnAnyCardPlayed',
+  { id:'PlayedCardHasType', label:'Is type', real:true, requiresTrigger:'OnAnyCardPlayed',
     hint:'Checks the card that triggered this hook for one of the 5 real CardType values (Attack/Skill/Power/Status/Curse). [VERIFIED via decompiling TheBurdenedNewCharacter.dll] — CardModel.Type is a real, public getter, seen directly filtering cards by type in real compiled code. Only valid on the "OnAnyCardPlayed" trigger — cardPlay isn\'t in scope anywhere else. Replaces the old "Played card is an Attack" condition, which only checked one type instead of letting you pick any of the 5.' },
   { id:'CardsPlayedThisTurn', label:'Cards played this turn', real:true,
     hint:'Counts how many cards you\'ve finished playing so far this turn. [VERIFIED via decompiling TheBurdenedNewCharacter.dll\'s Eternal] — its real OnPlay only grants Regen while this count is 0, and its real Glow override uses the identical count to glow beforehand; Tyler\'s follow-up generalized the old fixed "first card" check into this real comparator+value threshold on that same count (e.g. "≤ 1" glows through your first two plays, not just the first). Valid on every trigger, AND inside the Glow section below (unlike most conditions here, this one needs no cardPlay to be real).' },
