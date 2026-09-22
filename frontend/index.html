@@ -706,8 +706,10 @@
   .a-scale-inline .c-status-picker .picker-filter{padding:4px 7px; font-size:12.5px; field-sizing:content; min-width:70px;}
   /* Shared by every scale-capable action type's sentence (DealDamage,
      GainBlock, LoseHp, HealHp — see actionCanScaleWithStatus) for the
-     "All Enemies" not-yet-wired warning — same look as the condition
-     row's own .c-hint. */
+     "All Enemies" not-yet-wired warning. (Used to say "same look as the
+     condition row's own .c-hint" — that block was removed per Tyler's
+     "lets get rid of that big block of text," so this is its own thing
+     now, not a shared look.) */
   .a-hint{margin:2px 0 0; font-size:11px; line-height:1.4; flex-basis:100%;}
   .a-hint.not-real{color:var(--danger-bright);}
 
@@ -871,9 +873,15 @@
      font/padding is. */
   .condition-row select, .condition-row input{font-size:12px; padding:3px 6px; min-width:0; width:auto; flex:0 0 auto;}
   .condition-row .c-value{width:52px; flex:none;}
+  /* [Tyler, this round] "the box doesn't match the length of the
+     currently selected option" — a plain <select>'s default width:auto
+     sizes to its WIDEST option ("Has (gameplay) tag"), not whichever one
+     is actually selected ("Is type" sits in an oversized box). Same
+     field-sizing:content fix Round 206 already used for .as-hpkind/
+     .a-scale-subject for the identical complaint — sizes to the current
+     selection instead. */
+  .condition-row .c-kind{field-sizing:content;}
   .condition-row .c-remove{margin-left:auto; padding:2px 7px; font-size:12px;}
-  .condition-row .c-hint{margin:0; font-size:11px; line-height:1.4;}
-  .condition-row .c-hint.not-real{color:var(--danger-bright);}
   /* Static words inside a condition row's sentence (the leading "If", the
      "of" between a status kind and which status/mechanic, and the
      "You"/"Target"/"Pet" subject select right after "If"). Tyler's
@@ -11882,7 +11890,9 @@ function handPositionPreviewText(edge, position){
   return `(${ordinal(pos)} from the ${e})`;
 }
 function renderConditionRowFields(row, cond, eff){
-  const kindDef = CONDITION_KINDS.find(k=>k.id===cond.kind) || CONDITION_KINDS[0];
+  // [Tyler, this round] `kindDef` used to be read here for the hint block
+  // removed below (the only place this function used it) — dropped along
+  // with that block rather than left as dead code.
   // [Round 66] Position in hand only ever appears in this dropdown once
   // the subject dropdown (below) is already set to This Card/That Card —
   // see conditionKindsForSubject's own comment. Every other kind is
@@ -11987,7 +11997,14 @@ function renderConditionRowFields(row, cond, eff){
     ${needsTag && !gameplayTagOptions.length ? `<div class="hint-small" style="color:var(--danger-bright)">Add a Gameplay Tag to at least one card first (in that card's editor) — this condition has nothing to match yet.</div>` : ''}
     ${needsRelicRef && !state.relics.length ? `<div class="hint-small" style="color:var(--danger-bright)">No relics defined yet — define one first (in the Relics section).</div>` : ''}
     ${needsCardRef && !state.cards.length ? `<div class="hint-small" style="color:var(--danger-bright)">No cards defined yet — define one first.</div>` : ''}
-    ${kindDef.hint ? `<div class="c-hint hint-small${kindDef.real ? '' : ' not-real'}">${escapeHtml(kindDef.hint)}</div>` : ''}
+    <!-- [Tyler, this round] "lets get rid of that big block of text" —
+         removed the per-kind evidence-hint block that used to render
+         here (the full VERIFIED-via-decompile writeup for whichever
+         condition kind is selected — see this function's own comment
+         at the top for where its kindDef lookup went). That evidence
+         still lives in CONDITION_KINDS' own hint field/comments in
+         source — this just stops it from being dumped into the editor
+         UI on every row. -->
   `;
 }
 
