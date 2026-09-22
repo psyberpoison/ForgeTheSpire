@@ -763,16 +763,22 @@
   /* Round 19 originally gave relics/mechanics a categorized, color-coded
      bubble picker here (cards kept the plain <select class="eb-trigger">)
      that collapsed to a single summary bubble once a trigger was chosen.
-     [This round — Tyler: "something about this menu is hard to read. I
-     can't put my finger on it though"] Replaced with a real <select> +
-     colored <optgroup> headers instead — same fix Round 157/158 already
-     picked for the identical complaint on the Action Type dropdown, see
-     renderTriggerPicker's own header comment for the full reasoning. The
-     .trig-cat/.trig-chip* rules the old bubble grid used are gone (dead
-     now that renderTriggerPicker never emits that markup); .eb-trigger-
-     picker itself stays as a thin wrapper div and permanently gets
-     .collapsed's "no heavy panel" treatment now, since a single <select>
-     never needs the bordered/padded box the multi-row grid did. */
+     [This round, part 1 — Tyler: "something about this menu is hard to
+     read"] Replaced with a real <select> + colored <optgroup> headers,
+     same fix Round 157/158 already picked for the identical complaint on
+     the Action Type dropdown. [This round, part 2 — Tyler: "is it
+     possible to have two columns... the list is still quite long"] A
+     native select's popup can't be reshaped by CSS, so this became two
+     cascading real <select>s instead — Category (.trig-cat-select,
+     colored via --cat-color to keep the color-coding Tyler liked) then
+     Trigger (.trig-select, scoped to just that category so it's always
+     short) — see renderTriggerPicker's own header comment for the full
+     reasoning. The .trig-cat/.trig-chip* rules the original bubble grid
+     used are gone (dead now that renderTriggerPicker never emits that
+     markup); .eb-trigger-picker itself stays as a thin wrapper div and
+     permanently gets .collapsed's "no heavy panel" treatment now, since
+     neither select needs the bordered/padded box the multi-row grid
+     did. */
   .eb-trigger-picker{
     display:flex; flex-direction:column; gap:10px; margin-bottom:10px;
     padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--stone-2);
@@ -780,6 +786,11 @@
   .eb-trigger-picker.collapsed{
     padding:0; border:none; background:transparent; margin-bottom:8px;
   }
+  .trig-cat-select{
+    flex:0 0 150px; min-width:0; font-weight:600;
+    background:var(--cat-color); border-color:var(--cat-color); color:#0a121e;
+  }
+  .trig-select{flex:1; min-width:0;}
   /* Conditions render BEFORE "Then:"/actions again (natural "If... Then..."
      reading order — a round putting Then first read as though the action
      wasn't really gated by the condition below it, per Tyler: "we moved the
@@ -15385,23 +15396,32 @@ function triggerOptList(values, selected){
 // coded" (reference image attached — category header rows of colored
 // pill buttons).
 //
-// [This round — Tyler: "something about this menu is hard to read. I
-// can't put my finger on it though"] Round 157/158 hit the identical
-// complaint on the Action Type dropdown ("this menu looks a little
-// difficult to navigate") and, offered the same four options (optgroup
-// headers / a colored bubble picker like this one / type-to-filter
-// search / just widen it), picked optgroup headers on a real <select> —
-// cheaper, stays keyboard/screen-reader navigable, native type-to-filter
-// (typing jumps to a match) for free. Converting THIS picker to match:
-// same TRIGGER_CATEGORIES grouping/colors as before, same
-// actionTypeOptList-style <optgroup style="color:...">, but a real
-// <select> instead of a hand-rolled chip grid. This also incidentally
-// fixes what was actually making the old grid hard to read — every
-// chip's TEXT was a flat, uncolored --parchment-dim gray while its
-// BORDER was vividly category-colored, so the color-coding never
-// reached the part you actually read; a native <optgroup> just colors
-// the group heading text directly, no separate text/border mismatch to
-// have.
+// [This round, part 1 — Tyler: "something about this menu is hard to
+// read. I can't put my finger on it though"] Converted to a real
+// <select> with colored <optgroup> headers — same fix Round 157/158
+// already picked for the identical "long categorized list is hard to
+// navigate" complaint on the Action Type dropdown. Fixed the actual
+// readability bug too: every chip's TEXT used to be a flat, uncolored
+// --parchment-dim gray while its BORDER was vividly category-colored,
+// so the color-coding never reached the part you actually read.
+//
+// [This round, part 2 — Tyler, after seeing the single <select>: "is it
+// possible to have two columns... I like the color scheme for
+// legibility, but the list is still quite long"] A native <select>'s
+// open popup is drawn by the browser/OS, not this page — there's no CSS
+// that reshapes it into columns. Instead: split into TWO cascading real
+// <select>s, same pattern as a "Country -> State" picker. The first
+// picks a CATEGORY (5-ish entries, always short) and is itself colored
+// via --cat-color (background/border/text tinted to whichever category
+// is active) so the color-coding Tyler liked is still front and center
+// even with no in-popup option coloring; the second picks a TRIGGER, but
+// now scoped to just that one category's triggers, so it's always short
+// too (2-9 items instead of the full ~35) — the actual "list is still
+// quite long" complaint is what this solves, not a column layout.
+// Changing the category always resets the trigger to that category's
+// first entry (same "cascading select can't be in an invalid in-between
+// state" convention as Country/State) and fires onSelect for real, same
+// as picking a trigger directly.
 //
 // container — the empty <div class="eb-trigger-picker"> to fill.
 // values — the SAME triggerOptions array renderEffectsList already
@@ -15415,42 +15435,57 @@ function triggerOptList(values, selected){
 //   see renderEffectsList — react to it; this function doesn't re-render
 //   itself, the caller's own effect-block re-render already does).
 //
-// The old Round 19 follow-up collapse/expand behavior (start as a single
-// summary bubble, expand to the full grid on click) doesn't apply any
-// more — a native <select> is already compact/collapsed by nature and
-// expands into the browser's own list on click, so there's no separate
-// state machine to maintain here. .eb-trigger-picker keeps the
-// `.collapsed` class applied permanently now, reusing its existing
-// "no heavy panel" styling (see that class's own comment) since the
-// bordered/padded panel treatment was only ever meant for the multi-row
-// bubble grid, not a single <select>.
+// .eb-trigger-picker keeps the `.collapsed` class applied permanently
+// (see that class's own comment) since two side-by-side <select>s never
+// need the old multi-row bubble grid's bordered/padded panel either.
 function renderTriggerPicker(container, values, selected, onSelect){
   const valueSet = new Set(values);
   const rows = TRIGGER_CATEGORIES
     .map(cat => ({ ...cat, triggers: cat.triggers.filter(t => valueSet.has(t)) }))
     .filter(cat => cat.triggers.length > 0);
-  const optionHtml = t => `<option value="${t}" ${t===selected?'selected':''}>${escapeHtml(triggerLabel(t))}</option>`;
-  const grouped = new Set();
-  let optionsHtml = rows.map(cat => {
-    cat.triggers.forEach(t => grouped.add(t));
-    return `<optgroup label="${escapeAttr(cat.label)}" style="color:${escapeAttr(cat.color)}">${cat.triggers.map(optionHtml).join('')}</optgroup>`;
-  }).join('');
-  // Defensive fallback — a value not covered by any TRIGGER_CATEGORIES
-  // entry (should never happen; the console.assert sweep near that
-  // const's own definition already checks this at load time) still
-  // renders, ungrouped, instead of silently vanishing — same convention
-  // as actionTypeOptList's own leftover handling.
-  const leftover = values.filter(t => !grouped.has(t));
-  if(leftover.length) optionsHtml += leftover.map(optionHtml).join('');
+  // A value not covered by any TRIGGER_CATEGORIES entry (should never
+  // happen; the console.assert sweep near that const's own definition
+  // already checks this at load time) gets a synthetic "Other" category
+  // rather than silently vanishing — same "never lose a real value"
+  // convention as actionTypeOptList's own leftover handling.
+  const categorized = new Set(rows.flatMap(c => c.triggers));
+  const leftover = values.filter(t => !categorized.has(t));
+  if(leftover.length) rows.push({ id:'other', label:'Other', color:'#7a8699', triggers:leftover });
+
+  const catById = id => rows.find(c => c.id === id) || rows[0];
+  let activeCatId = (rows.find(c => c.triggers.includes(selected)) || rows[0]).id;
+
+  function render(){
+    const activeCat = catById(activeCatId);
+    container.innerHTML = `
+      <div style="display:flex; gap:8px;">
+        <select class="trig-cat-select" style="--cat-color:${activeCat.color}">
+          ${rows.map(c => `<option value="${c.id}" ${c.id===activeCat.id?'selected':''}>${escapeHtml(c.label)}</option>`).join('')}
+        </select>
+        <select class="trig-select">
+          ${activeCat.triggers.map(t => `<option value="${t}" ${t===selected?'selected':''}>${escapeHtml(triggerLabel(t))}</option>`).join('')}
+        </select>
+      </div>
+    `;
+    container.querySelector('.trig-cat-select').onchange = e=>{
+      activeCatId = e.target.value;
+      const newCat = catById(activeCatId);
+      const newTrigger = newCat.triggers[0];
+      const changed = newTrigger !== selected;
+      selected = newTrigger;
+      render();
+      if(changed) onSelect(newTrigger);
+    };
+    container.querySelector('.trig-select').onchange = e=>{
+      const newTrigger = e.target.value;
+      const changed = newTrigger !== selected;
+      selected = newTrigger;
+      if(changed) onSelect(newTrigger);
+    };
+  }
 
   container.classList.add('collapsed');
-  container.innerHTML = `<select class="trig-select">${optionsHtml}</select>`;
-  container.querySelector('.trig-select').onchange = e=>{
-    const newTrigger = e.target.value;
-    const changed = newTrigger !== selected;
-    selected = newTrigger;
-    if(changed) onSelect(newTrigger);
-  };
+  render();
 }
 // Same pattern as triggerOptList above, for the action TYPE dropdown's
 // ACTION_TYPE_LABELS (see its own definition for why).
