@@ -2308,7 +2308,7 @@
           <div class="row" style="margin-top:12px; flex-wrap:wrap;">
             <div class="char-field char-field-sm"><label>Color</label><input type="color" id="c-color" value="#c1502e"></div>
             <div class="char-field">
-              <label title="Maps to the real MegaCrit.Sts2.Core.Entities.Characters.CharacterGender enum — CONFIRMED via reflect-baselib (an abstract, override-required member on CharacterModel).">Gender</label>
+              <label title="Maps to the real MegaCrit.Sts2.Core.Entities.Characters.CharacterGender enum (an abstract, override-required member on CharacterModel).">Gender</label>
               <select id="c-gender">
                 <option value="Neutral">Neutral</option>
                 <option value="Feminine">Feminine</option>
@@ -2325,7 +2325,7 @@
             <div class="char-field char-field-sm"><label>Max HP</label><input type="number" id="c-hp" value="75"></div>
             <div class="char-field"><label>Starting Gold</label><input type="number" id="c-gold" value="99"></div>
             <div class="char-field"><label>Energy / Turn</label><input type="number" id="c-energy" value="3"></div>
-            <div class="char-field"><label title="Round 95, Tyler: &quot;an option for how many orb slots the character should start with. The Defect (base game character) starts with like 3 orb slots.&quot; [BEST EFFORT via decompiling TheBurdenedNewCharacter.dll's real TheBurdened.cs] Compiles to a real public override int BaseOrbSlotCount on the character class. Leave at 0 for a non-Orb character.">Starting Orb Slots</label><input type="number" id="c-orbslots" value="0" min="0"></div>
+            <div class="char-field"><label title="Tyler: &quot;an option for how many orb slots the character should start with. The Defect (base game character) starts with like 3 orb slots.&quot; Compiles to a real public override int BaseOrbSlotCount on the character class. Leave at 0 for a non-Orb character.">Starting Orb Slots</label><input type="number" id="c-orbslots" value="0" min="0"></div>
           </div>
           <!-- [Round 103] Tyler: "now that we have moved the bar
                creator/mover to the status section, we no longer need this
@@ -3030,7 +3030,7 @@
            a vanilla status has no mechanic editor of its own to add a bar
            from. -->
       <div style="margin-bottom:18px; padding:12px 14px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--stone-2)">
-        <label style="margin-top:0" title="[BEST EFFORT, first real build of this feature] Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. Custom (mechanic-linked) bars are toggled on/off and moved between these two from that mechanic's own editor below; built-in-status bars are added here and always stay below the health bar. See claude/round101-per-status-resource-bar-anchor.md.">Resource bars</label>
+        <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. Custom (mechanic-linked) bars are toggled on/off and moved between these two from that mechanic's own editor below; built-in-status bars are added here and always stay below the health bar.">Resource bars</label>
         <div class="rb-preview-mount"></div>
         <div class="row" style="margin-top:12px; align-items:flex-end; gap:8px; flex-wrap:wrap;">
           <div style="flex:0 0 220px"><label style="font-size:11px">Track a built-in status</label><select id="vanilla-bar-status"></select></div>
@@ -3052,13 +3052,12 @@
     <div class="panel-body">
       <div class="panel-desc">
         A companion creature fighting alongside you — like Osty. <strong>Not yet compiled into your mod's code.</strong>
-        Every STS2 character reflected so far has ONE fixed companion (<code>Player.Osty</code> — [VERIFIED via
-        reflect-baselib round 5]) that already exists on the base game's Player type; no reflect-baselib round has
-        found any real, confirmed way for a mod to define an ADDITIONAL or REPLACEMENT pet/companion of its own —
-        unlike Orbs below, there isn't even a real namespace/folder convention pointing at one existing anywhere.
-        What you enter here is saved with your character and exported as a design doc (<code>Pets/README.md</code>
-        in the compiled mod) so it's ready the moment a future reflect-baselib round confirms a real mechanism —
-        it just doesn't generate any gameplay code yet.
+        Every STS2 character reflected so far has ONE fixed companion (<code>Player.Osty</code>) that already
+        exists on the base game's Player type; no confirmed way for a mod to define an ADDITIONAL or REPLACEMENT
+        pet/companion of its own has been found — unlike Orbs below, there isn't even a real namespace/folder
+        convention pointing at one existing anywhere. What you enter here is saved with your character and
+        exported as a design doc (<code>Pets/README.md</code> in the compiled mod) so it's ready if a real
+        mechanism is ever confirmed — it just doesn't generate any gameplay code yet.
       </div>
       <div class="grid-cards" id="pets-grid"></div>
     </div>
@@ -3073,11 +3072,11 @@
       <div class="panel-desc">
         A Defect-style gameplay Orb (Frost/Lightning/Dark, etc.) — channeled into a slot, with a passive effect each
         turn and a bigger effect when evoked. <strong>Passive/Evoke value below compile into a real orb class now</strong> —
-        reflect-baselib rounds 11/12 confirmed <code>BaseLib.Abstracts.CustomOrbModel</code>'s exact shape against a
-        real working example (<code>TheBurdenedNewCharacter.Orbs.MoonOrb</code>). What's still just a design note:
-        the passive/evoke effect text (what the orb actually <em>does</em>) and Focus-scaling — Forge doesn't have an
-        effect editor for orb behavior yet, so those stay freeform and export to <code>Orbs/README.md</code> alongside
-        the real <code>.cs</code> file. (Note: this is a different concept from the character's <em>energy orb art</em>
+        confirmed against <code>BaseLib.Abstracts.CustomOrbModel</code>'s exact shape using a real working example
+        (<code>TheBurdenedNewCharacter.Orbs.MoonOrb</code>). What's still just a design note: the passive/evoke
+        effect text (what the orb actually <em>does</em>) and Focus-scaling — Forge doesn't have an effect editor
+        for orb behavior yet, so those stay freeform and export to <code>Orbs/README.md</code> alongside the real
+        <code>.cs</code> file. (Note: this is a different concept from the character's <em>energy orb art</em>
         in the Art section below — that's the visual HP/energy orb graphic, not a gameplay Orb.)
       </div>
       <div class="grid-cards" id="orbs-grid"></div>
@@ -10074,7 +10073,7 @@ function openCardEditor(cardId){
               <div id="m-target-row"><label>Target</label><select id="m-target">${optList(["SingleEnemy","AllEnemies","Self","None"], card.target)}</select></div>
             </div>
             <div class="basetag-row">
-              <label title="Maps to the real, closed BaseLib MegaCrit.Sts2.Core.Entities.Cards.CardTag enum [VERIFIED via reflect-baselib round 10] — lets base-game/other-mod logic that specifically checks CardTag (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are Forge's own freeform system.">Base card tag:</label>
+              <label title="Maps to the real, closed BaseLib MegaCrit.Sts2.Core.Entities.Cards.CardTag enum — lets base-game/other-mod logic that specifically checks CardTag (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are Forge's own freeform system.">Base card tag:</label>
               <div class="kw-picker" id="basetag-picker"></div>
             </div>
             <div style="margin-top:12px">
@@ -10121,7 +10120,7 @@ function openCardEditor(cardId){
               <input type="file" id="m-art-upload" accept="image/png,image/jpeg,image/webp">
               <div class="hint-small" id="m-art-error" style="display:none; color:var(--danger-bright); margin-top:6px"></div>
               <button class="ghost" id="m-art-clear" style="margin-top:6px; ${pendingArtDataUrl ? '' : 'display:none'}">Remove art</button>
-              <label title="Compiles for real (round 16) — the game's own real BBCode color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own best-guess approximation from this card's effects and keywords, both here and on the live preview above (shown in italics until you type your own) — any status this card APPLIES is auto-wrapped in [gold]...[/gold] in that guess, matching the game's own convention.">Description</label>
+              <label title="Compiles for real — the game's own real BBCode color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own best-guess approximation from this card's effects and keywords, both here and on the live preview above (shown in italics until you type your own) — any status this card APPLIES is auto-wrapped in [gold]...[/gold] in that guess, matching the game's own convention.">Description</label>
               <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
                 <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
                 <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
@@ -10142,7 +10141,7 @@ function openCardEditor(cardId){
             <div id="upgrade-transform-panel" style="display:none">
               <label>Transforms into</label>
               <select id="m-transform-target"></select>
-              <div class="hint-small" style="margin-top:6px">On its one upgrade, this card is removed and replaced by the selected card — the picked card's own cost/effects/art are what actually plays from then on. [BEST EFFORT] — see the round-167 project doc for the full evidence trail.</div>
+              <div class="hint-small" style="margin-top:6px">On its one upgrade, this card is removed and replaced by the selected card — the picked card's own cost/effects/art are what actually plays from then on.</div>
             </div>
             <div id="upgrade-standard-panel">
               <div class="kw-picker kw-row-upgrade" id="kw-picker-upgrade" title="Mirrors the tier below until you change something here, same as Upgrade effects. Cost/effect changes compile for real; keyword changes at this tier don't compile into the mod yet — only the base card's keywords do today."></div>
@@ -10617,7 +10616,7 @@ function openCardEditor(cardId){
       starCostInput.title = 'Locked to 0 while “X Star” is checked — see the checkbox to the right.';
     } else {
       starCostInput.disabled = false;
-      starCostInput.title = 'Optional — leave blank for no star cost (the common case). [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3’s “Star Cost Change” card, round 59] CardModel.CanonicalStarCost is a real, public, overridable virtual property — this compiles for real.';
+      starCostInput.title = 'Optional — leave blank for no star cost (the common case). CardModel.CanonicalStarCost is a real, public, overridable virtual property — this compiles for real.';
     }
     // [Round 77 bug fix] This was missing — without it, checking "X Star"
     // never re-rendered the effects list below, so xStarEligible never
@@ -12063,7 +12062,7 @@ function renderConditionRowFields(row, cond, eff){
         <option value="Right" ${cond.edge==='Right'?'selected':''}>from the right</option>
       </select>
       <span class="cond-word">position</span>
-      <span class="cond-word c-hand-position-preview" style="opacity:.75; font-style:italic" title="Live preview — Tyler (round 55): 'if you select 1st from the left the card preview should say leftmost so the user can verify.'">${handPositionPreviewText(cond.edge, cond.position)}</span>` : ''}
+      <span class="cond-word c-hand-position-preview" style="opacity:.75; font-style:italic" title="Live preview — if you select 1st from the left, the card preview says leftmost so you can verify it.">${handPositionPreviewText(cond.edge, cond.position)}</span>` : ''}
       <button class="ghost c-remove">✕</button>
     </div>
     ${needsStatusRef && !isVanillaStatus && !mechanicOpts.length ? `<div class="hint-small" style="color:var(--danger-bright)">No custom mechanics defined yet — define one first, or pick a Vanilla status from the dropdown above instead.</div>` : ''}
@@ -12915,8 +12914,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // wireActionRowHandlers) — compiler.js's resolveAmountExpr checks
   // amountIsX before amountIsStarX, so only one can ever actually apply.
   const useXLabelSuffix = showUseStarXCheckbox ? ' (Energy)' : '';
-  const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'} Tylers &quot;deal X damage&quot;/&quot;apply X &lt;status&gt;&quot; ask. [VERIFIED via decompiling TheBurdenedNewCharacter.dll] confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'} [VERIFIED via decompiling Tyler's own updated TheBurdenedNewCharacter.dll, round 73/74] CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '');
+  const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'} Tylers &quot;deal X damage&quot;/&quot;apply X &lt;status&gt;&quot; ask. Confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'} CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '');
   // [Round 75/76] DealDamage-only relabeled/outside-the-sentence versions
   // — same checkboxes (same classes), rendered in their own row below the
   // sentence instead of inline within it (see row.innerHTML's new
@@ -12928,10 +12927,10 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   const dealDamageBothXEligible = xEligible && xStarEligible;
   const dealDamageAmountLabel = kind => dealDamageBothXEligible ? `X ${kind} Damage` : 'X Damage';
   const dealDamageHitsLabel = kind => dealDamageBothXEligible ? `X ${kind} Hits` : 'X Hits';
-  const dealDamageAmountUseXHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved X value instead of the amount above. Tylers &quot;deal X damage&quot; ask. [VERIFIED via decompiling TheBurdenedNewCharacter.dll] confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> ${dealDamageAmountLabel('Energy')}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above. [VERIFIED via decompiling Tyler's own updated TheBurdenedNewCharacter.dll, round 73/74] CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '');
-  const dealDamageHitCountUseXHtml = (xEligible ? `<label class="a-usex-label" title="Use this card's own resolved X value as the hit count instead — Tyler's &quot;deal damage X times&quot; ask. [VERIFIED via decompiling TheBurdenedNewCharacter.dll] real AttackCommand.WithHitCount(int), confirmed used exactly this way by Retaliation."><input type="checkbox" class="a-hitcount-usex" ${hitCountIsX?'checked':''}> ${dealDamageHitsLabel('Energy')}</label>` : '')
-    + (xStarEligible ? `<label class="a-usex-label" title="Use this card's own resolved star-X value as the hit count instead. [VERIFIED via decompiling Tyler's own uploaded TheBurdenedNewCharacter.dll, round 77] CardModel.ResolveStarXValue() confirmed used exactly this way by a real working card (NEW X STAR): DamageCmd.Attack(fixed base damage).WithHitCount(ResolveStarXValue())."><input type="checkbox" class="a-hitcount-usestarx" ${hitCountIsStarX?'checked':''}> ${dealDamageHitsLabel('Star')}</label>` : '');
+  const dealDamageAmountUseXHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved X value instead of the amount above. Tylers &quot;deal X damage&quot; ask. Confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> ${dealDamageAmountLabel('Energy')}</label>` : '')
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above. CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '');
+  const dealDamageHitCountUseXHtml = (xEligible ? `<label class="a-usex-label" title="Use this card's own resolved X value as the hit count instead — Tyler's &quot;deal damage X times&quot; ask. Real AttackCommand.WithHitCount(int), confirmed used exactly this way by Retaliation."><input type="checkbox" class="a-hitcount-usex" ${hitCountIsX?'checked':''}> ${dealDamageHitsLabel('Energy')}</label>` : '')
+    + (xStarEligible ? `<label class="a-usex-label" title="Use this card's own resolved star-X value as the hit count instead. CardModel.ResolveStarXValue() confirmed used exactly this way by a real working card (NEW X STAR): DamageCmd.Attack(fixed base damage).WithHitCount(ResolveStarXValue())."><input type="checkbox" class="a-hitcount-usestarx" ${hitCountIsStarX?'checked':''}> ${dealDamageHitsLabel('Star')}</label>` : '');
   const dealDamageUseXHtml = dealDamageAmountUseXHtml + dealDamageHitCountUseXHtml;
   // Legible target dropdown (ACTION_TARGET_LABELS/targetOptList, see their
   // own comment) — not rendered at all for PLAYER_ONLY_ACTIONS (Draw/
@@ -13046,7 +13045,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // silently disappear depending on where the effect lives, same
       // "always offered, backend decides what's reachable" convention
       // ModifyCost's scope dropdown etc. already follow.
-      const unblockableHtml = `<label class="a-check-label" title="Deals damage that ignores Block entirely. [VERIFIED via decompiling Tyler's own real &quot;The Burdened&quot; project, round 199 -- Afflictions/Reckless.cs's real, working ValueProp.Unblockable self-damage call] Only takes effect on a relic/mechanic/affliction's own Deal Damage (no CardModel source) -- a no-op on a card's own Deal Damage, since AttackCommand's DamageProps setter is private."><input type="checkbox" class="a-unblockable" ${act.unblockable?'checked':''}> Unblockable</label>`;
+      const unblockableHtml = `<label class="a-check-label" title="Deals damage that ignores Block entirely. Only takes effect on a relic/mechanic/affliction's own Deal Damage (no CardModel source) -- a no-op on a card's own Deal Damage, since AttackCommand's DamageProps setter is private."><input type="checkbox" class="a-unblockable" ${act.unblockable?'checked':''}> Unblockable</label>`;
       sentenceHtml = `
         <span class="cond-word">Deal</span>
         ${dealDamageAmountSlotHtml}
@@ -13080,7 +13079,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       break;
     }
     case 'DiscardCard': case 'ExhaustCard': {
-      const randomHtml = `<label class="a-check-label" title="Tyler: &quot;Discard and exhaust should get an option to make them randomly selected.&quot; [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3's &quot;Exhaust&quot;/&quot;Discard&quot; cards, round 59] — Player.RunState.Rng.CombatCardSelection.NextItem(...) is real; compiles for real wherever a real cardPlay.Player/choiceContext is in scope (same gating as the non-random path)."><input type="checkbox" class="a-random" ${act.random?'checked':''}> Randomly selected</label>`;
+      const randomHtml = `<label class="a-check-label" title="Tyler: &quot;Discard and exhaust should get an option to make them randomly selected.&quot; Player.RunState.Rng.CombatCardSelection.NextItem(...) is real; compiles for real wherever a real cardPlay.Player/choiceContext is in scope (same gating as the non-random path)."><input type="checkbox" class="a-random" ${act.random?'checked':''}> Randomly selected</label>`;
       sentenceHtml = `${playerOnlyCardSentence(act.type === 'DiscardCard' ? 'Discard' : 'Exhaust', '(s) from your hand.')}${randomHtml}`;
       break;
     }
@@ -13101,7 +13100,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // the card this turn") is real too — CardModel.GiveSingleTurnRetain()
     // — [VERIFIED via direct sts2.dll IL read].
     case 'ReturnToHand': {
-      const retainHtml = `<label class="a-check-label" title="Tyler: &quot;There should also be a check box to 'retain the card this turn' if the return to hand is selected.&quot; [VERIFIED via direct sts2.dll IL read] CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — sets the same private backing flag CardModel.ShouldRetainThisTurn reads back (alongside the static Retain keyword check), i.e. a genuine one-turn-only version of Retain."><input type="checkbox" class="a-retainthisturn" ${act.retainThisTurn?'checked':''}> Retain the card this turn</label>`;
+      const retainHtml = `<label class="a-check-label" title="Tyler: &quot;There should also be a check box to 'retain the card this turn' if the return to hand is selected.&quot; CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — sets the same private backing flag CardModel.ShouldRetainThisTurn reads back (alongside the static Retain keyword check), i.e. a genuine one-turn-only version of Retain."><input type="checkbox" class="a-retainthisturn" ${act.retainThisTurn?'checked':''}> Retain the card this turn</label>`;
       sentenceHtml = `<span class="cond-word">Return this card to your hand.</span>${retainHtml}`;
       break;
     }
@@ -13112,7 +13111,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // same shape as ModifyGold right below (see compiler.js's ModifyEnergy
     // case for the codegen side).
     case 'ModifyEnergy': {
-      const doubleHtml = `<label class="a-check-label" title="Tyler: &quot;a check box for double energy which doubles the user's current energy.&quot; [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3's &quot;Double Energy&quot; card, round 59] — compiles to a real PlayerCmd.GainEnergy call using the player's own current PlayerCombatState.Energy as the amount, not a dedicated &quot;double&quot; API."><input type="checkbox" class="a-doubleenergy" ${act.doubleEnergy?'checked':''}> Double Energy</label>`;
+      const doubleHtml = `<label class="a-check-label" title="Tyler: &quot;a check box for double energy which doubles the user's current energy.&quot; — compiles to a real PlayerCmd.GainEnergy call using the player's own current PlayerCombatState.Energy as the amount, not a dedicated &quot;double&quot; API."><input type="checkbox" class="a-doubleenergy" ${act.doubleEnergy?'checked':''}> Double Energy</label>`;
       sentenceHtml = act.doubleEnergy
         ? `<span class="cond-word">Gain double your current Energy.</span>${doubleHtml}`
         : `${modeSelectHtml}${amountHtml}${useXAmountHtml}<span class="cond-word">Energy.</span>${doubleHtml}`;
@@ -13126,7 +13125,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // the word" shape modeSelectHtml already uses for Gain/Lose. Built
       // by hand here (not via amountForTargetSentence, which only takes a
       // plain-text noun) since the noun itself is now the control.
-      const hpKindSelectHtml = `<select class="a-hpkind as-hpkind" title="[VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] &quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses — see backend/templates/ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for the full evidence."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
+      const hpKindSelectHtml = `<select class="a-hpkind as-hpkind" title="&quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
       sentenceHtml = `${modeSelectHtml}${amountHtml}${useXAmountHtml}${hpKindSelectHtml}<span class="cond-word">for</span>${targetHtml}<span class="cond-word">${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
       break;
     }
@@ -13251,7 +13250,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // they did).
   const followUpHtml = isDealDamage ? `
     <div class="a-followup-slot">
-      <label class="a-followup-toggle-label" title="Run additional action(s) only if THIS damage broke the target's block, killed the target, was fully blocked, or had a chosen amount of unblocked damage. [VERIFIED/BEST EFFORT — see this field's own schema description] Always checks the outcome of the Deal Damage action right above, in the same effect.">
+      <label class="a-followup-toggle-label" title="Run additional action(s) only if THIS damage broke the target's block, killed the target, was fully blocked, or had a chosen amount of unblocked damage. Always checks the outcome of the Deal Damage action right above, in the same effect.">
         <input type="checkbox" class="a-followup-toggle" ${act.followUp ? 'checked' : ''}> Add follow-up
       </label>
       ${act.followUp ? `
@@ -14025,7 +14024,7 @@ function renderMechBarFields(m){
         <option value="standalone" ${!isDiamond ? 'selected' : ''}>Standalone bar</option>
         <option value="diamond" ${isDiamond ? 'selected' : ''}>Dual-bar + diamond (paired)</option>
       </select></div>
-      <div style="flex:0 0 180px"><label style="font-size:11px" title="[Round 101] Which HUD element this status's bar anchors to. Set per status now — Tyler: 'the Resource bars anchor section. Can we move that to the status section. Ideally i'd like to be able to set that per status.'">Anchor</label><select id="m-bar-anchor">${resourceBarAnchorOptionsHtml(resolveBarAnchor(bar))}</select></div>
+      <div style="flex:0 0 180px"><label style="font-size:11px" title="Which HUD element this status's bar anchors to. Set per status.">Anchor</label><select id="m-bar-anchor">${resourceBarAnchorOptionsHtml(resolveBarAnchor(bar))}</select></div>
     </div>
     <div id="m-bar-diamond-fields" class="row" style="gap:8px; align-items:center; margin-top:6px; display:${isDiamond ? '' : 'none'}">
       <div style="flex:0 0 160px"><label style="font-size:11px" title="Arbitrary id shared by the 2-3 bars that make up one dual-bar+diamond widget — pair this status with another one using the same group name.">Diamond group</label><input type="text" id="m-bar-diamond-group" value="${escapeAttr(bar.diamondGroup || '')}" placeholder="e.g. stance"></div>
@@ -14079,12 +14078,12 @@ function openMechEditor(mechId){
       </div>
       <div class="row" style="margin-top:12px; align-items:center; gap:8px">
         <input type="checkbox" id="m-hide-icon" ${m.hideIcon ? 'checked' : ''}>
-        <label for="m-hide-icon" style="margin:0" title="[VERIFIED — round 94, see claude/round94-hidden-status-tooltip-fix.md] Compiles to protected override bool IsVisibleInternal => false; on this status's generated class: no vanilla icon in the status row, no apply flash, and Artifact can't consume a charge from it. Independent of the bar option below — you can hide the icon with no bar, show a bar with the icon still visible, or hide the icon and show only the bar.">Hide status icon (no icon in the status row)</label>
+        <label for="m-hide-icon" style="margin:0" title="Compiles to protected override bool IsVisibleInternal => false; on this status's generated class: no vanilla icon in the status row, no apply flash, and Artifact can't consume a charge from it. Independent of the bar option below — you can hide the icon with no bar, show a bar with the icon still visible, or hide the icon and show only the bar.">Hide status icon (no icon in the status row)</label>
       </div>
       <div style="margin-top:16px; padding:10px; border:1px solid var(--border); border-radius:6px">
         <div class="row" style="align-items:center; gap:8px">
           <input type="checkbox" id="m-bar-enabled" ${mechResourceBar(m) ? 'checked' : ''}>
-          <label for="m-bar-enabled" style="margin:0" title="[BEST EFFORT, see claude/round92-resource-bars.md and claude/round94-hidden-status-tooltip-fix.md] Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below (round 101).">Represent as a bar</label>
+          <label for="m-bar-enabled" style="margin:0" title="Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below.">Represent as a bar</label>
         </div>
         <div id="m-bar-fields" style="margin-top:8px; display:${mechResourceBar(m) ? '' : 'none'}"></div>
       </div>
@@ -14093,7 +14092,6 @@ function openMechEditor(mechId){
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
       <label style="margin-top:20px">Modifiers (advanced)</label>
-      <div class="panel-desc" style="margin:-4px 0 12px">Round 20 — gate or tweak a real game VALUE instead of reacting to an event. 30 of these 37 hooks get real codegen; 7 are marked [deferred] pending more research. See claude/round20-groupb-findings.md for the full evidence trail.</div>
       <div id="modifiers-list"></div>
       <button class="secondary" id="add-modifier" style="margin-top:6px">+ Add modifier</button>
     </div>
