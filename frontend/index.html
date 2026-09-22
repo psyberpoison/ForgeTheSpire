@@ -12926,16 +12926,15 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       break;
     }
     case 'ModifyHp': {
-      // [Round 204] Tyler: "we need to add an option to affect max HP
-      // instead of just current." A checkbox, same convention as
-      // Unblockable/Double Energy/Randomly selected/Retain the card this
-      // turn above — toggling it also swaps the sentence's own noun
-      // ("HP" -> "Max HP") so the row reads correctly either way, same
-      // "re-render on change" treatment doubleEnergy gets (see
-      // wireActionRowHandlers below) since the visible noun text itself
-      // changes, not just a hidden field.
-      const maxHpHtml = `<label class="a-check-label" title="[VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] Routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal this action normally uses — see backend/templates/ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for the full evidence."><input type="checkbox" class="a-hpmax" ${act.hpKind === 'max' ? 'checked' : ''}> Affect Max HP</label>`;
-      sentenceHtml = `${amountForTargetSentence(modeSelectHtml, act.hpKind === 'max' ? 'Max HP' : 'HP')}${maxHpHtml}`;
+      // [Round 205] Tyler circled the plain "HP" text itself and asked
+      // "instead of a checkbox, lets make this a dropdown" — replacing
+      // round 204's trailing "Affect Max HP" checkbox with a real
+      // <select> sitting right where the noun reads, same "the widget IS
+      // the word" shape modeSelectHtml already uses for Gain/Lose. Built
+      // by hand here (not via amountForTargetSentence, which only takes a
+      // plain-text noun) since the noun itself is now the control.
+      const hpKindSelectHtml = `<select class="a-hpkind" title="[VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] &quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses — see backend/templates/ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for the full evidence."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
+      sentenceHtml = `${modeSelectHtml}${amountHtml}${useXAmountHtml}${hpKindSelectHtml}<span class="cond-word">for</span>${targetHtml}<span class="cond-word">${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
       break;
     }
     case 'ModifyGold':
@@ -13228,15 +13227,15 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // needed, same as randomCheck/retainThisTurn above.
   const unblockableCheck = row.querySelector('.a-unblockable');
   if(unblockableCheck) unblockableCheck.onchange = e=> act.unblockable = e.target.checked;
-  // [Round 204] ModifyHp's "Affect Max HP" checkbox -- DOES need a
-  // re-render, same as doubleEnergy above: the sentence's own noun text
-  // ("HP" vs "Max HP") depends on it, not just a hidden field.
-  const hpMaxCheck = row.querySelector('.a-hpmax');
-  if(hpMaxCheck) hpMaxCheck.onchange = (e)=>{
-    act.hpKind = e.target.checked ? 'max' : 'current';
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
-  };
+  // [Round 205] ModifyHp's HP/Max HP dropdown -- replaces round 204's
+  // checkbox (Tyler: "instead of a checkbox, lets make this a dropdown").
+  // No re-render needed: unlike the checkbox, the select's own displayed
+  // text already reflects the chosen option on its own, and nothing else
+  // in the row's shape depends on this value -- same "just write the
+  // field" treatment costScopeSelect/destinationSelect/pileSelect above
+  // get.
+  const hpKindSelect = row.querySelector('.a-hpkind');
+  if(hpKindSelect) hpKindSelect.onchange = e=> act.hpKind = e.target.value;
 
   const amountInput = row.querySelector('.a-amount');
   if(amountInput) amountInput.oninput = e=> act.amount = parseFloat(e.target.value)||0;
