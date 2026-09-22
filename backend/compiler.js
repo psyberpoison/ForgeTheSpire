@@ -5393,7 +5393,7 @@ ${resolvedTiers.map((t, i) => `            case ${i + 1}: ${t.costDelta ? `Energ
   });
 }
 
-function generateRelicSource(relic, namespace, poolClassName, refMaps) {
+function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverride) {
   const tpl = loadTemplate('Relic.cs.template');
   return fillTemplate(tpl, {
     namespace,
@@ -5402,6 +5402,7 @@ function generateRelicSource(relic, namespace, poolClassName, refMaps) {
     relicId: relic.id,
     relicName: relic.name.replace(/"/g, '\\"'),
     rarity: relic.rarity,
+    iconOverride: iconOverride || '',
     hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps)].filter(Boolean).join('\n\n'),
   });
 }
@@ -8006,6 +8007,43 @@ function writeCardArt(card, characterPackage, modIdLower, writeBinary) {
   return { override, reportLine: `- ${card.name}: card art exported to \`${rel}\`, \`CustomPortraitPath\` override added. [VERIFIED]` };
 }
 
+// ---- Relic icon -> PackedIconPath override [VERIFIED via direct ECMA-335
+// IL disassembly of the real installed sts2.dll, done specifically for
+// Tyler's "relics need to be able to have a 256x256px icon added to them"
+// request] ----
+//
+// RelicModel.get_Icon() (Texture2D, NOT virtual itself) does exactly two
+// things: `callvirt RelicModel::get_PackedIconPath()` (a VIRTUAL call —
+// confirmed via IL, unlike EpochModel.Portrait's non-virtual getter that
+// needed a Harmony patch in Round 203), then passes that string straight
+// into `Godot.ResourceLoader.Load<Texture2D>(path, null, cacheMode)`
+// (MemberRef#562 in the raw metadata table — il_dump.py's own
+// typedef_or_ref_name() has a gap where a MethodSpec's base method is
+// itself a MemberRef, so it printed the unresolved "MemberRef#562"
+// placeholder instead of a name; resolved by hand by calling
+// reader.memberref_name(562) directly, which returned the real name).
+// ResourceLoader.Load is Godot's generic, format-agnostic resource
+// loader — it works on any resolvable resource path, not just a `.tres`
+// atlas-sprite entry, so there is no atlas-format gate to work around.
+// Because PackedIconPath is virtual and reached via callvirt, a generated
+// relic subclass can simply override it to point at a raw PNG — the same
+// "override one real virtual property, no Harmony patch" shape as
+// writeCardArt's CustomPortraitPath above, and simpler than Round 203's
+// Epoch portrait (which needed a Harmony patch specifically because
+// EpochModel.Portrait ISN'T virtual).
+const RELIC_ICON_PREFIX = 'images/packed/relic_icons/';
+
+function writeRelicIcon(relic, characterPackage, modIdLower, writeBinary) {
+  const url = findAssetDataUrl(characterPackage, relic.iconAssetRef, 'relicIcon');
+  if (!url) return { override: '', reportLine: null };
+
+  const relicIdLower = (relic.id || relic.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const rel = `${RELIC_ICON_PREFIX}${modIdLower}/${relicIdLower}.png`;
+  writeBinary(`pack/${rel}`, dataUrlToBuffer(url));
+  const override = `\n    // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — RelicModel.get_Icon() calls the VIRTUAL get_PackedIconPath() via callvirt, then Godot.ResourceLoader.Load<Texture2D> on whatever path it returns, no atlas-format gate] relic icon art.\n    public override string PackedIconPath => "res://${rel}";`;
+  return { override, reportLine: `- ${relic.name}: relic icon exported to \`${rel}\`, \`PackedIconPath\` override added. [VERIFIED]` };
+}
+
 // [Round 203 — Tyler: "change the name of lore to 'Chronicles'. Chronicles
 // are a collection of items called 'Epochs'."] MegaCrit.Sts2.Core.Timeline.
 // EpochEra — [VERIFIED via direct fields_dump2.py read of the real
@@ -8374,14 +8412,25 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // Tyler having to touch anything. validateCharacterPackage (see
   // backend/validate.js) hard-errors at compile time if NEITHER resolves,
   // rather than silently shipping a character guaranteed to crash on click.
-  const startingRelicIdRaw = characterPackage.character.startingRelicId
-    || (characterPackage.relics || []).find(r => r.rarity === 'Starter')?.id;
-  let startingRelicExprs = '';
-  if (startingRelicIdRaw) {
-    const cls = relicClassById.get(startingRelicIdRaw);
-    if (!cls) throw new Error(`startingRelicId references relic id "${startingRelicIdRaw}" which isn't defined in this character's relics[].`);
-    startingRelicExprs = `ModelDb.Relic<${cls}>()`;
-  }
+  // Multiple-starter-relics round: character.startingRelicIds (array) is
+  // now the primary field — StartingRelics is a real IReadOnlyList
+  // (confirmed above), so there was never a real cap at one entry, only
+  // the UI/schema hadn't caught up. Resolution order: the explicit array
+  // if non-empty, else the legacy singular startingRelicId (old saved
+  // packages that reach generateProject() directly, bypassing the
+  // frontend's own migration pass), else every Starter-rarity relic —
+  // same "old save with a Starter relic just works" fallback as before,
+  // now collecting ALL of them instead of just the first.
+  const startingRelicIdsRaw = Array.isArray(characterPackage.character.startingRelicIds) && characterPackage.character.startingRelicIds.length
+    ? characterPackage.character.startingRelicIds
+    : (characterPackage.character.startingRelicId
+        ? [characterPackage.character.startingRelicId]
+        : (characterPackage.relics || []).filter(r => r.rarity === 'Starter').map(r => r.id));
+  const startingRelicExprs = startingRelicIdsRaw.map(id => {
+    const cls = relicClassById.get(id);
+    if (!cls) throw new Error(`startingRelicIds references relic id "${id}" which isn't defined in this character's relics[].`);
+    return `ModelDb.Relic<${cls}>()`;
+  }).join(', ');
 
   // Character art — see writeCharacterArt's own header comment for the
   // full evidence trail. Writes real PNGs into pack/images/... at their
@@ -8601,8 +8650,18 @@ function generateProject(characterPackage, outDir, opts = {}) {
   }
 
   // Relics.
+  let relicIconHeaderAdded = false;
   for (const relic of characterPackage.relics || []) {
-    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
+    // Relic icon — see writeRelicIcon's own header comment for the full
+    // IL evidence trail (PackedIconPath is virtual + reached via callvirt,
+    // so a plain override suffices, no Harmony patch). Same
+    // write-PNG-then-splice-override shape as writeCardArt above.
+    const { override: relicIconOverride, reportLine: relicIconReportLine } = writeRelicIcon(relic, characterPackage, modId.toLowerCase(), writeBinary);
+    if (relicIconReportLine) {
+      if (!relicIconHeaderAdded) { artReport.push('', '**Relic icons:**'); relicIconHeaderAdded = true; }
+      artReport.push(relicIconReportLine);
+    }
+    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById }, relicIconOverride);
     write(`Relics/${pascalCase(relic.name)}Relic.cs`, src);
   }
 

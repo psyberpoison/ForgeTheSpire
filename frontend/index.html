@@ -2880,9 +2880,9 @@
       </div>
     </div>
     <div class="panel-body">
-      <div class="panel-desc" id="starting-relic-row" style="margin:-4px 0 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0" title="[VERIFIED via real sts2.dll IL disassembly, 2026-09-01] The base game's own character-select screen unconditionally reads CharacterModel.StartingRelics[0] the moment you click a character, with no empty check — a character with no starting relic set WILL crash the game on select, every time, with no on-screen error. Pick one of your relics below to fix this.">Starting relic <span style="color:var(--parchment-dim);font-weight:normal">(required — see hint)</span></label>
-        <select id="c-starting-relic" style="flex:0 0 240px"></select>
+      <div class="panel-desc" id="starting-relic-row" style="margin:-4px 0 12px">
+        <label style="margin:0 0 6px; display:block" title="[VERIFIED via real sts2.dll IL disassembly, 2026-09-01] The base game's own character-select screen unconditionally reads CharacterModel.StartingRelics[0] the moment you click a character, with no empty check — a character with no starting relic set WILL crash the game on select, every time, with no on-screen error. Check at least one of your relics below to fix this. StartingRelics is a real list (not capped at one) — check as many as you like.">Starting relics <span style="color:var(--parchment-dim);font-weight:normal">(at least one required — see hint)</span></label>
+        <div id="c-starting-relics" style="display:flex; flex-wrap:wrap; gap:4px 14px"></div>
       </div>
       <div class="grid-cards" id="relics-grid"></div>
     </div>
@@ -4616,6 +4616,15 @@ function migrateLegacyStatusActions(pkg){
       pkg.character.combatSpriteScale = 1;
     }
     if(pkg.character.branch === undefined) pkg.character.branch = '';
+    // Multiple-starter-relics round — startingRelicIds (array) supersedes
+    // the old singular startingRelicId; fold any legacy value in once on
+    // load, same "additive, no formatVersion bump" convention as every
+    // other field migration in this block. The legacy field is left in
+    // place (not deleted) since backend/compiler.js still reads it as a
+    // fallback for packages that reach generateProject() directly.
+    if(!Array.isArray(pkg.character.startingRelicIds)){
+      pkg.character.startingRelicIds = pkg.character.startingRelicId ? [pkg.character.startingRelicId] : [];
+    }
     // [Round 151] selectSfxAssetRef/deathSfxAssetRef — additive, same
     // convention as showEnergyStars/starAssetRef just above.
     if(pkg.character.selectSfxAssetRef === undefined) pkg.character.selectSfxAssetRef = null;
@@ -7569,6 +7578,7 @@ const EPOCH_UNLOCK_REQUIREMENT_OPTIONS = [
   { id: 'climbFloors', label: 'Climb floors across all runs', needsAmount: true },
 ];
 const EPOCH_PORTRAIT_WIDTH = 810, EPOCH_PORTRAIT_HEIGHT = 500;
+const RELIC_ICON_WIDTH = 256, RELIC_ICON_HEIGHT = 256;
 
 const chronicleGrid = document.getElementById('chronicles-grid');
 
@@ -7678,6 +7688,7 @@ function openChronicleEditor(chronicleId){
 // pending commit on Save. Same 3-state convention pendingArtDataUrl uses
 // for card art (see openCardEditor's own save handler).
 let pendingEpochPortraitDataUrl = undefined;
+let pendingRelicIconDataUrl = undefined;
 
 function openEpochEditor(chronicleId, epochId){
   const c = state.character.chronicles.find(x=>x.id===chronicleId);
@@ -13582,7 +13593,7 @@ function renderRelics(){
   state.relics.forEach(relic=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    const starterBadge = relic.id === state.character.startingRelicId ? ' <span title="Starting relic" style="color:#c9a24a">\u2605</span>' : '';
+    const starterBadge = (Array.isArray(state.character.startingRelicIds) && state.character.startingRelicIds.includes(relic.id)) ? ' <span title="Starting relic" style="color:#c9a24a">\u2605</span>' : '';
     t.innerHTML = `<div class="t-name">${escapeHtml(relic.name||'Untitled')}${starterBadge}</div><div class="t-meta">${relic.rarity}</div>`;
     t.onclick = ()=> openRelicEditor(relic.id);
     relicsGrid.appendChild(t);
@@ -13625,50 +13636,74 @@ function renderRelics(){
 // rareShopRequirementStatus()/updateCardShopStatus() already use for the
 // Cards section.
 function startingRelicRequirementStatus(){
-  const explicitId = state.character.startingRelicId;
-  const explicitValid = !!explicitId && state.relics.some(r => r.id === explicitId);
+  const explicitIds = (Array.isArray(state.character.startingRelicIds) ? state.character.startingRelicIds : []).filter(id => state.relics.some(r => r.id === id));
+  const explicitValid = explicitIds.length > 0;
   const starterRelic = state.relics.find(r => r && r.rarity === 'Starter') || null;
-  return { ok: explicitValid || !!starterRelic, explicitValid, starterRelic };
+  return { ok: explicitValid || !!starterRelic, explicitValid, explicitIds, starterRelic };
 }
 
 function renderStartingRelicPicker(){
-  const sel = document.getElementById('c-starting-relic');
+  const wrap = document.getElementById('c-starting-relics');
   const status = document.getElementById('starting-relic-status');
-  if(!sel) return;
-  const current = state.character.startingRelicId;
-  // Keep it valid if the previously-chosen relic was deleted.
-  if(current && !state.relics.some(r=>r.id===current)) state.character.startingRelicId = '';
-  const value = state.character.startingRelicId || '';
-  sel.innerHTML = '<option value="">\u2014 none selected \u2014</option>' +
-    state.relics.map(r=>`<option value="${escapeAttr(r.id)}" ${r.id===value?'selected':''}>${escapeHtml(r.name||'Untitled')}</option>`).join('');
-  sel.onchange = ()=>{
-    state.character.startingRelicId = sel.value;
-    save();
-    renderRelics();
-  };
+  if(!wrap) return;
+  if(!Array.isArray(state.character.startingRelicIds)) state.character.startingRelicIds = [];
+  // Keep it valid if a previously-checked relic was deleted.
+  const liveIds = new Set(state.relics.map(r=>r.id));
+  const pruned = state.character.startingRelicIds.filter(id=>liveIds.has(id));
+  if(pruned.length !== state.character.startingRelicIds.length) state.character.startingRelicIds = pruned;
+  wrap.innerHTML = state.relics.length === 0
+    ? '<span class="dim-hint">Add a relic below to pick a starting relic.</span>'
+    : state.relics.map(r=>`
+        <label style="display:flex; align-items:center; gap:5px; font-size:12.5px; font-weight:normal; cursor:pointer">
+          <input type="checkbox" class="starting-relic-cb" value="${escapeAttr(r.id)}" ${state.character.startingRelicIds.includes(r.id)?'checked':''}>
+          ${escapeHtml(r.name||'Untitled')}
+        </label>`).join('');
+  wrap.querySelectorAll('.starting-relic-cb').forEach(cb=>{
+    cb.onchange = ()=>{
+      state.character.startingRelicIds = Array.from(wrap.querySelectorAll('.starting-relic-cb:checked')).map(x=>x.value);
+      save();
+      renderRelics();
+    };
+  });
   if(status){
-    const { ok, explicitValid, starterRelic } = startingRelicRequirementStatus();
+    const { ok, explicitValid, explicitIds, starterRelic } = startingRelicRequirementStatus();
     if(ok){
       status.textContent = explicitValid
-        ? '\u2713 starting relic set — will compile'
+        ? `\u2713 ${explicitIds.length} starting relic${explicitIds.length===1?'':'s'} set — will compile`
         : `\u2713 starting relic set via "${starterRelic.name||'Untitled'}" (rarity Starter) — will compile`;
       status.style.color = '#7fa87a';
-      status.title = 'You need a starter relic for your character to compile.';
+      status.title = 'You need at least one starter relic for your character to compile.';
     }else{
       status.textContent = '\u25cb no starting relic set — compiling blocked';
       status.style.color = 'var(--accent-bright)';
-      status.title = 'The base game unconditionally reads this character\'s first starting relic the instant it\'s clicked on the character-select screen, with no empty check — without one, the game crashes on click, every time. Pick one above, or mark a relic\'s rarity as "Starter", before exporting.';
+      status.title = 'The base game unconditionally reads this character\'s first starting relic the instant it\'s clicked on the character-select screen, with no empty check — without at least one, the game crashes on click, every time. Check at least one relic above, or mark a relic\'s rarity as "Starter", before exporting.';
     }
   }
 }
 function openRelicEditor(relicId){
   const relic = state.relics.find(r=>r.id===relicId);
   if(!Array.isArray(relic.modifiers)) relic.modifiers = []; // upgrade path for relics saved before this field existed
+  pendingRelicIconDataUrl = undefined;
   openModal(`
     <div class="modal-head"><h3>Edit Relic</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
       <label>Name</label><input type="text" id="m-name" value="${escapeAttr(relic.name)}">
       <label>Rarity</label><select id="m-rarity">${optList(["Starter","Common","Uncommon","Rare","Shop","Event","Ancient"], relic.rarity)}</select>
+
+      <label style="margin-top:14px">Icon <span class="dim-hint">(optional, ${RELIC_ICON_WIDTH}&times;${RELIC_ICON_HEIGHT}px)</span></label>
+      <div class="art-preview-frame" id="rl-icon-frame" style="aspect-ratio:${RELIC_ICON_WIDTH}/${RELIC_ICON_HEIGHT}; max-width:160px; cursor:pointer;">
+        <img id="rl-icon-img" style="display:none">
+        <div class="art-placeholder" id="rl-icon-placeholder">Click to upload (optional)</div>
+        <div class="art-click-hint">Click to change</div>
+        <div class="art-icon-overlay">
+          <button class="ghost icon-btn icon-btn-danger" id="rl-icon-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+          </button>
+        </div>
+      </div>
+      <input type="file" class="art-upload-input" id="rl-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+      <div class="art-field-error" id="rl-icon-error"></div>
+
       <label>Flavor text</label><textarea id="m-flavor">${escapeHtml(relic.flavorText||'')}</textarea>
       <label style="margin-top:20px">Effects</label>
       <div id="effects-list"></div>
@@ -13685,13 +13720,67 @@ function openRelicEditor(relicId){
   `);
   renderEffectsList(relic, HOOK_TRIGGERS);
   renderModifiersList(relic);
+
+  // Icon preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
+  // commitAsset pattern openEpochEditor's portrait field uses, wired by
+  // hand here for the same reason (this modal is generated per-relic).
+  const iconFrame = document.getElementById('rl-icon-frame');
+  const iconImg = document.getElementById('rl-icon-img');
+  const iconPh = document.getElementById('rl-icon-placeholder');
+  const iconUpload = document.getElementById('rl-icon-upload');
+  const iconClear = document.getElementById('rl-icon-clear');
+  const iconError = document.getElementById('rl-icon-error');
+
+  function refreshIconPreview(){
+    const url = pendingRelicIconDataUrl !== undefined
+      ? pendingRelicIconDataUrl
+      : findAssetDataUrl(relic.iconAssetRef, 'relicIcon');
+    if(url){ iconImg.src = url; iconImg.style.display = ''; iconPh.style.display = 'none'; iconClear.style.display = ''; }
+    else { iconImg.style.display = 'none'; iconImg.removeAttribute('src'); iconPh.style.display = ''; iconClear.style.display = 'none'; }
+  }
+  refreshIconPreview();
+  iconFrame.addEventListener('click', ()=> iconUpload.click());
+  iconUpload.addEventListener('change', ev=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    iconError.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, RELIC_ICON_WIDTH, RELIC_ICON_HEIGHT)).then(result=>{
+      if(result.resized){
+        iconError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${RELIC_ICON_WIDTH}×${RELIC_ICON_HEIGHT}px.`;
+        iconError.classList.add('art-field-note');
+        iconError.style.display = 'block';
+      } else {
+        iconError.classList.remove('art-field-note');
+      }
+      pendingRelicIconDataUrl = result.dataUrl;
+      refreshIconPreview();
+    }).catch(err=>{
+      iconError.classList.remove('art-field-note');
+      iconError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+      iconError.style.display = 'block';
+      iconUpload.value = '';
+    });
+  });
+  iconClear.onclick = (ev)=>{
+    ev.stopPropagation();
+    pendingRelicIconDataUrl = null;
+    refreshIconPreview();
+  };
+
   document.getElementById('add-effect').onclick = ()=>{ relic.effects.push({trigger:'OnCombatStart', conditions:[], actions:[]}); renderEffectsList(relic, HOOK_TRIGGERS); };
   document.getElementById('add-modifier').onclick = ()=>{ relic.modifiers.push(blankModifier(Object.keys(MODIFIER_HOOKS)[0])); renderModifiersList(relic); };
-  document.getElementById('delete-relic').onclick = ()=>{ state.relics = state.relics.filter(r=>r.id!==relicId); save(); renderRelics(); closeModal(); };
+  document.getElementById('delete-relic').onclick = ()=>{
+    if(relic.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==relic.iconAssetRef);
+    state.relics = state.relics.filter(r=>r.id!==relicId);
+    save(); renderRelics(); closeModal();
+  };
   document.getElementById('save-relic').onclick = ()=>{
     relic.name = document.getElementById('m-name').value;
     relic.rarity = document.getElementById('m-rarity').value;
     relic.flavorText = document.getElementById('m-flavor').value;
+    if(pendingRelicIconDataUrl !== undefined){
+      relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
+    }
     save(); renderRelics(); closeModal();
   };
 }

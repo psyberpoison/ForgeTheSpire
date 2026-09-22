@@ -1823,6 +1823,12 @@ function validateCharacterPackage(pkg) {
     if (ch.startingRelicId && !relicIds.has(ch.startingRelicId)) {
       errors.push(`character.startingRelicId "${ch.startingRelicId}" isn't defined in relics[].`);
     }
+    // Multiple-starter-relics round — startingRelicIds (array) is now the
+    // primary field; each id must reference a real relic, same as the
+    // legacy singular check above.
+    (ch.startingRelicIds || []).forEach(id => {
+      if (!relicIds.has(id)) errors.push(`character.startingRelicIds references "${id}", which isn't defined in relics[].`);
+    });
     // [VERIFIED via real sts2.dll IL disassembly, 2026-09-01 — see
     // TOOLCHAIN_FINDINGS.md "character-select click crash #3"]
     // MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NCharacterSelectScreen
@@ -1832,13 +1838,14 @@ function validateCharacterPackage(pkg) {
     // ArgumentOutOfRangeException right there and the click does nothing
     // (no highlight, no splash art), which is exactly the bug that made
     // every Forge-exported character before this round unselectable.
-    // backend/compiler.js resolves the same explicit-id-then-Starter-
-    // rarity fallback this check mirrors — this only fails when NEITHER
-    // resolves, i.e. the export really would ship a guaranteed-crash
-    // character.
+    // backend/compiler.js resolves the same explicit-array-then-legacy-
+    // singular-then-Starter-rarity fallback this check mirrors — this
+    // only fails when NONE of the three resolves, i.e. the export really
+    // would ship a guaranteed-crash character.
     const hasStarterRarityRelic = relics.some(r => r && r.rarity === 'Starter');
-    if (!ch.startingRelicId && !hasStarterRarityRelic) {
-      errors.push('character has no starting relic: set character.startingRelicId (pick one in the Relics panel\'s "Starting relic" dropdown), or mark one of relics[] as rarity "Starter". The real game crashes the instant this character is clicked on the select screen without one — see TOOLCHAIN_FINDINGS.md.');
+    const hasExplicitStartingRelics = Array.isArray(ch.startingRelicIds) && ch.startingRelicIds.length > 0;
+    if (!hasExplicitStartingRelics && !ch.startingRelicId && !hasStarterRarityRelic) {
+      errors.push('character has no starting relic: pick at least one in the Relics panel\'s "Starting relics" checklist, or mark one of relics[] as rarity "Starter". The real game crashes the instant this character is clicked on the select screen without one — see TOOLCHAIN_FINDINGS.md.');
     }
   }
 

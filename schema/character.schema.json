@@ -76,7 +76,15 @@
           "description": "Card ids in the starting deck. Not deduplicated — a card id may appear more than once, and how many times it appears IS its starting-deck quantity (e.g. 5 copies of a Strike's id = 5 starting Strikes). This is a direct consequence of how backend/compiler.js emits StartingDeck: each entry maps 1:1 to its own `ModelDb.Card<T>()` expression with no dedup, so N copies of an id really do produce N separate starting-deck instances. The frontend's card board Quantities dropdown is what edits this field to more than one copy per card."
         },
         "startingRelicId": {
-          "type": "string"
+          "type": "string",
+          "description": "LEGACY, superseded by startingRelicIds (array) below as of the multi-starter-relic round. Kept only so a project saved before that round still loads \u2014 the frontend migrates this into startingRelicIds[] on load and no longer writes to this field. backend/compiler.js still reads it as a fallback for old saved packages that reach generateProject() directly without going through the frontend's migration pass."
+        },
+        "startingRelicIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "[VERIFIED via real sts2.dll IL disassembly, 2026-09-01 \u2014 see TOOLCHAIN_FINDINGS.md \"character-select click crash #3\"] CharacterModel.StartingRelics is a real IReadOnlyList<RelicModel> \u2014 genuinely a list, not capped at one entry (NCharacterSelectScreen.SelectCharacter() only ever unconditionally reads index [0], which is why a NON-EMPTY list was the original hard requirement, but nothing caps it above 1). Relic ids here, in order, become this character's StartingRelics. Resolution order (backend/compiler.js): this array if non-empty, else the legacy singular startingRelicId if set, else every relics[] entry with rarity \"Starter\"."
         },
         "gender": {
           "enum": [
@@ -840,7 +848,8 @@
           "description": "Matches the real MegaCrit.Sts2.Core.Entities.Relics.RelicRarity enum exactly (confirmed via reflect-baselib round 6) \u2014 there is no 'Boss' relic rarity in the real game."
         },
         "iconAssetRef": {
-          "type": "string"
+          "type": "string",
+          "description": "Optional 256\u00d7256px relic icon. [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] RelicModel.get_Icon() calls the virtual RelicModel.get_PackedIconPath() (a callvirt, confirmed via IL) and passes its return straight into Godot.ResourceLoader.Load<Texture2D>(path, null, cacheMode) \u2014 no atlas-specific gating, no .tres requirement (that generic Load call, MemberRef#562 in the raw table, was resolved by hand since il_dump.py's own typedef_or_ref_name() has a gap for a MethodSpec whose base is a MemberRef). Since PackedIconPath is virtual (unlike EpochModel.Portrait, which needed a Harmony patch in Round 203), a generated relic subclass can simply override it to point at a raw PNG \u2014 no Harmony patch needed, see backend/compiler.js's writeRelicIcon/RELIC_ICON_PREFIX."
         },
         "flavorText": {
           "type": "string"

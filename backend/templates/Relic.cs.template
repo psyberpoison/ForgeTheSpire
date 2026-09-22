@@ -94,6 +94,7 @@ public sealed class {{className}} : CustomRelicModel
 {
     public override RelicRarity Rarity => RelicRarity.{{rarity}};
     public override bool ShouldReceiveCombatHooks => true;
+{{iconOverride}}
 
 {{hookMethods}}
 }
