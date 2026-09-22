@@ -826,8 +826,18 @@
   }
   .trig-cat-row{position:relative; color:var(--cat-color); font-weight:600; white-space:nowrap;}
   .trig-cat-row-arrow{opacity:.6; font-weight:400;}
+  /* [Tyler: "there is a small gap after the selection items. if the
+     user moves their cursor slowly then it removes what they had
+     selected"] The old margin-left:4px left a dead strip between the
+     category row (which keeps the submenu open only via :hover/
+     :focus-within on ITSELF) and the submenu box. Crossing that strip
+     takes the cursor outside both hoverable boxes for a moment, so the
+     :hover chain breaks and the submenu closes before the cursor
+     reaches it. Setting margin-left:0 makes the submenu sit flush
+     against the row (matching real OS flyouts, which never leave a
+     gap) so the cursor is always over one hoverable box or the other. */
   .trig-sub-list{
-    display:none; position:absolute; left:100%; top:-5px; margin-left:4px;
+    display:none; position:absolute; left:100%; top:-5px; margin-left:0;
     min-width:240px; max-height:320px; overflow-y:auto;
     border:1px solid var(--border); border-radius:var(--radius); background:var(--ink);
     padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:31;
