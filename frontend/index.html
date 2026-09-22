@@ -10152,7 +10152,7 @@ function openCardEditor(cardId){
                 </div>
                 <div style="flex:0 0 160px; max-width:160px">
                   <label>Star cost change</label>
-                  <input type="number" id="m-upgrade-starcostdelta" value="0" title="Added to the star cost when upgraded — same idea as Cost change, for stars instead of energy. [UNVERIFIED] card.starCost itself doesn't compile into the mod yet (CardModel.BaseStarCost is real but read-only — see the Star cost field's own tooltip on the base tab), so this saves/previews here but compiles to nothing yet either.">
+                  <input type="number" id="m-upgrade-starcostdelta" value="0" title="Added to the star cost when upgraded — same idea as Cost change, for stars instead of energy. card.starCost itself doesn't compile into the mod yet (CardModel.BaseStarCost is real but read-only — see the Star cost field's own tooltip on the base tab), so this saves/previews here but compiles to nothing yet either.">
                 </div>
               </div>
               <label style="margin-top:16px">Upgrade effects <span style="font-weight:400; color:var(--parchment-dim); font-size:11px; text-transform:none; letter-spacing:0">(same shape as Effects — schema describes this as a diff applied at upgrade time)</span></label>
@@ -13074,7 +13074,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Remove all statuses from</span>${targetHtml}<span class="cond-word">.</span>`;
       break;
     case 'DrawCard': {
-      const nextTurnHtml = `<label class="a-check-label" title="Tyler: &quot;show a check box for 'Next turn' if the user wants the card to make you draw a number of cards next turn.&quot; [UNVERIFIED] — no confirmed API for either variant yet, just captures which stub text to emit."><input type="checkbox" class="a-drawnextturn" ${act.drawNextTurn?'checked':''}> Next turn</label>`;
+      const nextTurnHtml = `<label class="a-check-label" title="Tyler: &quot;show a check box for 'Next turn' if the user wants the card to make you draw a number of cards next turn.&quot; No confirmed API for either variant yet — just captures which stub text to emit."><input type="checkbox" class="a-drawnextturn" ${act.drawNextTurn?'checked':''}> Next turn</label>`;
       sentenceHtml = `${playerOnlyCardSentence('Draw')}${nextTurnHtml}`;
       break;
     }
