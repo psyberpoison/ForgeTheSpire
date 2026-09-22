@@ -8745,7 +8745,25 @@ const PET_SUPPORTED_TRIGGERS = ['OnPlay', 'OnAnyCardPlayed', 'OnDiscard', 'OnTur
 // THAT copy, so a CardPositionInHand condition's `cond.subject` value is
 // still never inspected server-side — this is a frontend-only vocabulary
 // merge, not a data-model/compiled-output change.
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'PetIsOut', 'CardPositionInHand'];
+// [Tyler, this round] "we've run into this issue before... If the
+// options in this menu don't reasonably belong behind a 'you' target,
+// then they shouldn't be in that menu. In this case, we already have a
+// 'that card' option that the 'played card...' options should fall
+// under." Exactly Round 66's CardPositionInHand pattern, one step
+// further: PlayedCardHasKeyword/PlayedCardHasTag/PlayedCardHasType were
+// showing up in the kind dropdown under EVERY subject (including "You"),
+// even though none of them read cond.subject at all — they always
+// compile off `cardPlay.Card` (see compiler.js's own cases), i.e. always
+// mean "that card," never "you." Unlike CardPositionInHand (real under
+// either This Card or That Card), these three only ever make sense under
+// That Card — checking your OWN card's keyword/tag/type at design time
+// isn't a runtime condition anyone would need. So they join
+// SUBJECT_CAPABLE_CONDITION_KINDS (to get the same subject dropdown
+// treatment) but conditionKindsForSubject below gates them to
+// subject==='ThatCard' specifically, not the wider isCardSubject check
+// CardPositionInHand uses.
+const THAT_CARD_ONLY_CONDITION_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType'];
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'PetIsOut', 'CardPositionInHand', ...THAT_CARD_ONLY_CONDITION_KINDS];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -8771,7 +8789,20 @@ const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'H
 function conditionKindsForSubject(eff, subject){
   const kinds = availableConditionKinds(eff);
   const isCardSubject = subject === 'ThisCard' || subject === 'ThatCard';
-  return kinds.filter(k => isCardSubject ? k.id === 'CardPositionInHand' : k.id !== 'CardPositionInHand');
+  return kinds.filter(k => {
+    if(k.id === 'CardPositionInHand') return isCardSubject;
+    // [Tyler, this round] See THAT_CARD_ONLY_CONDITION_KINDS' own comment
+    // above — these three only ever belong under "That Card," not "This
+    // Card" too (unlike CardPositionInHand, which is real under either).
+    if(THAT_CARD_ONLY_CONDITION_KINDS.includes(k.id)) return subject === 'ThatCard';
+    // Every other kind (HasStatusStacks, HpBelowPercent, etc.) is a
+    // creature-subject kind, not a card-subject one — the original
+    // isCardSubject-ternary here hid ALL of them once a card subject
+    // (This/That Card) was picked, showing ONLY CardPositionInHand.
+    // Preserve that: falling through to `true` here would leak creature
+    // kinds into the dropdown under This/That Card too.
+    return !isCardSubject;
+  });
 }
 function availableSubjects(eff){
   // [Round 66] `onlyForKind` entries (ThisCard/ThatCard) show up in EVERY
@@ -11995,17 +12026,23 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   // property write.
   if(subjectEl) subjectEl.onchange = (e)=>{
     const newSubject = e.target.value;
-    const wasCardSubject = cond.subject === 'ThisCard' || cond.subject === 'ThatCard';
-    const isCardSubject = newSubject === 'ThisCard' || newSubject === 'ThatCard';
-    if(isCardSubject !== wasCardSubject){
-      // [Round 66] Crossing the card/creature boundary — Position in hand
-      // is the only kind valid for a card subject, and none of the
-      // creature kinds (HasStatusStacks etc.) are valid for one either,
-      // so whatever kind was selected no longer belongs in the (now
-      // subject-filtered, see conditionKindsForSubject) kind dropdown.
-      // Switch it along with the subject rather than leaving cond.kind
-      // pointing at an option that just disappeared from the list.
-      const validKinds = conditionKindsForSubject(eff, newSubject);
+    // [Tyler, this round] Was `isCardSubject !== wasCardSubject` — a
+    // simple "crossed the card/creature boundary" check that worked fine
+    // when CardPositionInHand was the only card-subject kind (real under
+    // EITHER This Card or That Card, so switching between those two never
+    // needed a kind reset). Now that THAT_CARD_ONLY_CONDITION_KINDS exist
+    // (real under That Card only), a This Card <-> That Card switch can
+    // ALSO strand the current kind — e.g. "Played card is type" stays
+    // selected while subject flips to "This Card," where
+    // conditionKindsForSubject no longer offers it at all. Checking
+    // whether cond.kind is still in the new subject's own valid-kinds
+    // list catches every boundary that can actually strand a kind,
+    // including this new one, instead of hard-coding which subject pairs
+    // are "safe."
+    const validKinds = conditionKindsForSubject(eff, newSubject);
+    const kindStillValid = validKinds.some(k => k.id === cond.kind);
+    if(!kindStillValid){
+      const isCardSubject = newSubject === 'ThisCard' || newSubject === 'ThatCard';
       const fallbackKindId = isCardSubject ? 'CardPositionInHand' : (validKinds[0] ? validKinds[0].id : cond.kind);
       Object.keys(cond).forEach(k=> delete cond[k]);
       Object.assign(cond, blankCondition(fallbackKindId));
