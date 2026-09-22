@@ -3441,11 +3441,11 @@ function fixActionsForTrigger(actions, trigger){
 }
 function hookBindingHint(id){
   const shape = HOOK_TRIGGER_BINDING[id];
-  const noChoiceContext = NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(id);
-  if(shape === 'player'){
-    return 'Fires for real — binds a single Creature you can reference as "Self"/"You" in the actions/conditions below. This hook has no second party exposed, so "Enemy" targets and "Card Target" subjects aren’t available here.'
-      + (noChoiceContext ? ' This hook also has no real PlayerChoiceContext to work with, so "Deal Damage" can’t be used here at all, and "Modify Status" (Add) can’t target "All Enemies" here either — both need one. GainBlock/single-target ApplyStatus/RemoveStatus/ModifyHp are unaffected.' : '');
-  }
+  // [Tyler: "remove this text"] the 'player'-shape explanatory caveat
+  // (binding/Self-You/no-second-party/no-PlayerChoiceContext wording) was
+  // removed from display per Tyler's request — hiddenTargetsForTrigger/
+  // fixActionTargetForTrigger still silently enforce the real
+  // restrictions it used to describe, this just stops narrating them.
   if(shape === 'unbound') return 'Fires for real, but this hook’s real parameters don’t expose a confirmed player/target Creature yet — actions here compile but throw at runtime until a future round confirms a safe binding.';
   return '';
 }
