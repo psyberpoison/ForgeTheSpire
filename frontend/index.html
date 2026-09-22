@@ -902,7 +902,16 @@
      An explicit height (matching the same box-sizing:border-box math the
      selects already resolve to — 20px, 0.4px of rounding off their
      19.6px, imperceptible) is what actually closes it, live-verified. */
-  .condition-row .c-hand-position{width:3ch; min-width:0; box-sizing:border-box; height:20px;}
+  /* [Tyler] "that fixes the height, lets increase the width back to 3
+     digits" — width:3ch measured only 18px live, and with box-sizing:
+     border-box that 18px has to fit the padding (12px) and border
+     (~1.6px) INSIDE it too, leaving ~4.4px of actual content room —
+     nowhere near 3 digits (measured "000" at this font/size as 18px of
+     TEXT alone, before any padding). calc(3ch + 14px) adds that padding+
+     border back on top instead of eating it from the 3ch — tested "100"
+     directly in the live page first (32px total, no clipping, same
+     20px-tall box) before changing source. */
+  .condition-row .c-hand-position{width:calc(3ch + 14px); min-width:0; box-sizing:border-box; height:20px;}
   /* Round 103's real fix, still needed regardless of the above — the
      native spin-button UI has its own minimum width/height that a
      3-digit-wide box is still narrow enough to collide with. */
