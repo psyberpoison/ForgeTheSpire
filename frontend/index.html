@@ -234,6 +234,24 @@
   .tile.tile-has-art .tile-deck-badge{
     text-shadow:0 0 3px rgba(10,18,30,.9), 0 0 3px rgba(10,18,30,.9);
   }
+  /* Relic tile icon preview -- Tyler: "lets make the tiles for relics show
+     a preview of the icon on the right side." Distinct from the card
+     tile's tile-has-art full-tile background treatment above -- relics
+     keep their plain tile background/text and just get a small square
+     thumbnail pinned to the right side, since Tyler asked for "on the
+     right side" specifically rather than a full-art tile. Square to match
+     the relic icon's own fixed aspect ratio (RELIC_ICON_WIDTH/HEIGHT,
+     both 256, see renderRelics/openRelicEditor) so it's never stretched.
+     tile-has-icon's padding-right reserves room so the name/rarity text
+     wraps before reaching under the thumbnail instead of running beneath
+     it, same reasoning as .tile-card .t-name's padding-right above. */
+  .tile.tile-has-icon{padding-right:56px;}
+  .tile-icon-preview{
+    position:absolute; top:50%; right:10px; transform:translateY(-50%);
+    width:36px; height:36px; border-radius:4px;
+    border:1px solid var(--border-soft, var(--border));
+    object-fit:cover; background:var(--stone-2);
+  }
   .card-selection-bar{
     display:flex; align-items:center; flex-wrap:wrap; gap:14px;
     margin:-6px 0 16px; padding:10px 14px;
@@ -13733,9 +13751,14 @@ function renderRelics(){
   relicsGrid.innerHTML = '';
   state.relics.forEach(relic=>{
     const t = document.createElement('div');
-    t.className = 'tile';
+    // Round -- relic tile icon preview: same state.assets{id,kind,dataUrl}
+    // lookup findAssetDataUrl already provides for the relic editor's own
+    // icon-upload preview (openRelicEditor's rl-icon-frame), reused here
+    // so the grid tile shows the same icon without a separate lookup path.
+    const iconUrl = findAssetDataUrl(relic.iconAssetRef, 'relicIcon');
+    t.className = 'tile' + (iconUrl ? ' tile-has-icon' : '');
     const starterBadge = (Array.isArray(state.character.startingRelicIds) && state.character.startingRelicIds.includes(relic.id)) ? ' <span title="Starting relic" style="color:#c9a24a">\u2605</span>' : '';
-    t.innerHTML = `<div class="t-name">${escapeHtml(relic.name||'Untitled')}${starterBadge}</div><div class="t-meta">${relic.rarity}</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(relic.name||'Untitled')}${starterBadge}</div><div class="t-meta">${relic.rarity}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
     t.onclick = ()=> openRelicEditor(relic.id);
     relicsGrid.appendChild(t);
   });
