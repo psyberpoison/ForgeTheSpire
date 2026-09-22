@@ -13687,24 +13687,35 @@ function openRelicEditor(relicId){
   openModal(`
     <div class="modal-head"><h3>Edit Relic</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <label>Name</label><input type="text" id="m-name" value="${escapeAttr(relic.name)}">
-      <label>Rarity</label><select id="m-rarity">${optList(["Starter","Common","Uncommon","Rare","Shop","Event","Ancient"], relic.rarity)}</select>
-
-      <label style="margin-top:14px">Icon <span class="dim-hint">(optional, ${RELIC_ICON_WIDTH}&times;${RELIC_ICON_HEIGHT}px)</span></label>
-      <div class="art-preview-frame" id="rl-icon-frame" style="aspect-ratio:${RELIC_ICON_WIDTH}/${RELIC_ICON_HEIGHT}; max-width:160px; cursor:pointer;">
-        <img id="rl-icon-img" style="display:none">
-        <div class="art-placeholder" id="rl-icon-placeholder">Click to upload (optional)</div>
-        <div class="art-click-hint">Click to change</div>
-        <div class="art-icon-overlay">
-          <button class="ghost icon-btn icon-btn-danger" id="rl-icon-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
-          </button>
+      <div style="display:flex; gap:24px; align-items:flex-start;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; gap:12px;">
+            <div style="flex:1; min-width:0;">
+              <label>Name</label><input type="text" id="m-name" value="${escapeAttr(relic.name)}">
+            </div>
+            <div style="flex:0 0 160px;">
+              <label>Rarity</label><select id="m-rarity">${optList(["Starter","Common","Uncommon","Rare","Shop","Event","Ancient"], relic.rarity)}</select>
+            </div>
+          </div>
+          <label style="margin-top:14px">Flavor text</label><textarea id="m-flavor">${escapeHtml(relic.flavorText||'')}</textarea>
+        </div>
+        <div style="flex:0 0 160px;">
+          <label>Icon <span class="dim-hint">(optional, ${RELIC_ICON_WIDTH}&times;${RELIC_ICON_HEIGHT}px)</span></label>
+          <div class="art-preview-frame" id="rl-icon-frame" style="aspect-ratio:${RELIC_ICON_WIDTH}/${RELIC_ICON_HEIGHT}; max-width:160px; cursor:pointer;">
+            <img id="rl-icon-img" style="display:none">
+            <div class="art-placeholder" id="rl-icon-placeholder">Click to upload (optional)</div>
+            <div class="art-click-hint">Click to change</div>
+            <div class="art-icon-overlay">
+              <button class="ghost icon-btn icon-btn-danger" id="rl-icon-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              </button>
+            </div>
+          </div>
+          <input type="file" class="art-upload-input" id="rl-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <div class="art-field-error" id="rl-icon-error"></div>
         </div>
       </div>
-      <input type="file" class="art-upload-input" id="rl-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
-      <div class="art-field-error" id="rl-icon-error"></div>
 
-      <label>Flavor text</label><textarea id="m-flavor">${escapeHtml(relic.flavorText||'')}</textarea>
       <label style="margin-top:20px">Effects</label>
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
