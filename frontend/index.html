@@ -689,6 +689,13 @@
      by measuring the real rendered width, not assumed from the CSS alone. */
   .action-row-sentence input.as-amount, .action-row-sentence input.as-hitcount{width:48px; flex:none;}
   .action-row-sentence .as-target{min-width:70px; field-sizing:content;}
+  /* [Round 206] Tyler: "lets give that box the same slim treatment as
+     the others. the length should match the selected option." Same
+     field-sizing:content trick as-target uses above, just no artificial
+     min-width floor -- both real options ("HP"/"Max HP") are already
+     short, so there's no "An Enemy"-style long value to guard a minimum
+     width against. */
+  .action-row-sentence .as-hpkind{min-width:0; field-sizing:content;}
   .action-row-sentence .a-scale-subject{min-width:150px;}
   /* [Round 82] Tight "[amount]x[status][subject]" inline scaling unit —
      see the DealDamage sentence case's own comment. */
@@ -12933,7 +12940,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // the word" shape modeSelectHtml already uses for Gain/Lose. Built
       // by hand here (not via amountForTargetSentence, which only takes a
       // plain-text noun) since the noun itself is now the control.
-      const hpKindSelectHtml = `<select class="a-hpkind" title="[VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] &quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses — see backend/templates/ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for the full evidence."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
+      const hpKindSelectHtml = `<select class="a-hpkind as-hpkind" title="[VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] &quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses — see backend/templates/ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for the full evidence."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
       sentenceHtml = `${modeSelectHtml}${amountHtml}${useXAmountHtml}${hpKindSelectHtml}<span class="cond-word">for</span>${targetHtml}<span class="cond-word">${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
       break;
     }
