@@ -13687,8 +13687,8 @@ function openRelicEditor(relicId){
   openModal(`
     <div class="modal-head"><h3>Edit Relic</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <div style="display:flex; gap:24px; align-items:flex-start;">
-        <div style="flex:1; min-width:0;">
+      <div style="display:flex; gap:24px; align-items:stretch;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <div style="display:flex; gap:12px;">
             <div style="flex:1; min-width:0;">
               <label>Name</label><input type="text" id="m-name" value="${escapeAttr(relic.name)}">
@@ -13697,7 +13697,7 @@ function openRelicEditor(relicId){
               <label>Rarity</label><select id="m-rarity">${optList(["Starter","Common","Uncommon","Rare","Shop","Event","Ancient"], relic.rarity)}</select>
             </div>
           </div>
-          <label style="margin-top:14px">Flavor text</label><textarea id="m-flavor">${escapeHtml(relic.flavorText||'')}</textarea>
+          <label style="margin-top:14px">Flavor text</label><textarea id="m-flavor" style="flex:1; min-height:60px;">${escapeHtml(relic.flavorText||'')}</textarea>
         </div>
         <div style="flex:0 0 160px;">
           <label>Icon <span class="dim-hint">(optional, ${RELIC_ICON_WIDTH}&times;${RELIC_ICON_HEIGHT}px)</span></label>
