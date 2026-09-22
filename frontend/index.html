@@ -763,22 +763,26 @@
   /* Round 19 originally gave relics/mechanics a categorized, color-coded
      bubble picker here (cards kept the plain <select class="eb-trigger">)
      that collapsed to a single summary bubble once a trigger was chosen.
-     [This round, part 1 — Tyler: "something about this menu is hard to
-     read"] Replaced with a real <select> + colored <optgroup> headers,
-     same fix Round 157/158 already picked for the identical complaint on
-     the Action Type dropdown. [This round, part 2 — Tyler: "is it
-     possible to have two columns... the list is still quite long"] A
-     native select's popup can't be reshaped by CSS, so this became two
-     cascading real <select>s instead — Category (.trig-cat-select,
-     colored via --cat-color to keep the color-coding Tyler liked) then
-     Trigger (.trig-select, scoped to just that category so it's always
-     short) — see renderTriggerPicker's own header comment for the full
-     reasoning. The .trig-cat/.trig-chip* rules the original bubble grid
-     used are gone (dead now that renderTriggerPicker never emits that
-     markup); .eb-trigger-picker itself stays as a thin wrapper div and
-     permanently gets .collapsed's "no heavy panel" treatment now, since
-     neither select needs the bordered/padded box the multi-row grid
-     did. */
+     Went through 3 shapes since then chasing the same underlying "long
+     categorized list is hard to navigate" problem — see
+     renderTriggerPicker's own header comment for the full history
+     (native <select>+optgroups, then two cascading <select>s, now a real
+     custom cascading flyout menu). This is the current one:
+     .trig-picker-btn is the always-visible colored summary button
+     (--cat-color set to whichever trigger is currently picked); it opens
+     .trig-picker-list (reusing the app's existing .picker-wrap/
+     .picker-list/.picker-option pattern and its document-level
+     click-outside-closes listener — see mergedStatusPickerHtml's own
+     comment for that pattern's origin), a column of CATEGORY rows
+     (.trig-cat-row, each individually colored via its OWN --cat-color —
+     a real per-row style on a real div, unlike a native <select>'s
+     popup, so there's no way for one category's color to leak onto
+     another's). Hovering (or tabbing into, via :focus-within) a category
+     row reveals its TRIGGER flyout beside it (.trig-sub-list) — pure CSS
+     :hover/:focus-within, no JS needed for the submenu's own open/close.
+     .eb-trigger-picker keeps the .collapsed treatment permanently (no
+     heavy bordered panel) since the button + flyout menu never need it
+     either. */
   .eb-trigger-picker{
     display:flex; flex-direction:column; gap:10px; margin-bottom:10px;
     padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--stone-2);
@@ -786,11 +790,27 @@
   .eb-trigger-picker.collapsed{
     padding:0; border:none; background:transparent; margin-bottom:8px;
   }
-  .trig-cat-select{
-    flex:0 0 150px; min-width:0; font-weight:600;
-    background:var(--cat-color); border-color:var(--cat-color); color:#0a121e;
+  .trig-picker-btn{
+    font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:600;
+    padding:6px 12px; border-radius:999px; border:1px solid var(--cat-color);
+    background:var(--cat-color); color:#0a121e; cursor:pointer;
   }
-  .trig-select{flex:1; min-width:0;}
+  .trig-picker-btn::after{content:' \25BE'; opacity:.65; font-weight:400;}
+  .trig-picker-list{
+    position:absolute; z-index:30; top:100%; left:0; margin-top:4px;
+    width:300px; max-height:none; overflow:visible; padding:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .trig-cat-row{position:relative; color:var(--cat-color); font-weight:600;}
+  .trig-cat-row-arrow{opacity:.6; font-weight:400;}
+  .trig-sub-list{
+    display:none; position:absolute; left:100%; top:-5px; margin-left:4px;
+    min-width:240px; max-height:320px; overflow-y:auto;
+    border:1px solid var(--border); border-radius:var(--radius); background:var(--ink);
+    padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:31;
+  }
+  .trig-cat-row:hover .trig-sub-list, .trig-cat-row:focus-within .trig-sub-list{display:block;}
+  .trig-sub-list .picker-option{color:var(--parchment); font-weight:normal;}
   /* Conditions render BEFORE "Then:"/actions again (natural "If... Then..."
      reading order — a round putting Then first read as though the action
      wasn't really gated by the condition below it, per Tyler: "we moved the
@@ -15398,30 +15418,45 @@ function triggerOptList(values, selected){
 //
 // [This round, part 1 — Tyler: "something about this menu is hard to
 // read. I can't put my finger on it though"] Converted to a real
-// <select> with colored <optgroup> headers — same fix Round 157/158
-// already picked for the identical "long categorized list is hard to
-// navigate" complaint on the Action Type dropdown. Fixed the actual
-// readability bug too: every chip's TEXT used to be a flat, uncolored
-// --parchment-dim gray while its BORDER was vividly category-colored,
-// so the color-coding never reached the part you actually read.
+// <select> with colored <optgroup> headers, matching the fix Round
+// 157/158 already picked for the same complaint on the Action Type
+// dropdown.
 //
-// [This round, part 2 — Tyler, after seeing the single <select>: "is it
-// possible to have two columns... I like the color scheme for
-// legibility, but the list is still quite long"] A native <select>'s
-// open popup is drawn by the browser/OS, not this page — there's no CSS
-// that reshapes it into columns. Instead: split into TWO cascading real
-// <select>s, same pattern as a "Country -> State" picker. The first
-// picks a CATEGORY (5-ish entries, always short) and is itself colored
-// via --cat-color (background/border/text tinted to whichever category
-// is active) so the color-coding Tyler liked is still front and center
-// even with no in-popup option coloring; the second picks a TRIGGER, but
-// now scoped to just that one category's triggers, so it's always short
-// too (2-9 items instead of the full ~35) — the actual "list is still
-// quite long" complaint is what this solves, not a column layout.
-// Changing the category always resets the trigger to that category's
-// first entry (same "cascading select can't be in an invalid in-between
-// state" convention as Country/State) and fires onSelect for real, same
-// as picking a trigger directly.
+// [This round, part 2 — Tyler: "is it possible to have two columns...
+// the list is still quite long"] Tried splitting into two cascading
+// real <select>s (Category -> Trigger). Tyler's follow-up caught two
+// real problems with that: (a) "the color is all off. Every entry has
+// the color of what you have selected" — Chromium draws a native
+// <select>'s open popup using the CLOSED select's own inline
+// background/color as the default for every option, so styling the
+// select itself per-category made the WHOLE popup paint one flat color
+// instead of just the closed control; there's no CSS fix for that, it's
+// how the browser renders its own native list. (b) a reference
+// screenshot of a real nested/flyout OS menu — "can we have cascading
+// menus? like this?" — genuinely different from two side-by-side
+// dropdowns.
+//
+// Both point to the same fix: a real custom cascading menu instead of
+// native <select> elements — reusing this app's existing
+// .picker-wrap/.picker-list/.picker-option pattern (see
+// mergedStatusPickerHtml/wireMergedStatusPicker and the deck-quantities
+// picker for other consumers of the same pattern, including its
+// document-level click-outside-closes listener, which targets
+// .picker-wrap.open generically so this needs no new listener of its
+// own). Structure: a small colored summary button (.trig-picker-btn,
+// the direct descendant of Round 19's old "collapse to one summary
+// bubble" idea) opens a .picker-list of CATEGORY rows
+// (.trig-cat-row — each one colored via its OWN --cat-color, a real
+// per-row style on a real div this time, not a native popup option, so
+// there's no leaking-one-color-onto-everything bug possible); hovering
+// (or, via :focus-within, tabbing into) a category row reveals a
+// TRIGGER flyout beside it (.trig-sub-list, plain readable text, no
+// per-item color needed since the category it belongs to is already
+// obvious from which flyout it's in) — pure CSS :hover/:focus-within
+// reveal, no JS state machine for open/close of the submenu itself.
+// Clicking a trigger in the flyout commits the pick and closes
+// everything, same "collapses back down after a real change" UX Tyler
+// asked for back in Round 19.
 //
 // container — the empty <div class="eb-trigger-picker"> to fill.
 // values — the SAME triggerOptions array renderEffectsList already
@@ -15434,10 +15469,6 @@ function triggerOptList(values, selected){
 //   contract as before (refreshHint/refreshConditions/renderActionRows —
 //   see renderEffectsList — react to it; this function doesn't re-render
 //   itself, the caller's own effect-block re-render already does).
-//
-// .eb-trigger-picker keeps the `.collapsed` class applied permanently
-// (see that class's own comment) since two side-by-side <select>s never
-// need the old multi-row bubble grid's bordered/padded panel either.
 function renderTriggerPicker(container, values, selected, onSelect){
   const valueSet = new Set(values);
   const rows = TRIGGER_CATEGORIES
@@ -15452,39 +15483,49 @@ function renderTriggerPicker(container, values, selected, onSelect){
   const leftover = values.filter(t => !categorized.has(t));
   if(leftover.length) rows.push({ id:'other', label:'Other', color:'#7a8699', triggers:leftover });
 
-  const catById = id => rows.find(c => c.id === id) || rows[0];
-  let activeCatId = (rows.find(c => c.triggers.includes(selected)) || rows[0]).id;
+  const catColorFor = t => {
+    const cat = rows.find(c => c.triggers.includes(t));
+    return cat ? cat.color : '#7a8699';
+  };
 
   function render(){
-    const activeCat = catById(activeCatId);
+    container.classList.remove('open');
     container.innerHTML = `
-      <div style="display:flex; gap:8px;">
-        <select class="trig-cat-select" style="--cat-color:${activeCat.color}">
-          ${rows.map(c => `<option value="${c.id}" ${c.id===activeCat.id?'selected':''}>${escapeHtml(c.label)}</option>`).join('')}
-        </select>
-        <select class="trig-select">
-          ${activeCat.triggers.map(t => `<option value="${t}" ${t===selected?'selected':''}>${escapeHtml(triggerLabel(t))}</option>`).join('')}
-        </select>
+      <button type="button" class="trig-picker-btn" style="--cat-color:${catColorFor(selected)}" title="Click to change trigger">${escapeHtml(triggerLabel(selected))}</button>
+      <div class="picker-list trig-picker-list">
+        ${rows.map(cat => `
+          <div class="picker-option trig-cat-row" style="--cat-color:${cat.color}" tabindex="0">
+            ${escapeHtml(cat.label)} <span class="trig-cat-row-arrow">›</span>
+            <div class="trig-sub-list">
+              ${cat.triggers.map(t => `<div class="picker-option${t===selected?' picker-option-current':''}" data-trigger="${t}">${escapeHtml(triggerLabel(t))}</div>`).join('')}
+            </div>
+          </div>
+        `).join('')}
       </div>
     `;
-    container.querySelector('.trig-cat-select').onchange = e=>{
-      activeCatId = e.target.value;
-      const newCat = catById(activeCatId);
-      const newTrigger = newCat.triggers[0];
-      const changed = newTrigger !== selected;
-      selected = newTrigger;
-      render();
-      if(changed) onSelect(newTrigger);
+    container.querySelector('.trig-picker-btn').onclick = (e)=>{
+      e.stopPropagation();
+      const willOpen = !container.classList.contains('open');
+      // Close any other open picker first (deck quantities, a status
+      // search box, etc.) — same convention the deck-qty picker's own
+      // toggle button uses, since the shared document-level listener
+      // only closes pickers on an OUTSIDE click.
+      document.querySelectorAll('.picker-wrap.open').forEach(w=>w.classList.remove('open'));
+      if(willOpen) container.classList.add('open');
     };
-    container.querySelector('.trig-select').onchange = e=>{
-      const newTrigger = e.target.value;
-      const changed = newTrigger !== selected;
-      selected = newTrigger;
-      if(changed) onSelect(newTrigger);
-    };
+    container.querySelectorAll('.picker-option[data-trigger]').forEach(optEl=>{
+      optEl.onclick = (e)=>{
+        e.stopPropagation();
+        const newTrigger = optEl.dataset.trigger;
+        const changed = newTrigger !== selected;
+        selected = newTrigger;
+        render();
+        if(changed) onSelect(newTrigger);
+      };
+    });
   }
 
-  container.classList.add('collapsed');
+  container.classList.add('picker-wrap', 'collapsed');
   render();
 }
 // Same pattern as triggerOptList above, for the action TYPE dropdown's
