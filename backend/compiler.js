@@ -1642,7 +1642,26 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // unchanged [BEST EFFORT] real ForgeActions methods (see
       // TOOLCHAIN_FINDINGS.md "reflect-baselib round 7") — `mode` just
       // picks which one, same amount/scaling resolution either way.
+      //
+      // [Round 204, Tyler: "we need to add an option to affect max HP
+      // instead of just current"] `hpKind === 'max'` routes through the
+      // separate, real CreatureCmd.GainMaxHp/LoseMaxHp pair instead (see
+      // ForgeActions.cs.template's own comment on GainMaxHp/LoseMaxHp for
+      // the IL evidence) — a genuinely different pair of real methods
+      // from LoseHpInternal/HealInternal above, not a parameter on the
+      // same call. LoseMaxHp needs `choiceContext` (real, always in scope
+      // — every hook's first param, same as DrawCard's own real
+      // CardPileCmd.Draw call above) and `isFromCard`, which is exactly
+      // what ctx.cardPlayBound already tracks: whether this action is
+      // executing as part of a card's own OnPlay rather than a relic/
+      // mechanic/affliction hook.
       const mode = action.mode === 'Lose' ? 'Lose' : 'Gain';
+      if (action.hpKind === 'max') {
+        if (mode === 'Lose') {
+          return `        await ForgeActions.LoseMaxHp(choiceContext, ${targetExpr}, ${resolveAmountExpr(action)}, ${ctx.cardPlayBound ? 'true' : 'false'}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.LoseMaxHp] see ForgeActions.cs.template`;
+        }
+        return `        await ForgeActions.GainMaxHp(${targetExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.GainMaxHp] see ForgeActions.cs.template`;
+      }
       if (mode === 'Lose') {
         return `        ForgeActions.LoseHp(${targetExpr}, ${resolveAmountExpr(action)}); // [BEST EFFORT] see TOOLCHAIN_FINDINGS.md "reflect-baselib round 7"`;
       }

@@ -952,6 +952,13 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (typeof act.retainThisTurn !== 'boolean') errors.push(`${p}.retainThisTurn must be a boolean if present.`);
       if (act.type !== 'ReturnToHand') errors.push(`${p}: retainThisTurn is only meaningful on "ReturnToHand" — action type is "${act.type}".`);
     }
+    // [Round 204] hpKind -- ModifyHp only. Tyler: "we need to add an
+    // option to affect max HP instead of just current." Same
+    // type-restricted-enum shape as destination/tokenRefKind above.
+    if (act.hpKind !== undefined) {
+      if (!['current', 'max'].includes(act.hpKind)) errors.push(`${p}.hpKind "${act.hpKind}" is not one of: current, max.`);
+      if (act.type !== 'ModifyHp') errors.push(`${p}: hpKind is only meaningful on "ModifyHp" — action type is "${act.type}".`);
+    }
     // [Round 155] ReturnToHand ("Return This Card To Hand") — Tyler: "add
     // a 'return this card to hand' effect for the pile triggers that
     // arent in hand." Hard-rejected outside its one real, eligible

@@ -1597,6 +1597,10 @@
             "type": "boolean",
             "description": "type == \"ReturnToHand\" only. Tyler's companion checkbox: \"There should also be a check box to 'retain the card this turn' if the return to hand is selected.\" [VERIFIED via direct sts2.dll IL read] CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — its IL body is exactly `ldarg.0; ldc.i4.1; call set_HasSingleTurnRetain; ret`, and CardModel.ShouldRetainThisTurn's own real getter reads that same private flag back (`get_Keywords().Contains(<Retain keyword enum>) ? true : get_HasSingleTurnRetain()`) — i.e. a genuine, real one-turn-only version of the static Retain keyword, not an invented stand-in. When true, backend/compiler.js emits `this.GiveSingleTurnRetain();` immediately after the CardPileCmd.Add(...) return-to-hand call. Optional; omitted/false = no retain (unchanged behavior)."
           },
+          "hpKind": {
+            "enum": ["current", "max"],
+            "description": "type == \"ModifyHp\" only (round 204). Tyler: \"we need to add an option to affect max HP instead of just current.\" [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp(Creature, decimal) / LoseMaxHp(PlayerChoiceContext, Creature, decimal, bool) are real, confirmed public static methods, genuinely separate from the CurrentHp-affecting LoseHpInternal/HealInternal this action already used for the default \"current\" case (see backend/templates/ForgeActions.cs.template's own GainMaxHp/LoseMaxHp comment for the full IL evidence). \"max\" routes the existing Gain/Lose `mode` dropdown through these real max-HP methods instead — same amount/scaling resolution either way, just a different pair of real calls underneath. Optional; omitted defaults to \"current\" (unchanged behavior)."
+          },
           "destination": {
             "enum": [
               "Hand",
