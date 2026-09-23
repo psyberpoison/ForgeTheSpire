@@ -4201,6 +4201,22 @@ const MODIFIER_HOOKS = {
   // MegaCrit.Sts2.Core.Combat.ICombatState separately) -- so calling them
   // off dealer.CombatState (interface-typed) compiles for real.
   ModifyUnblockedDamageTarget: { method: 'ModifyUnblockedDamageTarget', ret: 'Creature', params: 'Creature target, decimal amount, ValueProp props, Creature dealer', shape: 'creatureRedirect', playerExpr: 'dealer', targetExpr: 'target' },
+
+  // ---- Round 209 (2026-09-23) — closes #21 (modifyRoomRewards): real
+  // signature TryModifyRewards(Player player, List<Reward> rewards,
+  // AbstractRoom room) -- SAME param names ('player'/'rewards') as
+  // TryModifyRestSiteHealRewards above, so it reuses that hook's exact
+  // 'restSiteReward' shape/codegen verbatim (Add/Remove a GoldReward) with
+  // zero new code -- confirmed via the round207 full sts2.dll
+  // AbstractModel dump. TryModifyRewardsLate is the same real signature
+  // (late-pipeline variant) -- added as its own hook rather than folded
+  // into one entry since a relic/mechanic may want either or both timing
+  // points as separate overrides. NOTE: this does NOT close #25 ("card
+  // rewards can be rerolled") -- that needs a different mutation (toggle
+  // CanReroll=true on EXISTING CardReward entries, not Add/Remove Gold)
+  // and isn't built yet -- see claude/round207-208-passive-buildout-punchlist.md.
+  TryModifyRewards: { method: 'TryModifyRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyRewardsLate: { method: 'TryModifyRewardsLate', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
 };
 
 // "ref decimal modifiedCost" -> "modifiedCost" (declaration -> a plain

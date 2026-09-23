@@ -1271,7 +1271,8 @@
             "ShouldDisableRemainingRestSiteOptions", "ShouldTakeExtraTurn", "ShouldFlush", "ShouldEtherealTrigger",
             "ShouldGainStars", "ShouldAllowFreeTravel", "ShouldRefillMerchantEntry", "ShouldForcePotionReward",
             "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds",
-            "ModifyUnblockedDamageTarget"
+            "ModifyUnblockedDamageTarget",
+            "TryModifyRewards", "TryModifyRewardsLate"
           ]
         },
         "conditions": {

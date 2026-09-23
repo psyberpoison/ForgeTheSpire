@@ -8635,6 +8635,11 @@ const MODIFIER_HOOKS = {
   // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, mirrors
   // backend/compiler.js:MODIFIER_HOOKS' own round-208 comment.
   ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect this hit to an ally or enemy of the attacker instead of its original target' },
+
+  // ---- Round 209 (2026-09-23) — mirrors backend/compiler.js round-209
+  // comment. Reuses the existing 'restSiteReward' shape/UI verbatim.
+  TryModifyRewards: { method:'TryModifyRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room' },
+  TryModifyRewardsLate: { method:'TryModifyRewardsLate', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room (late)' },
 };
 // Grouped for the hook <select>'s <optgroup>s — same 4-shape-plus-deferred
 // breakdown as compiler.js:MODIFIER_HOOKS' own comment header.
