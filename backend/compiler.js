@@ -4103,8 +4103,8 @@ const MODIFIER_HOOKS = {
   // ---- Numeric modifiers (17) ----
   ModifyBlockAdditive: { method: 'ModifyBlockAdditive', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Add', playerExpr: 'target', targetExpr: null },
   ModifyBlockMultiplicative: { method: 'ModifyBlockMultiplicative', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: null },
-  ModifyDamageAdditive: { method: 'ModifyDamageAdditive', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'target', targetExpr: 'dealer' },
-  ModifyDamageMultiplicative: { method: 'ModifyDamageMultiplicative', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyDamageAdditive: { method: 'ModifyDamageAdditive', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyDamageMultiplicative: { method: 'ModifyDamageMultiplicative', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: 'dealer' },
   ModifyDamageCap: { method: 'ModifyDamageCap', ret: 'decimal', params: 'Creature target, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: null, lockedOp: null, playerExpr: 'target', targetExpr: 'dealer' },
   ModifyAttackHitCount: { method: 'ModifyAttackHitCount', ret: 'int', params: 'AttackCommand attack, int hitCount', shape: 'numeric', valueParam: 'hitCount', lockedOp: null, playerExpr: null, targetExpr: null },
   ModifyCardPlayCount: { method: 'ModifyCardPlayCount', ret: 'int', params: 'CardModel card, Creature target, int playCount', shape: 'numeric', valueParam: 'playCount', lockedOp: null, playerExpr: 'target', targetExpr: null },
@@ -4423,6 +4423,33 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       const val = `${rawVal}${litSuffix}`;
       const applyExpr = op === 'Set' ? val : (op === 'Multiply' ? `result * ${val}` : `result + ${val}`);
       body = `${bind}        ${hook.ret} result = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            result = ${applyExpr};\n        }\n        return result;`;
+    } else if (hook.shape === 'damageNumeric') {
+      // [Round 217] ModifyDamageAdditive/ModifyDamageMultiplicative-only
+      // shape -- closes Flag B (owner-scoping) and #43/#44 (damage TAKEN).
+      // Tyler's explicit direct answer (2026-09-23, resuming from the
+      // round 207-216 overnight session): these two hooks now ALWAYS
+      // auto-scope to the relic's own owner -- no author condition needed
+      // or offered -- a deliberate, acknowledged change to the
+      // already-shipped #41/#42 codegen (previously shape:'numeric' with
+      // ZERO owner-scoping at all, per Flag B's own finding that every
+      // real compiled example hand-writes this check itself). mod.
+      // damageDirection: 'Dealt' (default) -> dealer == this.Owner.Creature
+      // (#41 damageDealtFlat / #42 damageDealtPercent); 'Taken' -> target
+      // == this.Owner.Creature (#43 damageTakenPercent / #44
+      // damageTakenFlat). Both comparisons are [VERIFIED] straight off
+      // round206b's decompile of TheBurdenedNewCharacter_v3.dll's own
+      // Passive8 relic, which hand-writes exactly these two checks in its
+      // real compiled ModifyDamageAdditive/Multiplicative overrides.
+      // #45 damageTakenPerCardPlayed (a per-turn cards-played scaling
+      // counter) is NOT covered by this shape -- it needs its own stateful
+      // counter field, same class of gap as #48/#87/#92 -- deliberately
+      // left for its own round rather than guessed at here.
+      const direction = mod.damageDirection === 'Taken' ? 'Taken' : 'Dealt';
+      const scopeExpr = direction === 'Taken' ? 'target == this.Owner.Creature' : 'dealer == this.Owner.Creature';
+      const dnRawVal = typeof mod.numericValue === 'number' ? mod.numericValue : 0;
+      const dnVal = `${dnRawVal}m`;
+      const dnApplyExpr = hook.lockedOp === 'Multiply' ? `result * ${dnVal}` : `result + ${dnVal}`;
+      body = `${bind}        ${hook.ret} result = base.${hook.method}(${paramNames});\n        if ((${condExpr}) && ${scopeExpr})\n        {\n            result = ${dnApplyExpr};\n        }\n        return result;`;
     } else if (hook.shape === 'tryRefNumeric') {
       const rawVal = typeof mod.setValue === 'number' ? mod.setValue : 0;
       const val = `${rawVal}m`;

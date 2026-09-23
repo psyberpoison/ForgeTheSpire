@@ -8573,8 +8573,8 @@ const MODIFIER_HOOKS = {
 
   ModifyBlockAdditive: { method:'ModifyBlockAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:null, label:'Modify block gained (additive, locked to Add)' },
   ModifyBlockMultiplicative: { method:'ModifyBlockMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:null, label:'Modify block gained (multiplicative, locked to Multiply)' },
-  ModifyDamageAdditive: { method:'ModifyDamageAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:'dealer', label:'Modify damage dealt (additive, locked to Add)' },
-  ModifyDamageMultiplicative: { method:'ModifyDamageMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'dealer', label:'Modify damage dealt (multiplicative, locked to Multiply)' },
+  ModifyDamageAdditive: { method:'ModifyDamageAdditive', ret:'decimal', shape:'damageNumeric', lockedOp:'Add', targetExpr:'dealer', label:'Modify damage, flat (auto-scoped to you — deal or take)' },
+  ModifyDamageMultiplicative: { method:'ModifyDamageMultiplicative', ret:'decimal', shape:'damageNumeric', lockedOp:'Multiply', targetExpr:'dealer', label:'Modify damage, multiplicative (auto-scoped to you — deal or take)' },
   ModifyDamageCap: { method:'ModifyDamageCap', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:'dealer', label:'Modify the damage cap' },
   ModifyAttackHitCount: { method:'ModifyAttackHitCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify an attack\'s hit count' },
   ModifyCardPlayCount: { method:'ModifyCardPlayCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card\'s play count' },
@@ -8666,6 +8666,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Boolean gates', shape:'gate' },
   { label:'Boolean gates (room-type filterable)', shape:'gateRoomTypeFiltered' },
   { label:'Numeric modifiers', shape:'numeric' },
+  { label:'Damage modifiers (auto-scoped to you)', shape:'damageNumeric' },
   { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
   { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
   { label:'Try-modify power received (Buff/Debuff filter)', shape:'powerReceivedFilter' },
@@ -13831,6 +13832,7 @@ function blankModifier(hookId){
   if(hook.shape === 'gate') m.gateValue = true;
   else if(hook.shape === 'gateRoomTypeFiltered'){ m.gateValue = true; m.roomTypes = []; }
   else if(hook.shape === 'numeric'){ m.numericValue = 0; if(!hook.lockedOp) m.numericMode = 'Add'; }
+  else if(hook.shape === 'damageNumeric'){ m.numericValue = 0; m.damageDirection = 'Dealt'; }
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
   else if(hook.shape === 'powerReceivedFilter'){ m.setValue = 0; m.powerTypeFilter = 'Any'; }
@@ -13891,6 +13893,7 @@ function renderModifiersList(entity){
       });
       const nm = fieldsEl.querySelector('.mod-numeric-mode'); if(nm) nm.onchange = e=> mod.numericMode = e.target.value;
       const nv = fieldsEl.querySelector('.mod-numeric-value'); if(nv) nv.oninput = e=> mod.numericValue = parseFloat(e.target.value)||0;
+      const dd = fieldsEl.querySelector('.mod-damage-direction'); if(dd) dd.onchange = e=> mod.damageDirection = e.target.value;
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
       const ptf = fieldsEl.querySelector('.mod-power-type-filter'); if(ptf) ptf.onchange = e=> mod.powerTypeFilter = e.target.value;
       const bci = fieldsEl.querySelector('.mod-becomes-card-id'); if(bci) bci.onchange = e=> mod.becomesCardId = e.target.value || null;
@@ -13944,6 +13947,16 @@ function renderModifiersList(entity){
           : `<select class="mod-numeric-mode">${['Add','Multiply','Set'].map(o=>`<option value="${o}" ${((mod.numericMode||'Add')===o)?'selected':''}>${o}</option>`).join('')}</select><span class="cond-word">the result by</span>`}
         <input class="mod-numeric-value" type="number" step="any" value="${mod.numericValue??0}">
         ${hook.lockedOp ? `<div class="hint-small">This hook's own name locks its operation to "${hook.lockedOp}" — the mode dropdown is hidden because compiler.js ignores it here (see MODIFIER_HOOKS' lockedOp).</div>` : ''}`;
+      wireFields();
+    } else if(hook.shape === 'damageNumeric'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, ${hook.lockedOp} the result by</span>
+        <input class="mod-numeric-value" type="number" step="any" value="${mod.numericValue??0}">
+        <span class="cond-word">— scoped to</span>
+        <select class="mod-damage-direction">
+          <option value="Dealt" ${(mod.damageDirection||'Dealt')==='Dealt'?'selected':''}>damage YOU deal</option>
+          <option value="Taken" ${mod.damageDirection==='Taken'?'selected':''}>damage YOU take</option>
+        </select>
+        <div class="hint-small">[Round 217, resolves Flag B] Always auto-scoped to this relic's own owner — <code>dealer == this.Owner.Creature</code> for "damage YOU deal", <code>target == this.Owner.Creature</code> for "damage YOU take" — no author condition needed. Matches the real game's own compiled pattern (every real example hand-writes this exact check; see round206b's TheBurdenedNewCharacter_v3.dll Passive8 evidence). This is a deliberate behavior change from this hook's previous unscoped default, confirmed directly by Tyler.</div>`;
       wireFields();
     } else if(hook.shape === 'hpLossDisplayFixed'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, reduce HP lost by</span>
