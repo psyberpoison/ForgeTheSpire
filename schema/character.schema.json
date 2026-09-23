@@ -1274,7 +1274,8 @@
             "ModifyUnblockedDamageTarget",
             "TryModifyRewards", "TryModifyRewardsLate",
             "ModifyCardRewardCreationOptions", "ModifyCardRewardCreationOptionsLate",
-            "TryModifyCardRewardOptions", "TryModifyCardRewardOptionsLate"
+            "TryModifyCardRewardOptions", "TryModifyCardRewardOptionsLate",
+            "ModifyMerchantCardCreationResults"
           ]
         },
         "conditions": {

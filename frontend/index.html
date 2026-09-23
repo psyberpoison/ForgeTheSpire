@@ -8653,6 +8653,7 @@ const MODIFIER_HOOKS = {
   ModifyCardRewardCreationOptionsLate: { method:'ModifyCardRewardCreationOptionsLate', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards (late)' },
   TryModifyCardRewardOptions: { method:'TryModifyCardRewardOptions', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices' },
   TryModifyCardRewardOptionsLate: { method:'TryModifyCardRewardOptionsLate', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices (late)' },
+  ModifyMerchantCardCreationResults: { method:'ModifyMerchantCardCreationResults', ret:'void', shape:'cardListUpgradeVoid', targetExpr:null, label:'Auto-upgrade eligible shop cards' },
 
   // ---- Round 209 (2026-09-23) — mirrors backend/compiler.js round-209
   // comment. Reuses the existing 'restSiteReward' shape/UI verbatim.
@@ -8676,6 +8677,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Damage target redirect', shape:'creatureRedirect' },
   { label:'Card reward pool additions', shape:'cardRewardPoolAppend' },
   { label:'Card reward count', shape:'cardRewardCountDelta' },
+  { label:'Shop card auto-upgrade', shape:'cardListUpgradeVoid' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
 
@@ -13832,14 +13834,15 @@ function blankModifier(hookId){
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
   else if(hook.shape === 'powerReceivedFilter'){ m.setValue = 0; m.powerTypeFilter = 'Any'; }
-  else if(hook.shape === 'cardTransformOnAdd'){ m.becomesCardId = null; }
+  else if(hook.shape === 'cardTransformOnAdd'){ m.becomesCardId = null; m.autoUpgradeOnAdd = false; }
+  else if(hook.shape === 'cardListUpgradeVoid'){ /* no extra fields -- always upgrades whatever's eligible when conditions match */ }
   else if(hook.shape === 'keywordSet'){ m.keywordOp = 'Add'; m.keyword = CARD_KEYWORD_VALUES[0]; }
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
   else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
   else if(hook.shape === 'creatureRedirect'){ m.redirectMode = 'Ally'; }
   else if(hook.shape === 'cardRewardPoolAppend'){ m.addPools = []; }
-  else if(hook.shape === 'cardRewardCountDelta'){ m.rewardCountDelta = 1; }
+  else if(hook.shape === 'cardRewardCountDelta'){ m.rewardCountDelta = 1; m.autoUpgradeRewards = false; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13891,6 +13894,7 @@ function renderModifiersList(entity){
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
       const ptf = fieldsEl.querySelector('.mod-power-type-filter'); if(ptf) ptf.onchange = e=> mod.powerTypeFilter = e.target.value;
       const bci = fieldsEl.querySelector('.mod-becomes-card-id'); if(bci) bci.onchange = e=> mod.becomesCardId = e.target.value || null;
+      const aua = fieldsEl.querySelector('.mod-auto-upgrade-on-add'); if(aua) aua.onchange = e=> mod.autoUpgradeOnAdd = e.target.checked;
       const ko = fieldsEl.querySelector('.mod-keyword-op'); if(ko) ko.onchange = e=> mod.keywordOp = e.target.value;
       const kw = fieldsEl.querySelector('.mod-keyword'); if(kw) kw.onchange = e=> mod.keyword = e.target.value;
       const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
@@ -13902,6 +13906,7 @@ function renderModifiersList(entity){
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
       const rm = fieldsEl.querySelector('.mod-redirect-mode'); if(rm) rm.onchange = e=> mod.redirectMode = e.target.value;
       const rcd = fieldsEl.querySelector('.mod-reward-count-delta'); if(rcd) rcd.oninput = e=> mod.rewardCountDelta = Math.max(1, parseInt(e.target.value)||1);
+      const aur = fieldsEl.querySelector('.mod-auto-upgrade-rewards'); if(aur) aur.onchange = e=> mod.autoUpgradeRewards = e.target.checked;
       fieldsEl.querySelectorAll('.mod-add-pool').forEach(cb=>{
         cb.onchange = ()=>{
           const checked = Array.from(fieldsEl.querySelectorAll('.mod-add-pool:checked')).map(x=>x.value);
@@ -13968,7 +13973,9 @@ function renderModifiersList(entity){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, cards added to your deck become</span>
         <select class="mod-becomes-card-id"><option value="">— pick a card —</option>${cardOpts}</select>
         <span class="cond-word">instead — otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real <code>card.Owner.RunState.CreateCard&lt;T&gt;(Player)</code> call (MegaCrit.Sts2.Core.Runs.ICardScope.CreateCard&lt;T&gt;, confirmed via direct MemberRef/TypeRef metadata resolution of the only real compiled example found) — only applies to YOUR deck (an explicit owner check is always compiled in, matching that real example exactly), and always guards against transforming a card that's already the target (prevents an infinite transform loop).</div>`;
+        <div class="hint-small">Compiles to a real <code>card.Owner.RunState.CreateCard&lt;T&gt;(Player)</code> call (MegaCrit.Sts2.Core.Runs.ICardScope.CreateCard&lt;T&gt;, confirmed via direct MemberRef/TypeRef metadata resolution of the only real compiled example found) — only applies to YOUR deck (an explicit owner check is always compiled in, matching that real example exactly), and always guards against transforming a card that's already the target (prevents an infinite transform loop).</div>
+        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-auto-upgrade-on-add" ${mod.autoUpgradeOnAdd?'checked':''}> Instead, auto-upgrade eligible cards added to your deck (ignored if a card above is picked)</label>
+        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair, swapped in via <code>newCard</code> — only for cards that are <code>IsUpgradable</code> and not already upgraded.</div>`;
       wireFields();
     } else if(hook.shape === 'keywordSet'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
@@ -14033,7 +14040,13 @@ function renderModifiersList(entity){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, add</span>
         <input class="mod-reward-count-delta" type="number" step="1" min="1" value="${mod.rewardCountDelta??1}">
         <span class="cond-word">extra card reward choice(s) — otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real <code>CardFactory.CreateForReward(player, N, creationOptions)</code> call (a real public static factory, confirmed via direct sts2.dll read), appended to the existing reward option list. Only adding is supported — there's no real-evidenced mechanism yet for which specific option to remove.</div>`;
+        <div class="hint-small">Compiles to a real <code>CardFactory.CreateForReward(player, N, creationOptions)</code> call (a real public static factory, confirmed via direct sts2.dll read), appended to the existing reward option list. Only adding is supported — there's no real-evidenced mechanism yet for which specific option to remove.</div>
+        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-auto-upgrade-rewards" ${mod.autoUpgradeRewards?'checked':''}> Also auto-upgrade eligible card reward options</label>
+        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair, swapped in via <code>CardCreationResult.ModifyCard(clone, this)</code> so the shared canonical card template is never mutated in place.</div>`;
+      wireFields();
+    } else if(hook.shape === 'cardListUpgradeVoid'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, auto-upgrade every eligible card in this shop's stock — otherwise leave the base game's own real behavior unchanged.</span>
+        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair per eligible entry (only cards that are <code>IsUpgradable</code> and not already upgraded), swapped in via <code>CardCreationResult.ModifyCard(clone, this)</code>. This is a real VOID hook (ModifyMerchantCardCreationResults) — there's no true/false result to gate on, so conditions just control whether the loop runs at all.</div>`;
       wireFields();
     }
     if(!isDeferred){

@@ -4257,6 +4257,32 @@ const MODIFIER_HOOKS = {
   TryModifyCardRewardOptions: { method: 'TryModifyCardRewardOptions', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
   TryModifyCardRewardOptionsLate: { method: 'TryModifyCardRewardOptionsLate', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
 
+  // ---- Round 216 (2026-09-23) -- closes #24 upgradeAcquiredCards' shop
+  // surface (reward/deck surfaces are separate orthogonal extensions to
+  // already-shipped shapes, see generateModifierOverrides' own comments on
+  // 'cardRewardCountDelta' and 'cardTransformOnAdd'). Real signature
+  // confirmed via the full authoritative AbstractModel dump:
+  //   ModifyMerchantCardCreationResults(Player, List<CardCreationResult>): void
+  // A genuinely VOID hook (no bool/return-value gate) -- the base game just
+  // calls it and reads back whatever mutations were made to the list/its
+  // CardCreationResult entries. Real upgrade mechanism confirmed via
+  // round206b's IL evidence (clone-then-CardCmd.Upgrade, gated to
+  // card.IsUpgradable && CurrentUpgradeLevel < 1) plus this round's own
+  // direct sts2.dll reads: CardModel.CreateClone(): CardModel (real,
+  // public, no-arg -- NOT the RunState.CreateCard<T>() pattern round 211
+  // used, since this clones the SAME card rather than swapping to a
+  // different class); CardCmd.Upgrade(CardModel, CardPreviewStyle): void
+  // (real, public, static); CardPreviewStyle's real members confirmed via
+  // direct Field/Constant metadata read this round
+  // (None=0/HorizontalLayout=1/MessyLayout=2/EventLayout=3/GridLayout=4) --
+  // None used here since this isn't tied to any specific screen layout;
+  // CardCreationResult.ModifyCard(CardModel, RelicModel): void (real,
+  // confirmed via ecma_dump_ext.py read of CardCreationResult) swaps in the
+  // upgraded clone as this option's actual card WITHOUT mutating the
+  // shared canonical CardModel instance in place (which would wrongly
+  // upgrade every future draw of that card, not just this one reward).
+  ModifyMerchantCardCreationResults: { method: 'ModifyMerchantCardCreationResults', ret: 'void', params: 'Player player, List<CardCreationResult> cards', shape: 'cardListUpgradeVoid', playerExpr: 'player.Creature', targetExpr: null },
+
   // ---- Round 209 (2026-09-23) — closes #21 (modifyRoomRewards): real
   // signature TryModifyRewards(Player player, List<Reward> rewards,
   // AbstractRoom room) -- SAME param names ('player'/'rewards') as
@@ -4445,10 +4471,22 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       // apply ON TOP of these two mandatory checks to further scope WHEN
       // the transform applies (e.g. only below some HP threshold).
       const fgCls = modCtx.cardClassById && modCtx.cardClassById.get(mod.becomesCardId);
-      if (!fgCls) {
-        body = `${bind}        return base.${hook.method}(${paramNames}); // [UNVERIFIED] pick a target card in this modifier's own dropdown -- none selected yet`;
-      } else {
+      if (fgCls) {
         body = `${bind}        newCard = null;\n        if (card.Owner != this.Owner || card is ${fgCls} || !(${condExpr}))\n        {\n            return base.${hook.method}(${paramNames});\n        }\n        newCard = card.Owner.RunState.CreateCard<${fgCls}>(card.Owner);\n        return true;`;
+      } else if (mod.autoUpgradeOnAdd) {
+        // [Round 216] closes #24's deck-addition surface (upgradeAcquiredCards)
+        // -- an orthogonal alternative to the transform-to-a-different-card
+        // path above, picked when no becomesCardId is set. Same real
+        // clone-then-CardCmd.Upgrade pattern as the reward/shop surfaces
+        // (see MODIFIER_HOOKS.ModifyMerchantCardCreationResults' own
+        // comment for the full evidence trail). No self-guard against
+        // re-triggering is needed here (unlike the transform path above):
+        // the post-upgrade clone's own CurrentUpgradeLevel >= 1 already
+        // makes a repeat call on it fall through to the real base result,
+        // so this is self-limiting by construction, not by an extra check.
+        body = `${bind}        newCard = null;\n        if (card.Owner != this.Owner || !card.IsUpgradable || card.CurrentUpgradeLevel >= 1 || !(${condExpr}))\n        {\n            return base.${hook.method}(${paramNames});\n        }\n        MegaCrit.Sts2.Core.Models.CardModel fgClone = card.CreateClone();\n        MegaCrit.Sts2.Core.Commands.CardCmd.Upgrade(fgClone, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None);\n        newCard = fgClone;\n        return true;`;
+      } else {
+        body = `${bind}        return base.${hook.method}(${paramNames}); // [UNVERIFIED] pick a target card, or enable auto-upgrade, in this modifier's own fields -- neither set yet`;
       }
     } else if (hook.shape === 'cardRewardPoolAppend') {
       // [Round 213] closes #13 expandCardRewardPools -- appends the
@@ -4470,7 +4508,20 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       // CardFactory.CreateForReward(Player, int, CardCreationOptions):
       // IEnumerable<CardCreationResult> static factory.
       const fgN = (typeof mod.rewardCountDelta === 'number' && mod.rewardCountDelta > 0) ? Math.floor(mod.rewardCountDelta) : 1;
-      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            cardRewardOptions.AddRange(MegaCrit.Sts2.Core.Factories.CardFactory.CreateForReward(player, ${fgN}, creationOptions));\n            return true;\n        }\n        return baseResult;`;
+      // [Round 216] Orthogonal, optional extra mutation -- closes #24's
+      // reward-screen surface (upgradeAcquiredCards). Applies ALONGSIDE
+      // adding extra options above (both independent, matching round 215's
+      // same-pattern extension of 'restSiteReward').
+      const fgUpgradeLoop = mod.autoUpgradeRewards
+        ? ` foreach (var fgResult in cardRewardOptions) { if (fgResult.Card.IsUpgradable && fgResult.Card.CurrentUpgradeLevel < 1) { MegaCrit.Sts2.Core.Models.CardModel fgClone = fgResult.Card.CreateClone(); MegaCrit.Sts2.Core.Commands.CardCmd.Upgrade(fgClone, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None); fgResult.ModifyCard(fgClone, this); } }`
+        : '';
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            cardRewardOptions.AddRange(MegaCrit.Sts2.Core.Factories.CardFactory.CreateForReward(player, ${fgN}, creationOptions));\n${fgUpgradeLoop}\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'cardListUpgradeVoid') {
+      // [Round 216] closes #24 upgradeAcquiredCards' shop surface
+      // (ModifyMerchantCardCreationResults is a VOID hook -- see
+      // MODIFIER_HOOKS' own comment on this entry for the full evidence).
+      const upgradeLoop = ' foreach (var fgResult in cards) { if (fgResult.Card.IsUpgradable && fgResult.Card.CurrentUpgradeLevel < 1) { MegaCrit.Sts2.Core.Models.CardModel fgClone = fgResult.Card.CreateClone(); MegaCrit.Sts2.Core.Commands.CardCmd.Upgrade(fgClone, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None); fgResult.ModifyCard(fgClone, this); } }';
+      body = `${bind}        base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {${upgradeLoop}\n        }`;
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';
       // [Round 139] mod.keyword may now also be a custom keyword word (see
