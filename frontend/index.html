@@ -767,7 +767,23 @@
   .modal-head h3{margin:0; font-size:16px;}
   .modal-head .close{cursor:pointer; color:var(--parchment-dim); font-size:20px; line-height:1;}
   .modal-head .close:hover{color:var(--parchment);}
-  .modal-body{padding:22px 24px; max-height:65vh; overflow-y:auto;}
+  /* [Tyler: "the pop-out box for hp/death/creatures has a scroll bar
+     sometimes, lets make the box a little bigger so that never happens"]
+     The trigger-picker flyout (.trig-sub-list, see its own comment above)
+     clamps its own max-height via JS to whatever real vertical space
+     exists between a category row and the nearer edge of the nearest
+     overflow-y ancestor -- which is THIS box. At 65vh, a real (non-huge)
+     browser window left too little room on either side of a row sitting
+     mid-list for a tall category like "HP / Death / Creatures" (9
+     triggers, ~264px of natural content) or "Turn / Combat Lifecycle"
+     (10 triggers, ~292px) to fit without the flyout's own scrollbar
+     kicking in. Bumped to 78vh so there's real headroom above AND below
+     a mid-list row in typical windows -- confirmed live (see the
+     trigger-picker flip() comment) that this stops the clamp from
+     landing below either category's natural content height in a normal
+     browser window. Applies to every modal, not just Edit Relic/
+     Mechanic, but taller modals are a plain win elsewhere too. */
+  .modal-body{padding:22px 24px; max-height:78vh; overflow-y:auto;}
   .modal-foot{padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between;}
 
   /* Round 20 — the compile-error modal (showCompileErrorModal), replacing
