@@ -4162,8 +4162,38 @@ const MODIFIER_HOOKS = {
   TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
   TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
   ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
-  ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'deferred', reason: 'Needs a confirmed LocString construction path — not researched this round.' },
-  ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'deferred', reason: 'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
+  // [2026-09-23, this round] Moved off 'deferred' -- direct ECMA-335
+  // reads of BOTH the real installed sts2.dll AND mods/BaseLib/BaseLib.dll
+  // confirm the full real path: `LocString(string locTable, string
+  // locEntryKey)` is a real public ctor (sts2.dll); `CustomRelicModel`/
+  // `CustomPowerModel` already implement `BaseLib.Abstracts.
+  // ILocalizationProvider` (confirmed via a real InterfaceImpl table
+  // read of BaseLib.dll -- the SAME interface generateCardLocalization/
+  // generateCharacterLocalization already use for CardModel/
+  // CharacterModel, just never extended to relics/mechanics before now);
+  // its `Localization` member is a real, overridable `List<(string,
+  // string)>?` an entity's own generated class can freely add rows to.
+  // No guessing at the real default `LocTable` value needed -- the
+  // generated override below references the live `LocTable` PROPERTY
+  // (not a hardcoded string), so whatever table it resolves to at
+  // runtime is exactly the same table the Localization override just
+  // added its row under. See generateExtraHealTextLocalization's own
+  // comment for the paired class-level override this hook's codegen
+  // needs alongside it.
+  ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'extraHealText', playerExpr: 'player.Creature', targetExpr: null },
+  // [2026-09-23, this round] Moved off 'deferred' -- the authoring-UI
+  // design pass the old `reason` called for is now built: a real
+  // 'shuffleOrder' shape (see generateModifierOverrides below), reusing
+  // the SAME two real card-match primitives already proven elsewhere in
+  // this file -- `card.Type == CardType.X` (HandCardTypeCheck/
+  // PlayedCardHasType) and `(card as IForgeTaggedCard)?.ForgeTags.
+  // Contains(tag)` (PlayedCardHasTag) -- plus the real `isInitialShuffle`
+  // param (initial-shuffle-only vs reshuffle-only scoping) and a plain
+  // `List<CardModel>.RemoveAll`/`InsertRange`/`AddRange` in-place mutate
+  // (same 'mutate a live list, no return value' pattern restSiteOption/
+  // cardListUpgradeVoid already use). `player`/`cards`/`isInitialShuffle`
+  // are this hook's own real, confirmed params -- nothing new to verify.
+  ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'shuffleOrder', playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 207 (2026-09-23) — 16 new hooks, all confirmed via a full,
   // authoritative dump of the REAL, installed sts2.dll's own
@@ -4549,6 +4579,50 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       // MODIFIER_HOOKS' own comment on this entry for the full evidence).
       const upgradeLoop = ' foreach (var fgResult in cards) { if (fgResult.Card.IsUpgradable && fgResult.Card.CurrentUpgradeLevel < 1) { MegaCrit.Sts2.Core.Models.CardModel fgClone = fgResult.Card.CreateClone(); MegaCrit.Sts2.Core.Commands.CardCmd.Upgrade(fgClone, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None); fgResult.ModifyCard(fgClone, this); } }';
       body = `${bind}        base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {${upgradeLoop}\n        }`;
+    } else if (hook.shape === 'shuffleOrder') {
+      // [2026-09-23] ModifyShuffleOrder's own authoring-UI design pass —
+      // "which cards" reuses the exact two real card-match primitives this
+      // file already has proven codegen for: `card.Type == CardType.X`
+      // (same real CardType enum access as HandCardTypeCheck/
+      // PlayedCardHasType) and `(card as IForgeTaggedCard)?.ForgeTags.
+      // Contains(tag) == true` (same Forge-owned tag mechanism as
+      // PlayedCardHasTag). Both filters are optional and AND together;
+      // leaving both off matches every card in the list (a no-op move,
+      // same "author left it wide open" convention gateRoomTypeFiltered's
+      // empty-roomTypes case already uses). `cards` is the hook's own
+      // real, live `List<CardModel>` param — plain RemoveAll+InsertRange/
+      // AddRange mutates it in place, no `ref` needed (List<T> is a
+      // reference type), same in-place-mutate pattern restSiteOption/
+      // restSiteReward already use on their own live list params.
+      // `isInitialShuffle` is this hook's own real third param — exposed
+      // as an explicit scope choice (every shuffle / only the very first
+      // shuffle of combat / only mid-combat reshuffles) rather than
+      // silently ignored, since a shuffle-order effect that's only
+      // supposed to run once per combat needs it to not double-fire on
+      // every discard-pile-into-draw-pile reshuffle.
+      const shuffleMatchClauses = [];
+      if (mod.shuffleCardTypeFilter) shuffleMatchClauses.push(`c.Type == CardType.${mod.shuffleCardTypeFilter}`);
+      if (mod.shuffleCardTagFilter) shuffleMatchClauses.push(`(c as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(mod.shuffleCardTagFilter)}) == true`);
+      const shuffleMatchExpr = shuffleMatchClauses.length ? shuffleMatchClauses.join(' && ') : 'true';
+      const shuffleScopeClause = mod.shuffleScope === 'InitialOnly' ? ' && isInitialShuffle'
+        : mod.shuffleScope === 'ReshuffleOnly' ? ' && !isInitialShuffle'
+        : '';
+      const shuffleMove = mod.shuffleDestination === 'Bottom' ? 'cards.AddRange(fgMatches);' : 'cards.InsertRange(0, fgMatches);';
+      body = `${bind}        base.${hook.method}(${paramNames});\n        if ((${condExpr})${shuffleScopeClause})\n        {\n            var fgMatches = cards.Where(c => ${shuffleMatchExpr}).ToList();\n            cards.RemoveAll(c => ${shuffleMatchExpr});\n            ${shuffleMove}\n        }`;
+    } else if (hook.shape === 'extraHealText') {
+      // [2026-09-23] ModifyExtraRestSiteHealText -- see MODIFIER_HOOKS'
+      // own entry and generateExtraHealTextLocalization's comment for the
+      // full real-evidence trail. This override just appends ONE real
+      // LocString to the base result; the actual text lives in the
+      // paired `Localization` property override (emitted separately, once
+      // per class, by generateExtraHealTextLocalization -- NOT here,
+      // since a class-level property can't be emitted once per modifier
+      // the way every other hook override in this function is). `LocTable`
+      // is referenced live (not a hardcoded string) so this always points
+      // at whatever table that same Localization override's row actually
+      // landed in -- no guessing which default table name the real
+      // ILocalizationProvider.LocTable DIM would have picked.
+      body = `${bind}        IReadOnlyList<LocString> baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            return baseResult.Append(new LocString(LocTable, "EXTRAHEALTEXT")).ToList();\n        }\n        return baseResult;`;
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';
       // [Round 139] mod.keyword may now also be a custom keyword word (see
@@ -5882,113 +5956,164 @@ ${resolvedTiers.map((t, i) => `            case ${i + 1}: ${t.costDelta ? `Energ
 // [Round 217] "Automatically claim shop items for free" (#14
 // claimShopInventory) -- Tyler's direct call after reviewing the round
 // 207-216 punchlist: build it now, test the live sequencing together.
-// [BEST EFFORT] -- built from a full IL trace of a real, compiled
-// third-party mod's own <ClaimCreatorShopInventory>d__12.MoveNext async
-// state machine, done in an earlier round (the evidence-rig DLL that
-// override was decompiled from is no longer present on disk this round --
-// see claude/round207-216-passive-buildout-punchlist.md for that original
-// trace). Every real API member this override actually calls was
-// independently re-confirmed THIS round via a direct ECMA-335 metadata
-// read of the real, installed sts2.dll (Steam install folder), not
-// carried over from memory:
-//   - MegaCrit.Sts2.Core.Models.AbstractModel.AfterRoomEntered(AbstractRoom):
-//     Task -- real, virtual, base body is just `return Task.CompletedTask`.
-//   - MegaCrit.Sts2.Core.Rooms.MerchantRoom.GetLocalInventory(): MerchantInventory
-//     -- real, public.
-//   - MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory.AllEntries:
-//     IEnumerable<MerchantEntry> -- real, public; covers card/relic/potion/
-//     card-removal entries in ONE collection (an improvement over the
-//     original trace, which only independently confirmed the CardEntries
-//     sub-loop and left relic/potion entries unconfirmed).
-//   - MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.IsStocked (bool,
-//     public abstract) and .OnTryPurchaseWrapper(MerchantInventory, bool
-//     ignoreCost): Task<bool> -- real, public.
-//   - MegaCrit.Sts2.Core.Nodes.NRun.Instance -> .GlobalUi -> .TopBar ->
-//     .Map / .Deck -- real chain, all public. Map/Deck's real TypeDefs
-//     (NTopBarMapButton/NTopBarDeckButton) were walked up their real
-//     Extends chain this round (NTopBarButton -> NButton ->
-//     NClickableControl) to independently confirm they really do carry
-//     NClickableControl's real public Disable()/Enable().
-//   - MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance ->
-//     .SetTravelEnabled(bool) -- real, public.
-//   - MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance -> .Inventory
-//     (the live UI node, distinct from the data-layer MerchantInventory
-//     above) -> .BlockInput()/.Open()/.UnblockInput() -- real, public.
-//   - MegaCrit.Sts2.Core.Commands.Cmd.Wait(float seconds, bool
-//     ignoreCombatEnd): Task -- real, public, static.
-// The exact "undo the disable" step after the purchase loop was never
-// captured in the original trace (it ran out of excerpt before reaching
-// it) -- the try/finally below, and the re-enable calls inside it, are a
-// deliberate FORGE-ADDED safety net (not claimed as [VERIFIED] real game
-// behavior) so a purchase exception or an unexpected null Instance can
-// never leave the player permanently locked out of the map/deck buttons
-// or map travel. `.ToList()` on AllEntries snapshots the collection
-// before the purchase loop starts mutating it (purchasing an entry can
-// trigger restock/removal logic that would otherwise throw
-// InvalidOperationException on a live-mutated enumerable mid-iteration).
-// `_fgClaimedShops`/`_fgClaimingShop` are Forge's OWN private state (the
-// original mod's own `_claimedShops`/`_claimingShop` fields are private to
-// ITS class, not reachable from a separately-compiled relic) -- same
-// re-entry-guard intent, new fields.
-//
-// Deliberately NOT built into the generic modifiers/effects DSL -- this
-// is live Godot UI-node orchestration with hardcoded real-time waits, not
-// a data-layer AbstractModel value override, so it's its own dedicated
-// relic.autoClaimShopInventory boolean instead of a MODIFIER_HOOKS/
-// TRIGGER_HOOKS entry. If a future round adds a second AfterRoomEntered-
-// based feature (e.g. #15 combatEntryStatus), it needs to be merged into
-// THIS same override rather than added as a competing one -- same
-// hook-collision rule as MODIFIER_HOOKS/TRIGGER_HOOKS (a relic can only
-// have one compiled override per real method name).
+// [Round 221] Rewritten against a real, shipped relic instead of a
+// reconstructed trace -- Tyler pointed out that
+// MegaCrit.Sts2.Core.Models.Relics.LordsParasol does exactly this (buys
+// everything in the shop on room entry). Decompiled its real
+// AfterRoomEntered override AND its private
+// PurchaseEverything(MerchantInventory) async state machine
+// (<PurchaseEverything>d__3::MoveNext) straight from the installed
+// sts2.dll's IL (tools/sts2tools/il_dump.py), so every step below is the
+// real relic's own real logic, not a guess:
+//   - Bails out if inventory.Player != this.Owner (only claims YOUR own
+//     shop).
+//   - The initial Map/Deck/travel disable + one-process-frame wait only
+//     runs when MegaCrit.Sts2.Core.TestSupport.TestMode.IsOff is true --
+//     skipped in test mode. Forge relics only ever run in real gameplay
+//     so this branch is always taken there, but the real relic's own
+//     conditional (and its NRun.Instance null-guard around the frame
+//     wait) is kept for fidelity.
+//   - MegaCrit.Sts2.Core.Nodes.GodotExtensions.NodeUtil.AwaitProcessFrame
+//     takes the Node to wait on plus a CancellationToken -- real relic
+//     passes NRun.Instance and default(CancellationToken).
+//   - fgNInventory.BlockInput() -> wait 0.75s -> fgNInventory.Open() ->
+//     wait 1.0s -- unchanged from the previous version, already correct.
+//   - NOT a single loop over MerchantInventory.AllEntries (the previous
+//     version's approach). The real relic loops FOUR separate typed
+//     collections, each with different real rules, in this exact order:
+//       1. CharacterCardEntries -- buy only if IsStocked; if not, the
+//          real relic logs a SentryService.CaptureMessage warning and
+//          skips it instead of buying (kept as a Console.WriteLine here
+//          since Forge relics don't have Sentry wired up).
+//       2. ColorlessCardEntries -- same IsStocked-gated pattern.
+//       3. RelicEntries -- no IsStocked check (always buys). Uniquely,
+//          the real relic Enables Map+Deck right before buying EACH
+//          relic and Disables them again right after -- cards/potions
+//          never touch the buttons per-iteration. Kept exactly as-is
+//          even though the reason isn't obvious (maybe a relic-pickup
+//          animation needs the buttons in their default state) -- this
+//          is real, shipped behavior, not something to "fix".
+//       4. PotionEntries -- no IsStocked check, buys unconditionally.
+//     Each purchase in all four loops is followed by a real 0.25s wait
+//     (Cmd.Wait) -- the previous version bought everything back-to-back
+//     with no pacing at all.
+//   - CardRemovalEntry is NOT part of any of the four loops above -- it's
+//     a single property, not a collection, and the real relic buys it in
+//     its own separate step AFTER the main try/finally has already
+//     restored the UI: if inventory.CardRemovalEntry != null AND
+//     RunManager.Instance.IsInProgress (real relic reads this with no
+//     null-guard, so neither does this), it disables travel, calls
+//     CardRemovalEntry.OnTryPurchaseWrapper(inventory, ignoreCost: true,
+//     cancelable: false) -- a 3-arg overload specific to
+//     MerchantCardRemovalEntry, not the 2-arg MerchantEntry base one
+//     used everywhere else -- then re-enables travel. The previous
+//     version never bought this at all.
+// LordsParasol itself carries no reentry-guard fields of its own (the
+// game's own room-entry lifecycle apparently makes that unnecessary for
+// a real relic). _fgClaimingShop/_fgClaimedShops below are kept anyway
+// as a Forge-added safety net -- a separately-compiled relic doesn't get
+// to rely on assumptions about how AfterRoomEntered is invoked.
+// Still only compile-tested, never played -- test this specific relic
+// in-game before trusting it in a real run.
 function generateClaimShopInventoryOverride(relic) {
   if (!relic.autoClaimShopInventory) return null;
-  return `    // modifier: autoClaimShopInventory -> AfterRoomEntered(AbstractRoom) [BEST EFFORT, round 217 -- see generateClaimShopInventoryOverride's own header comment for the full evidence trail] #14 claimShopInventory
+  return `    // modifier: autoClaimShopInventory -> AfterRoomEntered(AbstractRoom) [Round 221 -- matches the real MegaCrit.Sts2.Core.Models.Relics.LordsParasol relic's own decompiled logic; see generateClaimShopInventoryOverride's own header comment] #14 claimShopInventory
     private readonly System.Collections.Generic.HashSet<MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory> _fgClaimedShops = new System.Collections.Generic.HashSet<MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory>();
     private bool _fgClaimingShop = false;
+
+    private async System.Threading.Tasks.Task FgPurchaseEverything(MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory fgInventory)
+    {
+        var fgTopBar = MegaCrit.Sts2.Core.Nodes.NRun.Instance?.GlobalUi?.TopBar;
+        var fgNInventory = MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance?.Inventory;
+        bool fgUiBlocked = false;
+        try
+        {
+            if (MegaCrit.Sts2.Core.TestSupport.TestMode.IsOff)
+            {
+                fgTopBar?.Map?.Disable();
+                fgTopBar?.Deck?.Disable();
+                MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(false);
+                if (MegaCrit.Sts2.Core.Nodes.NRun.Instance != null)
+                {
+                    await MegaCrit.Sts2.Core.Nodes.GodotExtensions.NodeUtil.AwaitProcessFrame(MegaCrit.Sts2.Core.Nodes.NRun.Instance, default);
+                }
+            }
+            fgUiBlocked = true;
+            fgNInventory?.BlockInput();
+            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.75f, false);
+            fgNInventory?.Open();
+            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(1.0f, false);
+
+            foreach (var fgEntry in fgInventory.CharacterCardEntries.ToList())
+            {
+                if (!fgEntry.IsStocked) { System.Console.WriteLine("[Forge] autoClaimShopInventory: skipped out-of-stock character card"); continue; }
+                await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
+                await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.25f, false);
+            }
+            foreach (var fgEntry in fgInventory.ColorlessCardEntries.ToList())
+            {
+                if (!fgEntry.IsStocked) { System.Console.WriteLine("[Forge] autoClaimShopInventory: skipped out-of-stock colorless card"); continue; }
+                await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
+                await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.25f, false);
+            }
+            foreach (var fgEntry in fgInventory.RelicEntries.ToList())
+            {
+                fgTopBar?.Map?.Enable();
+                fgTopBar?.Deck?.Enable();
+                await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
+                fgTopBar?.Deck?.Disable();
+                fgTopBar?.Map?.Disable();
+                await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.25f, false);
+            }
+            foreach (var fgEntry in fgInventory.PotionEntries.ToList())
+            {
+                await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
+                await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.25f, false);
+            }
+        }
+        finally
+        {
+            if (fgUiBlocked)
+            {
+                fgNInventory?.UnblockInput();
+                fgTopBar?.Map?.Enable();
+                fgTopBar?.Deck?.Enable();
+                MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(true);
+            }
+        }
+
+        if (fgInventory.CardRemovalEntry != null && MegaCrit.Sts2.Core.Runs.RunManager.Instance.IsInProgress)
+        {
+            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(false);
+            await fgInventory.CardRemovalEntry.OnTryPurchaseWrapper(fgInventory, true, false);
+            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(true);
+        }
+    }
 
     public override async System.Threading.Tasks.Task AfterRoomEntered(MegaCrit.Sts2.Core.Rooms.AbstractRoom room)
     {
         if (!(room is MegaCrit.Sts2.Core.Rooms.MerchantRoom fgMerchantRoom)) { await System.Threading.Tasks.Task.CompletedTask; return; }
         var fgInventory = fgMerchantRoom.GetLocalInventory();
-        if (fgInventory == null || _fgClaimingShop || _fgClaimedShops.Contains(fgInventory)) { await System.Threading.Tasks.Task.CompletedTask; return; }
+        if (fgInventory == null || fgInventory.Player != this.Owner || _fgClaimingShop || _fgClaimedShops.Contains(fgInventory)) { await System.Threading.Tasks.Task.CompletedTask; return; }
         _fgClaimingShop = true;
         _fgClaimedShops.Add(fgInventory);
-        var fgTopBar = MegaCrit.Sts2.Core.Nodes.NRun.Instance?.GlobalUi?.TopBar;
-        var fgNInventory = MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance?.Inventory;
         try
         {
-            fgTopBar?.Map?.Disable();
-            fgTopBar?.Deck?.Disable();
-            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(false);
-            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.75f, false);
-            fgNInventory?.BlockInput();
-            fgNInventory?.Open();
-            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(1.0f, false);
-            foreach (var fgEntry in fgInventory.AllEntries.ToList())
-            {
-                if (fgEntry.IsStocked)
-                {
-                    await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
-                }
-            }
+            await FgPurchaseEverything(fgInventory);
         }
         finally
         {
-            fgNInventory?.UnblockInput();
-            fgTopBar?.Map?.Enable();
-            fgTopBar?.Deck?.Enable();
-            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(true);
             _fgClaimingShop = false;
         }
     }`;
 }
 
-// [Round 218] #37/38/39 -- Weak/Vulnerable's own math, not "bonus damage vs
+
+// [Round 218] #37/38 -- Weak/Vulnerable's own math, not "bonus damage vs
 // weak/vulnerable targets". Tyler uploaded a fresh build of the
 // slay.spencerstiles.com evidence rig (project file's Passive 7 relic
-// still carries the same three "kind"s: incomingWeakBonus/
-// vulnerableDamageBonus/amplifyWeakAndVulnerable, amounts 56/32/135) and
-// this round found the REAL mechanism this time: a generated support
+// carried a third "kind", amplifyWeakAndVulnerable/#39, alongside these
+// two) and this round found the REAL mechanism: a generated support
 // class (TheBurdenedNewCharacter.DebuffMultiplierSupport) plus two
 // Harmony PREFIX patches (CreatorWeakInteractionPatch/
 // CreatorVulnerableInteractionPatch) that intercept WeakPower/
@@ -6025,35 +6150,39 @@ function generateClaimShopInventoryOverride(relic) {
 //     .Vulnerable()'s own real body -- same real "attacker gets a
 //     bonus against a Vulnerable target" shape, generalized off the
 //     specific CrueltyPower-only implementation the original used).
-//   - amplifyWeakAndVulnerable (#39): multiplies how strongly BOTH
-//     debuffs affect THIS relic's own owner specifically -- real
-//     evidence: both .Weak() and .Vulnerable() end with the identical
-//     `1 + (multiplier - 1) * Amplification(holder)` formula, where
-//     `holder` is whoever the power actually belongs to (WeakPower.Owner
-//     = the dealer being weakened; VulnerablePower.Owner = the target
-//     being made vulnerable) -- i.e. always "the one suffering the
-//     debuff", which is why one field covers both directions.
+//
+// [Round 221] amplifyWeakAndVulnerable (#39) removed entirely, per
+// Tyler's direct call -- it was real (both .Weak() and .Vulnerable() in
+// the evidence rig ended with the identical
+// `1 + (multiplier - 1) * Amplification(holder)` formula), but he wants
+// the UI limited to just these two direct percentages. Also: real
+// WeakPower/VulnerablePower base multipliers were independently
+// re-confirmed THIS round via a direct read of each class's own
+// get_CanonicalVars IL -- WeakPower's "DamageDecrease" DynamicVar is
+// literally constructed as `new System.Decimal(75, 0, 0, false, 2)` (=
+// 0.75, i.e. -25% damage) and VulnerablePower's "DamageIncrease" as
+// `new System.Decimal(15, 0, 0, false, 1)` (= 1.5, i.e. +50% damage) --
+// these are the "Base 25%"/"Base 50%" numbers shown next to the two
+// fields below in the editor now.
 //
 // Only written when at least one relic in the project actually sets one
-// of these three fields -- an unmodified project gets no new Harmony
-// patch at all. `Player.GetRelic<T>()` is real, public, generic
-// [VERIFIED via direct sts2.dll read] and returns null when the player
-// doesn't have that relic (confirmed via its own real IL -- an `isinst`+
-// `unbox.any` pattern, never throws). Values are stored as their
-// original whole-number percent (matching the editor's UI) and divided
-// by 100m directly in the generated expression to avoid any JS-side
+// of these two fields -- an unmodified project gets no new Harmony patch
+// at all. `Player.GetRelic<T>()` is real, public, generic [VERIFIED via
+// direct sts2.dll read] and returns null when the player doesn't have
+// that relic (confirmed via its own real IL -- an `isinst`+`unbox.any`
+// pattern, never throws). Values are stored as their original
+// whole-number percent (matching the editor's UI) and divided by 100m
+// directly in the generated expression to avoid any JS-side
 // floating-point rounding.
 function generateDebuffMultiplierSupportFile(characterPackage, namespace, relicClassById) {
   const relics = characterPackage.relics || [];
   const weakBonusRelics = relics.filter(r => typeof r.incomingWeakBonus === 'number' && r.incomingWeakBonus !== 0);
   const vulnBonusRelics = relics.filter(r => typeof r.vulnerableDamageBonus === 'number' && r.vulnerableDamageBonus !== 0);
-  const ampRelics = relics.filter(r => typeof r.amplifyWeakAndVulnerable === 'number' && r.amplifyWeakAndVulnerable !== 100);
-  if (!weakBonusRelics.length && !vulnBonusRelics.length && !ampRelics.length) return null;
+  if (!weakBonusRelics.length && !vulnBonusRelics.length) return null;
 
   const relicExpr = (r) => `global::${namespace}.Relics.${relicClassById.get(r.id)}`;
   const weakBonusLines = weakBonusRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) bonus += ${r.incomingWeakBonus}m / 100m;`).join('\n');
   const vulnBonusLines = vulnBonusRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) bonus += ${r.vulnerableDamageBonus}m / 100m;`).join('\n');
-  const ampLines = ampRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) amp *= ${r.amplifyWeakAndVulnerable}m / 100m;`).join('\n');
 
   return `using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -6065,7 +6194,7 @@ namespace ${namespace}.Generated;
 
 // AUTO-GENERATED by Forge — do not hand-edit, changes will be overwritten on next export.
 //
-// [Round 218, #37/38/39] See generateDebuffMultiplierSupportFile's own
+// [Round 218, #37/38] See generateDebuffMultiplierSupportFile's own
 // header comment in compiler.js for the full evidence trail. Adjusts the
 // real WeakPower/VulnerablePower.ModifyDamageMultiplicative result via a
 // Harmony POSTFIX (ModEntry.cs already bootstraps \`new Harmony(...).
@@ -6092,19 +6221,10 @@ ${weakBonusLines || '        // no relic sets incomingWeakBonus'}
 ${vulnBonusLines || '        // no relic sets vulnerableDamageBonus'}
         return bonus;
     }
-
-    internal static decimal WeakVulnerableAmplification(Creature holder)
-    {
-        decimal amp = 1m;
-        var player = holder?.Player;
-        if (player == null) return amp;
-${ampLines || '        // no relic sets amplifyWeakAndVulnerable'}
-        return amp;
-    }
 }
 
 [HarmonyPatch(typeof(WeakPower), nameof(WeakPower.ModifyDamageMultiplicative))]
-public static class ForgeWeakMultiplierAmplification
+public static class ForgeWeakMultiplierBonus
 {
     // [VERIFIED via direct sts2.dll read] WeakPower.ModifyDamageMultiplicative's
     // own real body already gates its OWN reduction on dealer == this.Owner
@@ -6115,13 +6235,11 @@ public static class ForgeWeakMultiplierAmplification
     {
         if (dealer == null || dealer != __instance.Owner || !ValuePropExtensions.IsPoweredAttack(props)) return;
         __result -= ForgeDebuffMultiplierSupport.IncomingWeakBonus(target);
-        var amp = ForgeDebuffMultiplierSupport.WeakVulnerableAmplification(dealer);
-        if (amp != 1m) __result = 1m + (__result - 1m) * amp;
     }
 }
 
 [HarmonyPatch(typeof(VulnerablePower), nameof(VulnerablePower.ModifyDamageMultiplicative))]
-public static class ForgeVulnerableMultiplierAmplification
+public static class ForgeVulnerableMultiplierBonus
 {
     // [VERIFIED via direct sts2.dll read] VulnerablePower.ModifyDamageMultiplicative's
     // own real body already gates its OWN increase on target == this.Owner
@@ -6134,11 +6252,32 @@ public static class ForgeVulnerableMultiplierAmplification
         {
             __result += ForgeDebuffMultiplierSupport.VulnerableDamageBonus(dealer);
         }
-        var amp = ForgeDebuffMultiplierSupport.WeakVulnerableAmplification(target);
-        if (amp != 1m) __result = 1m + (__result - 1m) * amp;
     }
 }
 `;
+}
+
+// [2026-09-23] Paired class-level half of the 'extraHealText' modifier
+// shape -- see MODIFIER_HOOKS' ModifyExtraRestSiteHealText entry and
+// generateModifierOverrides' 'extraHealText' branch for the full real-
+// evidence trail (BaseLib.Abstracts.ILocalizationProvider, confirmed via
+// direct InterfaceImpl reads of both sts2.dll and BaseLib.dll). A
+// `Localization` override is a CLASS-level property -- can only appear
+// once per generated class -- so it's generated here, once, alongside
+// (not inside) generateModifierOverrides' per-modifier-block loop, and
+// only when a real 'ModifyExtraRestSiteHealText' modifier with actual
+// text is present (validate.js requires non-empty text whenever this
+// modifier exists, so `mod.extraHealText` is trustworthy here -- the
+// `!mod.extraHealText` branch below is just defense-in-depth for a
+// package saved before that validation existed). "EXTRAHEALTEXT" is an
+// arbitrary Forge-chosen key -- the ONLY other place it needs to match is
+// generateModifierOverrides' own 'extraHealText' branch, which it does.
+function generateExtraHealTextLocalization(entity) {
+  const mod = (entity.modifiers || []).find(m => m.hook === 'ModifyExtraRestSiteHealText');
+  if (!mod || !mod.extraHealText) return null;
+  const text = String(mod.extraHealText).replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return `    // modifier: ModifyExtraRestSiteHealText -> Localization [real BaseLib.Abstracts.ILocalizationProvider override, paired with the ModifyExtraRestSiteHealText override above/below -- see MODIFIER_HOOKS' own entry]
+    public override List<(string, string)>? Localization => new List<(string, string)> { ("EXTRAHEALTEXT", "${text}") };`;
 }
 
 function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverride) {
@@ -6151,7 +6290,7 @@ function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverr
     relicName: relic.name.replace(/"/g, '\\"'),
     rarity: relic.rarity,
     iconOverride: iconOverride || '',
-    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps), generateClaimShopInventoryOverride(relic)].filter(Boolean).join('\n\n'),
+    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps), generateExtraHealTextLocalization(relic), generateClaimShopInventoryOverride(relic)].filter(Boolean).join('\n\n'),
   });
 }
 
@@ -6219,7 +6358,7 @@ function generateMechanicSource(mechanic, namespace, refMaps) {
     // TRIGGER_HOOKS), see Power.cs.template's header for the one remaining
     // honest caveat (player/target binding here isn't confirmed to be
     // specifically "this power's owner").
-    hookMethods: [generateHookEffects(mechanic, 'mechanic', refMaps), generateModifierOverrides(mechanic, 'mechanic', refMaps)].filter(Boolean).join('\n\n'),
+    hookMethods: [generateHookEffects(mechanic, 'mechanic', refMaps), generateModifierOverrides(mechanic, 'mechanic', refMaps), generateExtraHealTextLocalization(mechanic)].filter(Boolean).join('\n\n'),
   });
 }
 
@@ -9074,10 +9213,10 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // ctx.enchantmentClassById).
   const afflictionClassById = new Map((characterPackage.afflictions || []).map(a => [a.id, `global::${namespace}.Afflictions.${pascalCase(a.name)}Affliction`]));
 
-  // [Round 218] #37/38/39 -- only writes a file at all when at least one
-  // relic in the project sets incomingWeakBonus/vulnerableDamageBonus/
-  // amplifyWeakAndVulnerable. See generateDebuffMultiplierSupportFile's
-  // own header comment for the full evidence trail.
+  // [Round 218] #37/38 -- only writes a file at all when at least one
+  // relic in the project sets incomingWeakBonus/vulnerableDamageBonus.
+  // See generateDebuffMultiplierSupportFile's own header comment for the
+  // full evidence trail.
   const debuffMultiplierSupportSrc = generateDebuffMultiplierSupportFile(characterPackage, namespace, relicClassById);
   if (debuffMultiplierSupportSrc) {
     write('Generated/ForgeDebuffMultiplierSupport.cs', debuffMultiplierSupportSrc);

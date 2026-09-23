@@ -1023,6 +1023,25 @@
     -webkit-appearance:none; margin:0;
   }
   .condition-row .c-remove{margin-left:auto; padding:2px 7px; font-size:12px;}
+  /* [2026-09-23] Passive modifier fields (renderModifiersList's .mod-fields)
+     had the exact same "each box takes up its own line" bug Round 163
+     already fixed for .adv-costred-sentence and the condition-row
+     comment above already fixed for conditions -- Tyler: "make sure to
+     use the slim boxes we have used before when adding options into the
+     sentence." Same root cause (the app's global `select,input{width:100%}`
+     rule) and the identical fix: flex-wrap the container so pieces flow
+     as one sentence, then width:auto + flex:0 0 auto + min-width:0 so
+     each select/input sizes to its own content instead of claiming the
+     full row. */
+  .mod-fields{display:flex; flex-wrap:wrap; align-items:center; gap:6px;}
+  .mod-fields select, .mod-fields input{font-size:12.5px; padding:4px 7px; min-width:0; width:auto; flex:0 0 auto;}
+  .mod-fields input[type=number]{width:56px; flex:none;}
+  .mod-fields input[type=checkbox]{width:auto; min-width:0; padding:0; margin:0; flex:0 0 auto;}
+  /* textareas (e.g. .mod-extra-heal-text) are deliberately left full-width
+     via their own inline style -- not a sentence fragment, a paragraph of
+     authored text, so it should NOT shrink to content like everything
+     else in this container. */
+  .mod-fields textarea{flex:1 1 100%;}
   /* Static words inside a condition row's sentence (the leading "If", the
      "of" between a status kind and which status/mechanic, and the
      "You"/"Target"/"Pet" subject select right after "If"). Tyler's
@@ -2376,7 +2395,7 @@
           <div class="row" style="margin-top:12px; flex-wrap:wrap;">
             <div class="char-field char-field-sm"><label>Color</label><input type="color" id="c-color" value="#c1502e"></div>
             <div class="char-field">
-              <label title="Maps to the real MegaCrit.Sts2.Core.Entities.Characters.CharacterGender enum (an abstract, override-required member on CharacterModel).">Gender</label>
+              <label title="Neutral, Feminine, or Masculine — used by the game wherever gendered text or dialogue applies.">Gender</label>
               <select id="c-gender">
                 <option value="Neutral">Neutral</option>
                 <option value="Feminine">Feminine</option>
@@ -2384,7 +2403,7 @@
               </select>
             </div>
             <div class="char-field">
-              <label title="Which STS2 Steam branch/build this character is built and tested against. Free text — not a reflected/enforced value, just a note to yourself and anyone else who installs the mod. Auto-filled from your game install's own release_info.json (its 'branch' field) the moment Forge detects a valid install, but only while this field is still empty — it never overwrites something you've already typed.">Target branch</label>
+              <label title="Which Slay the Spire 2 Steam branch/build this character is built for — a free-text note for yourself and anyone who installs the mod. Auto-fills from your detected game install the first time, but never overwrites something you've already typed.">Target branch</label>
               <input type="text" id="c-branch" placeholder="e.g. default, beta">
               <div id="c-branch-detect-hint" class="dim-hint" style="display:none; margin-top:4px;"></div>
             </div>
@@ -2393,7 +2412,7 @@
             <div class="char-field char-field-sm"><label>Max HP</label><input type="number" id="c-hp" value="75"></div>
             <div class="char-field"><label>Starting Gold</label><input type="number" id="c-gold" value="99"></div>
             <div class="char-field"><label>Energy / Turn</label><input type="number" id="c-energy" value="3"></div>
-            <div class="char-field"><label title="Tyler: &quot;an option for how many orb slots the character should start with. The Defect (base game character) starts with like 3 orb slots.&quot; Compiles to a real public override int BaseOrbSlotCount on the character class. Leave at 0 for a non-Orb character.">Starting Orb Slots</label><input type="number" id="c-orbslots" value="0" min="0"></div>
+            <div class="char-field"><label title="How many orb slots the character starts with. The base game's Defect starts with 3. Leave at 0 for a non-Orb character.">Starting Orb Slots</label><input type="number" id="c-orbslots" value="0" min="0"></div>
           </div>
           <!-- [Round 103] Tyler: "now that we have moved the bar
                creator/mover to the status section, we no longer need this
@@ -2977,7 +2996,7 @@
                  whole-character granularity plus Colorless. See
                  schema/character.schema.json's vanillaCardAccess for the
                  evidence trail; populated by renderVanillaCardAccess(). -->
-            <div class="hint-small" style="margin-bottom:6px;">Also offer this character's cards from the vanilla game's own characters — a whole character's card pool at a time, not individual cards. <span style="color:var(--danger-bright)">Not yet compiled</span> — captures your intent so it's ready the moment a real mechanism is confirmed.</div>
+            <div class="hint-small" style="margin-bottom:6px;">Also offer this character's cards from the vanilla game's own characters — a whole character's card pool at a time, not individual cards. <span style="color:var(--danger-bright)">Not yet supported</span> — saved with your character for when it is.</div>
             <div class="vanilla-card-access-grid" id="vanilla-card-access-grid"></div>
 
             <div class="cards-settings-divider"></div>
@@ -3119,13 +3138,10 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">
-        A companion creature fighting alongside you — like Osty. <strong>Not yet compiled into your mod's code.</strong>
-        Every STS2 character reflected so far has ONE fixed companion (<code>Player.Osty</code>) that already
-        exists on the base game's Player type; no confirmed way for a mod to define an ADDITIONAL or REPLACEMENT
-        pet/companion of its own has been found — unlike Orbs below, there isn't even a real namespace/folder
-        convention pointing at one existing anywhere. What you enter here is saved with your character and
-        exported as a design doc (<code>Pets/README.md</code> in the compiled mod) so it's ready if a real
-        mechanism is ever confirmed — it just doesn't generate any gameplay code yet.
+        A companion creature fighting alongside you — like Osty. <strong>Not yet supported in the compiled mod.</strong>
+        Every character so far has one fixed companion, and there's currently no way for a mod to add an
+        additional one or replace it — unlike Orbs below. What you enter here is saved with your character as
+        a design note, ready for whenever this becomes possible; it doesn't affect gameplay yet.
       </div>
       <div class="grid-cards" id="pets-grid"></div>
     </div>
@@ -3139,13 +3155,12 @@
     <div class="panel-body">
       <div class="panel-desc">
         A Defect-style gameplay Orb (Frost/Lightning/Dark, etc.) — channeled into a slot, with a passive effect each
-        turn and a bigger effect when evoked. <strong>Passive/Evoke value below compile into a real orb class now</strong> —
-        confirmed against <code>BaseLib.Abstracts.CustomOrbModel</code>'s exact shape using a real working example
-        (<code>TheBurdenedNewCharacter.Orbs.MoonOrb</code>). What's still just a design note: the passive/evoke
-        effect text (what the orb actually <em>does</em>) and Focus-scaling — Forge doesn't have an effect editor
-        for orb behavior yet, so those stay freeform and export to <code>Orbs/README.md</code> alongside the real
-        <code>.cs</code> file. (Note: this is a different concept from the character's <em>energy orb art</em>
-        in the Art section below — that's the visual HP/energy orb graphic, not a gameplay Orb.)
+        turn and a bigger effect when evoked. <strong>Passive/Evoke value below are functional</strong> and compile
+        into the mod. What's still just a design note: the passive/evoke effect text (what the orb actually
+        <em>does</em>) and Focus-scaling — there's no effect editor for orb behavior yet, so those stay freeform
+        and are included as reference notes alongside the compiled orb. (Note: this is a different concept from
+        the character's <em>energy orb art</em> in the Art section below — that's the visual HP/energy orb
+        graphic, not a gameplay Orb.)
       </div>
       <div class="grid-cards" id="orbs-grid"></div>
     </div>
@@ -3171,11 +3186,10 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">
-        A Chronicle is a named group of Epochs shown together on your character's timeline. <strong>Compiles to a
-        real MegaCrit.Sts2.Core.Timeline.StoryModel</strong> — each Epoch inside it compiles to a real EpochModel
-        subclass, with at least one of your own cards locked behind it and a real, <em>enforced</em> unlock
-        requirement (checked against real save-file stats, e.g. wins/losses/floors climbed — not just descriptive
-        text) that decides when the epoch — and the cards behind it — actually unlocks for the player.
+        A Chronicle is a named group of Epochs shown together on your character's timeline. Each Epoch locks at
+        least one of your own cards behind a real, <em>enforced</em> unlock requirement — checked against actual
+        save-file stats (wins, losses, floors climbed, and similar) rather than just descriptive text — that decides
+        when the epoch, and the cards behind it, actually unlocks for the player.
       </div>
       <div class="grid-cards" id="chronicles-grid"></div>
     </div>
@@ -3636,7 +3650,7 @@ function hookBindingHint(id){
   // removed from display per Tyler's request — hiddenTargetsForTrigger/
   // fixActionTargetForTrigger still silently enforce the real
   // restrictions it used to describe, this just stops narrating them.
-  if(shape === 'unbound') return 'Fires for real, but this hook’s real parameters don’t expose a confirmed player/target Creature yet — actions here compile but throw at runtime until a future round confirms a safe binding.';
+  if(shape === 'unbound') return 'This trigger doesn’t currently expose a player/target to act on — actions placed here won’t take effect yet.';
   return '';
 }
 // Round 19 — 12 categories (grouped, color-coded bubble picker; Tyler's
@@ -7080,7 +7094,7 @@ function openOrbLayerEditor(){
   openModal(`
     <div class="modal-head"><h3>Energy Orb Layers</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <div class="hint-small" style="margin-bottom:10px">The Backdrop plus 5 numbered layers, composited bottom to front in this real order: Backdrop &rarr; Spin A &rarr; Spin B &rarr; Ring (Layer 1) &rarr; Middle &rarr; Front — confirmed both via full IL disassembly of your own updated TheBurdenedNewCharacter build AND independently by slay.spencerstiles.com's own Energy Counter tool, which names this same order (Layer 1 is really a thin Ring that sits just above the spin layers, which is why it defaults to blank art now instead of hiding them). Every layer is optional — leave any slot on its bundled/blank default and upload only the ones you actually want to customize, same as that site. Recolor a layer with a flat tint and/or replace it with your own ${ORB_LAYER_WIDTH}&times;${ORB_LAYER_HEIGHT}px PNG (the Backdrop has no recolor tint in the real game) — both work independently and update the live preview above as you go. Exported into the compiled mod on Compile Mod (real confirmed overrides, including a new Harmony patch for the Backdrop) — but a layer's recolor tint is a live-preview effect only, not baked into the exported file; the image itself (bundled or your upload) exports untinted.</div>
+      <div class="hint-small" style="margin-bottom:10px">The Backdrop plus 5 numbered layers, composited bottom to front in this order: Backdrop &rarr; Spin A &rarr; Spin B &rarr; Ring (Layer 1) &rarr; Middle &rarr; Front (Layer 1 is a thin ring that sits just above the spin layers, which is why it defaults to blank art now instead of hiding them). Every layer is optional — leave any slot on its bundled/blank default and upload only the ones you actually want to customize. Recolor a layer with a flat tint and/or replace it with your own ${ORB_LAYER_WIDTH}&times;${ORB_LAYER_HEIGHT}px PNG (the Backdrop has no recolor tint) — both work independently and update the live preview above as you go. A layer's recolor tint is a live-preview effect only and isn't baked into the exported file; the image itself (bundled or your upload) exports untinted.</div>
       <div id="orb-backdrop-row"></div>
       <div id="orb-layer-rows"></div>
     </div>
@@ -8574,32 +8588,32 @@ document.addEventListener('click', (e)=>{
 // real 'cardLocation' shape -- see that hook's own entry below for the
 // evidence.
 const MODIFIER_HOOKS = {
-  ShouldPlay: { method:'ShouldPlay', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card be allowed to play (gate)' },
-  ShouldDie: { method:'ShouldDie', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature die (gate)' },
-  ShouldClearBlock: { method:'ShouldClearBlock', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature\'s block clear (gate)' },
-  ShouldDraw: { method:'ShouldDraw', ret:'bool', shape:'gate', targetExpr:null, label:'Should a card be drawn (gate)' },
-  ShouldAllowHitting: { method:'ShouldAllowHitting', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature be allowed to be hit (gate)' },
-  ShouldPlayerResetEnergy: { method:'ShouldPlayerResetEnergy', ret:'bool', shape:'gate', targetExpr:null, label:'Should energy reset (gate)' },
-  ShouldPayExcessEnergyCostWithStars: { method:'ShouldPayExcessEnergyCostWithStars', ret:'bool', shape:'gate', targetExpr:null, label:'Should excess energy cost be paid with stars (gate)' },
-  ShouldCreatureBeRemovedFromCombatAfterDeath: { method:'ShouldCreatureBeRemovedFromCombatAfterDeath', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature be removed from combat after death (gate)' },
+  ShouldPlay: { method:'ShouldPlay', ret:'bool', shape:'gate', targetExpr:null, label:'Block cards from being played' },
+  ShouldDie: { method:'ShouldDie', ret:'bool', shape:'gate', targetExpr:null, label:'Prevent a creature from dying at 0 HP' },
+  ShouldClearBlock: { method:'ShouldClearBlock', ret:'bool', shape:'gate', targetExpr:null, label:'Keep Block from clearing at end of turn' },
+  ShouldDraw: { method:'ShouldDraw', ret:'bool', shape:'gate', targetExpr:null, label:'Block cards from being drawn' },
+  ShouldAllowHitting: { method:'ShouldAllowHitting', ret:'bool', shape:'gate', targetExpr:null, label:'Make a creature immune to being hit' },
+  ShouldPlayerResetEnergy: { method:'ShouldPlayerResetEnergy', ret:'bool', shape:'gate', targetExpr:null, label:'Energy doesn\'t reset after each turn (icecream)' },
+  ShouldPayExcessEnergyCostWithStars: { method:'ShouldPayExcessEnergyCostWithStars', ret:'bool', shape:'gate', targetExpr:null, label:'Let Stars cover Energy you don\'t have' },
+  ShouldCreatureBeRemovedFromCombatAfterDeath: { method:'ShouldCreatureBeRemovedFromCombatAfterDeath', ret:'bool', shape:'gate', targetExpr:null, label:'Keep a dead creature\'s corpse in combat' },
 
-  ModifyBlockAdditive: { method:'ModifyBlockAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:null, label:'Modify block gained (additive, locked to Add)' },
-  ModifyBlockMultiplicative: { method:'ModifyBlockMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:null, label:'Modify block gained (multiplicative, locked to Multiply)' },
-  ModifyDamageAdditive: { method:'ModifyDamageAdditive', ret:'decimal', shape:'damageNumeric', lockedOp:'Add', targetExpr:'dealer', label:'Modify damage, flat (auto-scoped to you — deal or take)' },
-  ModifyDamageMultiplicative: { method:'ModifyDamageMultiplicative', ret:'decimal', shape:'damageNumeric', lockedOp:'Multiply', targetExpr:'dealer', label:'Modify damage, multiplicative (auto-scoped to you — deal or take)' },
-  ModifyDamageCap: { method:'ModifyDamageCap', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:'dealer', label:'Modify the damage cap' },
-  ModifyAttackHitCount: { method:'ModifyAttackHitCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify an attack\'s hit count' },
-  ModifyCardPlayCount: { method:'ModifyCardPlayCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card\'s play count' },
-  ModifyGoldGained: { method:'ModifyGoldGained', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify gold gained' },
-  ModifyHandDraw: { method:'ModifyHandDraw', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify hand draw count' },
-  ModifyHpLostBeforeOsty: { method:'ModifyHpLostBeforeOsty', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:'dealer', label:'Modify HP lost before your pet intercepts it' },
-  ModifyMaxEnergy: { method:'ModifyMaxEnergy', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify max energy' },
-  ModifyOrbPassiveTriggerCounts: { method:'ModifyOrbPassiveTriggerCounts', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify orb passive trigger counts' },
-  ModifyOrbValue: { method:'ModifyOrbValue', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify an orb\'s value' },
-  ModifyPowerAmountGivenAdditive: { method:'ModifyPowerAmountGivenAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:'target', label:'Modify a power\'s amount given (additive, locked to Add)' },
-  ModifyRestSiteHealAmount: { method:'ModifyRestSiteHealAmount', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify rest site heal amount' },
-  ModifySummonAmount: { method:'ModifySummonAmount', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify summon amount' },
-  ModifyXValue: { method:'ModifyXValue', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card\'s X value' },
+  ModifyBlockAdditive: { method:'ModifyBlockAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:null, unit:'extra Block', label:'Add or subtract flat Block' },
+  ModifyBlockMultiplicative: { method:'ModifyBlockMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:null, unit:'the Block you gain', label:'Multiply Block gained' },
+  ModifyDamageAdditive: { method:'ModifyDamageAdditive', ret:'decimal', shape:'damageNumeric', lockedOp:'Add', targetExpr:'dealer', label:'Add or subtract flat damage dealt' },
+  ModifyDamageMultiplicative: { method:'ModifyDamageMultiplicative', ret:'decimal', shape:'damageNumeric', lockedOp:'Multiply', targetExpr:'dealer', label:'Multiply damage dealt' },
+  ModifyDamageCap: { method:'ModifyDamageCap', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:'dealer', unit:'to the max damage a single hit can deal', label:'Cap how much damage a single hit can deal' },
+  ModifyAttackHitCount: { method:'ModifyAttackHitCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to how many times the attack hits', label:'Change how many times an attack hits' },
+  ModifyCardPlayCount: { method:'ModifyCardPlayCount', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Give all cards Replay', unit:'extra play(s) to this card' },
+  ModifyGoldGained: { method:'ModifyGoldGained', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the gold gained', label:'Change gold gained' },
+  ModifyHandDraw: { method:'ModifyHandDraw', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to how many cards you draw', label:'Change how many cards you draw' },
+  ModifyHpLostBeforeOsty: { method:'ModifyHpLostBeforeOsty', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:'dealer', unit:'to HP lost before your pet intercepts it', label:'Modify HP lost before Pet' },
+  ModifyMaxEnergy: { method:'ModifyMaxEnergy', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to your max Energy', label:'Change your max Energy' },
+  ModifyOrbPassiveTriggerCounts: { method:'ModifyOrbPassiveTriggerCounts', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to how many times this orb passively triggers per turn', label:'Change how many times an orb passively triggers per turn' },
+  ModifyOrbValue: { method:'ModifyOrbValue', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to this orb\'s damage/block value', label:'Change an orb\'s damage/block value' },
+  ModifyPowerAmountGivenAdditive: { method:'ModifyPowerAmountGivenAdditive', ret:'decimal', shape:'numeric', lockedOp:'Add', targetExpr:'target', unit:'to the stacks given', label:'Add or subtract stacks whenever a status is granted to anyone, including yourself' },
+  ModifyRestSiteHealAmount: { method:'ModifyRestSiteHealAmount', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the HP healed at a rest site', label:'Change how much HP you heal at a rest site' },
+  ModifySummonAmount: { method:'ModifySummonAmount', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the summon amount', label:'Change summon amount whenever you summon' },
+  ModifyXValue: { method:'ModifyXValue', ret:'int', shape:'numeric', lockedOp:null, targetExpr:null, label:'Change the X value on an X-cost card (Whirlwind-style)', unit:'to the card\'s X value' },
 
   // Round 116 — paired display-fix hook. A plain flat reduction authored
   // on ModifyHpLostBeforeOsty (above) is real, but that hook runs AFTER
@@ -8611,19 +8625,19 @@ const MODIFIER_HOOKS = {
   // ModifyDamageAdditive doing the actual work) so the displayed number
   // and the real HP loss always match. See compiler.js:MODIFIER_HOOKS'
   // ReduceHpLossBeforeBlock entry and claude/round116-reduce-hp-loss-display-fix.md.
-  ReduceHpLossBeforeBlock: { method:'ModifyHpLostBeforeOsty', companionMethod:'ModifyDamageAdditive', ret:'decimal', shape:'hpLossDisplayFixed', lockedOp:'Subtract', targetExpr:'dealer', label:'Reduce HP Loss (before block gets hit) — shows correctly in enemy intent' },
+  ReduceHpLossBeforeBlock: { method:'ModifyHpLostBeforeOsty', companionMethod:'ModifyDamageAdditive', ret:'decimal', shape:'hpLossDisplayFixed', lockedOp:'Subtract', targetExpr:'dealer', label:'Reduce HP lost before Block' },
 
-  TryModifyEnergyCostInCombat: { method:'TryModifyEnergyCostInCombat', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify energy cost in combat' },
-  TryModifyEnergyCostInCombatLate: { method:'TryModifyEnergyCostInCombatLate', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify energy cost in combat (late)' },
-  TryModifyPowerAmountReceived: { method:'TryModifyPowerAmountReceived', ret:'bool', shape:'powerReceivedFilter', targetExpr:'applier', label:'Try to modify a power amount received (optionally scoped to Buff-type or Debuff-type only)' },
-  TryModifyStarCost: { method:'TryModifyStarCost', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify star cost' },
+  TryModifyEnergyCostInCombat: { method:'TryModifyEnergyCostInCombat', ret:'bool', shape:'tryRefNumeric', targetExpr:null, unit:'the Energy cost of the card', label:'Modify the cost of cards while in combat' },
+  TryModifyEnergyCostInCombatLate: { method:'TryModifyEnergyCostInCombatLate', ret:'bool', shape:'tryRefNumeric', targetExpr:null, unit:'the Energy cost of the card', label:'Same, but runs after other relics\' cost changes' },
+  TryModifyPowerAmountReceived: { method:'TryModifyPowerAmountReceived', ret:'bool', shape:'powerReceivedFilter', targetExpr:'applier', unit:'the stacks received', label:'Change stacks whenever any status is received (can scope to Buffs or Debuffs only)' },
+  TryModifyStarCost: { method:'TryModifyStarCost', ret:'bool', shape:'tryRefNumeric', targetExpr:null, unit:'the Star cost of the card', label:'Modify the star cost of cards while in combat' },
 
-  TryModifyKeywordsInCombat: { method:'TryModifyKeywordsInCombat', ret:'bool', shape:'keywordSet', targetExpr:null, label:'Try to add/remove a keyword in combat' },
+  TryModifyKeywordsInCombat: { method:'TryModifyKeywordsInCombat', ret:'bool', shape:'keywordSet', targetExpr:null, label:'Add or remove a keyword on a card during combat' },
 
   TryModifyCardBeingAddedToDeck: { method:'TryModifyCardBeingAddedToDeck', ret:'bool', shape:'cardTransformOnAdd', targetExpr:null, label:'Cards added to your deck become a different card' },
-  TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'cardTransformOnAdd', targetExpr:null, label:'Cards added to your deck become a different card (late)' },
-  TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold rest site reward' },
-  TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'restSiteOption', targetExpr:null, label:'Add/remove a rest site option' },
+  TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'cardTransformOnAdd', targetExpr:null, label:'Same, but runs after other relics\' card-swap effects' },
+  TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add or remove a Gold reward from the Heal option' },
+  TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'restSiteOption', targetExpr:null, label:'Add or remove a rest site option (Smith, Dig, Rest, etc.)' },
   // [2026-09-23] "fill in the gaps" round -- moved from 'deferred' to a
   // real shape. CardLocation is a real struct with a real public 3-arg
   // ctor (Player player, PileType pileType, CardPilePosition position) --
@@ -8631,46 +8645,46 @@ const MODIFIER_HOOKS = {
   // to a real override that falls through to base.ModifyCardPlayResultLocation(...)
   // when the conditions below don't match -- see compiler.js:generateModifierOverrides'
   // 'cardLocation' branch.
-  ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'cardLocation', targetExpr:null, label:'Modify where a played card ends up' },
-  ModifyExtraRestSiteHealText: { method:'ModifyExtraRestSiteHealText', ret:'IReadOnlyList<LocString>', shape:'deferred', targetExpr:null, label:'Modify extra rest site heal text [deferred]', reason:'Needs a confirmed LocString construction path — not researched this round.' },
-  ModifyShuffleOrder: { method:'ModifyShuffleOrder', ret:'void', shape:'deferred', targetExpr:null, label:'Modify shuffle order [deferred]', reason:'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
+  ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'cardLocation', targetExpr:null, label:'Change which pile a card goes to after you play it' },
+  ModifyExtraRestSiteHealText: { method:'ModifyExtraRestSiteHealText', ret:'IReadOnlyList<LocString>', shape:'extraHealText', targetExpr:null, label:'Add extra text under the Heal option' },
+  ModifyShuffleOrder: { method:'ModifyShuffleOrder', ret:'void', shape:'shuffleOrder', targetExpr:null, label:'Change shuffle order of cards' },
 
   // ---- Round 207 (2026-09-23) — 16 new hooks, mirrors backend/
   // compiler.js:MODIFIER_HOOKS' own round-207 comment field-for-field.
   // Closes 16 of the 93 slay.spencerstiles.com confirmed-passives list —
   // see claude/round207-passive-buildout-punchlist.md (a Claude Project
   // doc) for the full item-by-item mapping.
-  ShouldProcurePotion: { method:'ShouldProcurePotion', ret:'bool', shape:'gate', targetExpr:null, label:'Should this potion be allowed to be procured (gate)' },
-  ShouldAfflict: { method:'ShouldAfflict', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card be allowed to receive this affliction (gate)' },
-  ShouldGenerateTreasure: { method:'ShouldGenerateTreasure', ret:'bool', shape:'gate', targetExpr:null, label:'Should a treasure room generate treasure (gate)' },
-  ShouldAllowMerchantCardRemoval: { method:'ShouldAllowMerchantCardRemoval', ret:'bool', shape:'gate', targetExpr:null, label:'Should card removal be allowed at shops (gate)' },
-  ShouldDisableRemainingRestSiteOptions: { method:'ShouldDisableRemainingRestSiteOptions', ret:'bool', shape:'gate', targetExpr:null, label:'Should the other rest site options be disabled after picking one (gate)' },
-  ShouldTakeExtraTurn: { method:'ShouldTakeExtraTurn', ret:'bool', shape:'gate', targetExpr:null, label:'Should an extra turn be taken (gate)' },
-  ShouldFlush: { method:'ShouldFlush', ret:'bool', shape:'gate', targetExpr:null, label:'Should the hand be discarded at end of turn (gate)' },
-  ShouldEtherealTrigger: { method:'ShouldEtherealTrigger', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card\'s Ethereal exhaust trigger (gate)' },
-  ShouldGainStars: { method:'ShouldGainStars', ret:'bool', shape:'gate', targetExpr:null, label:'Should Stars be allowed to be gained (gate)' },
-  ShouldAllowFreeTravel: { method:'ShouldAllowFreeTravel', ret:'bool', shape:'gate', targetExpr:null, label:'Should free travel to unconnected map rooms be allowed (gate, no conditions bound to "you" — see reason)', reason:'Real signature takes no parameters at all (confirmed — ShouldAllowFreeTravel() takes nothing), so conditions here cannot reference "you"/fgPlayer. Author a plain unconditional gate (no conditions) for a straightforward "always allow free travel" relic.' },
-  ShouldRefillMerchantEntry: { method:'ShouldRefillMerchantEntry', ret:'bool', shape:'gate', targetExpr:null, label:'Should this shop entry restock after being purchased (gate)' },
-  ShouldForcePotionReward: { method:'ShouldForcePotionReward', ret:'bool', shape:'gateRoomTypeFiltered', targetExpr:null, label:'Should this room force a potion reward (optionally room-type-filtered)' },
+  ShouldProcurePotion: { method:'ShouldProcurePotion', ret:'bool', shape:'gate', targetExpr:null, label:'Block yourself from picking up a potion' },
+  ShouldAfflict: { method:'ShouldAfflict', ret:'bool', shape:'gate', targetExpr:null, label:'Block a card from being afflicted' },
+  ShouldGenerateTreasure: { method:'ShouldGenerateTreasure', ret:'bool', shape:'gate', targetExpr:null, label:'Block treasure rooms from generating treasure' },
+  ShouldAllowMerchantCardRemoval: { method:'ShouldAllowMerchantCardRemoval', ret:'bool', shape:'gate', targetExpr:null, label:'Block card removal at shops' },
+  ShouldDisableRemainingRestSiteOptions: { method:'ShouldDisableRemainingRestSiteOptions', ret:'bool', shape:'gate', targetExpr:null, label:'Let you use more than one rest site option per visit' },
+  ShouldTakeExtraTurn: { method:'ShouldTakeExtraTurn', ret:'bool', shape:'gate', targetExpr:null, label:'Give an extra turn' },
+  ShouldFlush: { method:'ShouldFlush', ret:'bool', shape:'gate', targetExpr:null, label:'Keep your hand instead of discarding at end of turn' },
+  ShouldEtherealTrigger: { method:'ShouldEtherealTrigger', ret:'bool', shape:'gate', targetExpr:null, label:'Stop Ethereal from exhausting a card' },
+  ShouldGainStars: { method:'ShouldGainStars', ret:'bool', shape:'gate', targetExpr:null, label:'Block Stars from being gained' },
+  ShouldAllowFreeTravel: { method:'ShouldAllowFreeTravel', ret:'bool', shape:'gate', targetExpr:null, label:'You may ignore paths when selecting rooms', reason:'This trigger takes no parameters, so conditions here cannot reference "you". Author a plain unconditional gate (no conditions) for a straightforward "always allow free travel" relic.' },
+  ShouldRefillMerchantEntry: { method:'ShouldRefillMerchantEntry', ret:'bool', shape:'gate', targetExpr:null, label:'Restock a shop item after it\'s bought' },
+  ShouldForcePotionReward: { method:'ShouldForcePotionReward', ret:'bool', shape:'gateRoomTypeFiltered', targetExpr:null, label:'Force a potion reward in this room' },
 
-  ModifyEnergyGain: { method:'ModifyEnergyGain', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify energy gained' },
-  ModifyPowerAmountGivenMultiplicative: { method:'ModifyPowerAmountGivenMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'target', label:'Modify a power\'s amount given (multiplicative, locked to Multiply)' },
-  ModifyMerchantPrice: { method:'ModifyMerchantPrice', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a shop item\'s price' },
-  ModifyCardRewardUpgradeOdds: { method:'ModifyCardRewardUpgradeOdds', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card reward\'s upgrade odds' },
+  ModifyEnergyGain: { method:'ModifyEnergyGain', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the Energy gained at the start of turn', label:'Change Energy gained at start of turn' },
+  ModifyPowerAmountGivenMultiplicative: { method:'ModifyPowerAmountGivenMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'target', unit:'the stacks given', label:'Multiply stacks whenever a status is granted to anyone, including yourself' },
+  ModifyMerchantPrice: { method:'ModifyMerchantPrice', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the price of shop items', label:'Modify the price of shop items' },
+  ModifyCardRewardUpgradeOdds: { method:'ModifyCardRewardUpgradeOdds', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, unit:'to the odds a card reward shows upgraded', label:'Change the odds a card reward shows upgraded' },
 
   // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, mirrors
   // backend/compiler.js:MODIFIER_HOOKS' own round-208 comment.
-  ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect this hit to an ally or enemy of the attacker instead of its original target' },
+  ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect a hit to a different creature' },
   ModifyCardRewardCreationOptions: { method:'ModifyCardRewardCreationOptions', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards' },
-  ModifyCardRewardCreationOptionsLate: { method:'ModifyCardRewardCreationOptionsLate', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards (late)' },
+  ModifyCardRewardCreationOptionsLate: { method:'ModifyCardRewardCreationOptionsLate', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Same, but runs after other relics\' pool changes' },
   TryModifyCardRewardOptions: { method:'TryModifyCardRewardOptions', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices' },
-  TryModifyCardRewardOptionsLate: { method:'TryModifyCardRewardOptionsLate', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices (late)' },
+  TryModifyCardRewardOptionsLate: { method:'TryModifyCardRewardOptionsLate', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Same, but runs after other relics\' reward changes' },
   ModifyMerchantCardCreationResults: { method:'ModifyMerchantCardCreationResults', ret:'void', shape:'cardListUpgradeVoid', targetExpr:null, label:'Auto-upgrade eligible shop cards' },
 
   // ---- Round 209 (2026-09-23) — mirrors backend/compiler.js round-209
   // comment. Reuses the existing 'restSiteReward' shape/UI verbatim.
-  TryModifyRewards: { method:'TryModifyRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room' },
-  TryModifyRewardsLate: { method:'TryModifyRewardsLate', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room (late)' },
+  TryModifyRewards: { method:'TryModifyRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add or remove a Gold reward from any room' },
+  TryModifyRewardsLate: { method:'TryModifyRewardsLate', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Same, but runs after other relics\' reward changes' },
 };
 // [Round 220] Tyler: "lets categorize and color the passive hooks" — same
 // ask as round 19's trigger bubble picker (TRIGGER_CATEGORIES above), now
@@ -8749,13 +8763,13 @@ const REST_SITE_OPTION_VALUES = ['Clone', 'Cook', 'Dig', 'Hatch', 'Heal', 'Kindl
 const CONDITION_KINDS = [
   { id:'HasStatusStacks', label:'Has status stacks', real:true, hint:'' },
   { id:'HpBelowPercent', label:'HP', real:true,
-    hint:'Checks the chosen creature\'s current HP as a percentage of max HP. [VERIFIED via sts2.dll — Creature.CurrentHp/MaxHp, real public properties]. Works everywhere, including inside the Glow section below (reached via CardModel.Owner there instead of cardPlay, since glow has no cardPlay in scope).' },
+    hint:'Checks the chosen creature\'s current HP as a percentage of max HP. Works everywhere, including inside the Glow section below.' },
   { id:'EnergyRemaining', label:'Your energy remaining', real:true,
-    hint:'Reads Player.PlayerCombatState.Energy — a real, live, current-Energy count. [VERIFIED via reflect-baselib round 14a/14b]. Compiles for real wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; the one narrow exception is a relic/mechanic\'s "on take damage" hook, whose real parameters don\'t expose a path back to the player there yet — this still compiles but throws at runtime (ForgeActions.TodoCondition) only in that one spot.' },
+    hint:'Checks your current Energy. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook.' },
   { id:'StarsRemaining', label:'Your stars remaining', real:true,
-    hint:'Reads Player.PlayerCombatState.Stars — a real, live, current-Stars count, distinct from card.starCost (that\'s a CARD\'s own cost, not how many the player has). [VERIFIED via reflect-baselib round 14a/14b]. Compiles for real wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; the one narrow exception is a relic/mechanic\'s "on take damage" hook, which still compiles but throws at runtime there only.' },
+    hint:'Checks your current Stars — distinct from a card\'s own star cost. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook.' },
   { id:'CardsInHand', label:'Cards in hand', real:true,
-    hint:'Counts your current hand size. [BEST EFFORT via decompiling TheBurdenedNewCharacter.dll] — PileType.Hand.GetPile(Player).Cards is a real, countable collection, seen directly in real compiled cards/relics. Compiles for real wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; falls back to an honest stub on the one hook with no cardPlay in scope (a relic/mechanic\'s OnTakeDamage), same as EnergyRemaining/StarsRemaining.' },
+    hint:'Counts your current hand size. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook, same as Energy/Stars remaining.' },
   // [Tyler, this round] "this is just a verbage change, but lets remove
   // 'played card' from each option here" — now that these three only
   // ever show up in the kind dropdown once "That Card" is already picked
@@ -8763,15 +8777,15 @@ const CONDITION_KINDS = [
   // "Played card" in the label itself is redundant with what's already
   // showing right next to it.
   { id:'PlayedCardHasKeyword', label:'Has keyword', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for a real CardKeyword. [VERIFIED via reflect-baselib rounds 2/3/9]. Only valid on the "OnAnyCardPlayed" trigger — cardPlay isn\'t in scope anywhere else.' },
+    hint:'Checks the card that triggered this hook for a game keyword. Only valid on the "OnAnyCardPlayed" trigger.' },
   { id:'PlayedCardHasTag', label:'Has (gameplay) tag', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for a TRUE custom tag (a Gameplay Tag you typed in a card editor) — NOT BaseLib\'s real CardTag enum, which reflect-baselib round 10 confirmed is closed (5 fixed values, no way for a mod to add new ones). [VERIFIED via reflect-baselib round 10 — see Generated/IForgeTaggedCard.cs]. Only valid on the "OnAnyCardPlayed" trigger.' },
+    hint:'Checks the card that triggered this hook for a custom Gameplay Tag (one you typed in a card editor) — distinct from the fixed, built-in card tag below, which only offers a small closed set of values. Only valid on the "OnAnyCardPlayed" trigger.' },
   { id:'PlayedCardHasType', label:'Is type', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for one of the 5 real CardType values (Attack/Skill/Power/Status/Curse). [VERIFIED via decompiling TheBurdenedNewCharacter.dll] — CardModel.Type is a real, public getter, seen directly filtering cards by type in real compiled code. Only valid on the "OnAnyCardPlayed" trigger — cardPlay isn\'t in scope anywhere else. Replaces the old "Played card is an Attack" condition, which only checked one type instead of letting you pick any of the 5.' },
+    hint:'Checks the card that triggered this hook for its type (Attack/Skill/Power/Status/Curse). Only valid on the "OnAnyCardPlayed" trigger.' },
   { id:'CardsPlayedThisTurn', label:'Cards played this turn', real:true,
-    hint:'Counts how many cards you\'ve finished playing so far this turn. [VERIFIED via decompiling TheBurdenedNewCharacter.dll\'s Eternal] — its real OnPlay only grants Regen while this count is 0, and its real Glow override uses the identical count to glow beforehand; Tyler\'s follow-up generalized the old fixed "first card" check into this real comparator+value threshold on that same count (e.g. "≤ 1" glows through your first two plays, not just the first). Valid on every trigger, AND inside the Glow section below (unlike most conditions here, this one needs no cardPlay to be real).' },
+    hint:'Counts how many cards you\'ve finished playing so far this turn. Use a comparator and value to check thresholds (e.g. "≤ 1" covers your first two plays, not just the first). Valid on every trigger, and inside the Glow section below.' },
   { id:'DamageBrokeBlock', label:"This card's damage broke the target's block", real:true, requiresTrigger:'OnPlay',
-    hint:'Checks whether the LAST damage this card dealt broke its target\'s block. [VERIFIED via decompiling TheBurdenedNewCharacter.dll\'s "Flick" — Tyler: "it deals damage and then stuns the enemy if that damage broke their block"]. Only makes sense placed in a SECOND effect block right after a "Deal Damage" effect on the same OnPlay trigger — it looks at this card\'s own most recent damage entry in the combat history, so a preceding Deal Damage effect (same trigger) is what makes that entry meaningful. Only valid on "OnPlay" (matches Flick\'s own usage — checking "did MY damage break block" only makes sense for the card\'s own play).' },
+    hint:'Checks whether the last damage this card dealt broke its target\'s block. Only makes sense placed in a SECOND effect block right after a "Deal Damage" effect on the same OnPlay trigger — it looks at this card\'s own most recent damage entry, so a preceding Deal Damage effect is what makes that entry meaningful. Only valid on "OnPlay".' },
   // ---- 2026-08-27 condition-kind expansion round ----
   // 9 new kinds, all [VERIFIED] via direct sts2.dll read (Tyler's
   // FollowUp1-4 screenshots + "lets go through all of the conditions
@@ -8782,23 +8796,23 @@ const CONDITION_KINDS = [
   // same 2 triggers as PET_SUPPORTED_TRIGGERS" — distinct from the
   // single-trigger 'OnAnyCardPlayed'/'OnPlay' strings above.
   { id:'HasBlock', label:'Has block', real:true,
-    hint:'Checks the chosen creature\'s current Block. [VERIFIED via sts2.dll — Creature.Block, a real, public, live int getter]. Works everywhere, including inside the Glow section below.' },
+    hint:'Checks the chosen creature\'s current Block. Works everywhere, including inside the Glow section below.' },
   { id:'DebuffStacksTotal', label:'Total debuff stacks', real:true,
-    hint:'Sums the stack count of every debuff-flavored power currently on the chosen creature. [VERIFIED via sts2.dll — Creature.Powers + PowerType.Debuff]. Works everywhere, including inside the Glow section below.' },
+    hint:'Sums the stack count of every debuff currently on the chosen creature. Works everywhere, including inside the Glow section below.' },
   { id:'PetIsOut', label:'Has a pet out', real:true,
-    hint:'Checks whether the chosen creature currently has a pet. [VERIFIED via sts2.dll — Creature.Pets]. Plain boolean — no comparator/value. Works everywhere, including inside the Glow section below.' },
+    hint:'Checks whether the chosen creature currently has a pet out. Plain yes/no — no comparator/value. Works everywhere, including inside the Glow section below.' },
   { id:'HandCardTypeCheck', label:'Cards in hand are type', real:true, requiresTrigger:'anyRealTrigger',
-    hint:'Checks whether Any (at least one) or All of the cards currently in your hand are a given type. [VERIFIED via sts2.dll — PileType.Hand.GetPile(...).Cards, same real hand-pile access CardsInHand already uses]. [Round 63] Generalized off cardPlay.Player (via resolvePlayerExpr) — valid on any relic/mechanic/card effect-block trigger now (not just "OnPlay"/"OnAnyCardPlayed"), but still needs a real Player in scope so it stays unavailable inside Glow/Playability and Group B modifiers.' },
+    hint:'Checks whether Any (at least one) or All of the cards currently in your hand are a given type. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'AttacksPlayedThisTurn', label:'Attacks played this turn', real:true,
-    hint:'Counts how many Attack-type cards you\'ve finished playing so far this turn. [VERIFIED via sts2.dll] — extends the same real CombatManager.Instance.History.CardPlaysFinished walk CardsPlayedThisTurn already uses, filtered to CardType.Attack. Valid on every trigger, AND inside the Glow section below, same as CardsPlayedThisTurn.' },
+    hint:'Counts how many Attack-type cards you\'ve finished playing so far this turn. Valid on every trigger, and inside the Glow section below, same as "Cards played this turn".' },
   { id:'OrbSlotCount', label:'Your orb slot count', real:true, requiresTrigger:'anyRealTrigger',
-    hint:'Reads Player.BaseOrbSlotCount — a real, live orb-slot count. [VERIFIED via sts2.dll]. [Round 63] Generalized off cardPlay.Player (via resolvePlayerExpr) — valid on any relic/mechanic/card effect-block trigger now, but still needs a real Player in scope so it stays unavailable inside Glow/Playability and Group B modifiers.' },
+    hint:'Checks your current orb slot count. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'EnemyIntent', label:"Enemy's intent is", real:true, requiresTrigger:'cardPlayBound',
-    hint:'Checks the card\'s target\'s next move for an Attack or Defend intent. [VERIFIED via sts2.dll — Monster.NextMove.Intents; Attack/Defend are the only two confirmed real Intent subclasses at this research pass — others weren\'t found and aren\'t offered rather than guessed at]. Needs a real cardPlay.Target in scope — valid on "OnPlay" and "OnAnyCardPlayed" only.' },
+    hint:'Checks the card\'s target\'s next move for an Attack or Defend intent (the only two intent types currently offered here). Needs a target in scope — valid on "OnPlay" and "OnAnyCardPlayed" only.' },
   { id:'HasSpecificRelic', label:'You have relic', real:true, requiresTrigger:'anyRealTrigger',
-    hint:'Checks whether you currently hold a specific relic from this character\'s own relics list. [VERIFIED — reuses the same real Player.Relics + ModelDb-class-identity pattern the character\'s Starting Relic already relies on]. [Round 63] Generalized off cardPlay.Player (via resolvePlayerExpr) — valid on any relic/mechanic/card effect-block trigger now, but still needs a real Player in scope so it stays unavailable inside Glow/Playability and Group B modifiers.' },
+    hint:'Checks whether you currently hold a specific relic from this character\'s own relics list. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'NoCopiesOfCardInHand', label:'No copies of card in hand', real:true, requiresTrigger:'anyRealTrigger',
-    hint:'Checks that NO copy of a specific card from this character\'s own cards list is currently in your hand. [VERIFIED — same real hand-pile access as "Cards in hand are type" + same card-identity pattern as "You have relic"]. [Round 63] Generalized off cardPlay.Player (via resolvePlayerExpr) — valid on any relic/mechanic/card effect-block trigger now, but still needs a real Player in scope so it stays unavailable inside Glow/Playability and Group B modifiers.' },
+    hint:'Checks that no copy of a specific card from this character\'s own cards list is currently in your hand. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   // 2026-09-08 (round 52) — Tyler's updated TheBurdenedNewCharacter.dll v3
   // has a real "Earthquake" card whose real, compiled IsPlayable override
   // requires being the leftmost card in hand. Only real inside Glow/
@@ -10271,7 +10285,7 @@ function openCardEditor(cardId){
               <div id="m-target-row"><label>Target</label><select id="m-target">${optList(["SingleEnemy","AllEnemies","Self","None"], card.target)}</select></div>
             </div>
             <div class="basetag-row">
-              <label title="Maps to the real, closed BaseLib MegaCrit.Sts2.Core.Entities.Cards.CardTag enum — lets base-game/other-mod logic that specifically checks CardTag (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are Forge's own freeform system.">Base card tag:</label>
+              <label title="A fixed, built-in card tag that lets base-game or other-mod logic which specifically checks for it (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are your own freeform labels.">Base card tag:</label>
               <div class="kw-picker" id="basetag-picker"></div>
             </div>
             <div style="margin-top:12px">
@@ -10318,7 +10332,7 @@ function openCardEditor(cardId){
               <input type="file" id="m-art-upload" accept="image/png,image/jpeg,image/webp">
               <div class="hint-small" id="m-art-error" style="display:none; color:var(--danger-bright); margin-top:6px"></div>
               <button class="ghost" id="m-art-clear" style="margin-top:6px; ${pendingArtDataUrl ? '' : 'display:none'}">Remove art</button>
-              <label title="Compiles for real — the game's own real BBCode color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own best-guess approximation from this card's effects and keywords, both here and on the live preview above (shown in italics until you type your own) — any status this card APPLIES is auto-wrapped in [gold]...[/gold] in that guess, matching the game's own convention.">Description</label>
+              <label title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this card's effects and keywords, both here and on the live preview above (shown in italics until you type your own) — any status this card applies is auto-wrapped in [gold]...[/gold], matching the game's own convention.">Description</label>
               <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
                 <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
                 <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
@@ -10342,7 +10356,7 @@ function openCardEditor(cardId){
               <div class="hint-small" style="margin-top:6px">On its one upgrade, this card is removed and replaced by the selected card — the picked card's own cost/effects/art are what actually plays from then on.</div>
             </div>
             <div id="upgrade-standard-panel">
-              <div class="kw-picker kw-row-upgrade" id="kw-picker-upgrade" title="Mirrors the tier below until you change something here, same as Upgrade effects. Cost/effect changes compile for real; keyword changes at this tier don't compile into the mod yet — only the base card's keywords do today."></div>
+              <div class="kw-picker kw-row-upgrade" id="kw-picker-upgrade" title="Mirrors the tier below until you change something here, same as Upgrade effects. Cost/effect changes take effect; keyword changes at this tier aren't supported yet — only the base card's keywords are."></div>
               <div style="margin-top:12px; display:flex; gap:16px">
                 <div style="flex:0 0 160px; max-width:160px">
                   <label>Cost change</label>
@@ -10350,7 +10364,7 @@ function openCardEditor(cardId){
                 </div>
                 <div style="flex:0 0 160px; max-width:160px">
                   <label>Star cost change</label>
-                  <input type="number" id="m-upgrade-starcostdelta" value="0" title="Added to the star cost when upgraded — same idea as Cost change, for stars instead of energy. Compiles for real: CardModel.UpgradeStarCostBy(int) is a real, protected instance method, called bare from this card's own generated OnUpgrade() override.">
+                  <input type="number" id="m-upgrade-starcostdelta" value="0" title="Added to the star cost when upgraded — same idea as Cost change, for stars instead of energy.">
                 </div>
               </div>
               <label style="margin-top:16px">Upgrade effects <span style="font-weight:400; color:var(--parchment-dim); font-size:11px; text-transform:none; letter-spacing:0">(same shape as Effects — schema describes this as a diff applied at upgrade time)</span></label>
@@ -10814,7 +10828,7 @@ function openCardEditor(cardId){
       starCostInput.title = 'Locked to 0 while “X Star” is checked — see the checkbox to the right.';
     } else {
       starCostInput.disabled = false;
-      starCostInput.title = 'Optional — leave blank for no star cost (the common case). CardModel.CanonicalStarCost is a real, public, overridable virtual property — this compiles for real.';
+      starCostInput.title = 'Optional — leave blank for no star cost (the common case).';
     }
     // [Round 77 bug fix] This was missing — without it, checking "X Star"
     // never re-rendered the effects list below, so xStarEligible never
@@ -12489,7 +12503,7 @@ function statusOptionsData(){
   return BUILTIN_STATUSES.map(s => ({
     value: s,
     label: s,
-    tooltip: STATUS_DESCRIPTIONS[s] || 'No description available yet — this status\'s exact behavior hasn\'t been confirmed against real STS2 data (every wiki source checked either omits it or has no real text for it yet).',
+    tooltip: STATUS_DESCRIPTIONS[s] || 'No description available yet.',
   }));
 }
 function mechanicOptionsData(){
@@ -12756,7 +12770,7 @@ function renderStatusPicker(act){
   const showAmounts = act.mode === 'Add';
   const protectedOptionsData = PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND.map(v => ({
     value: v, label: v,
-    tooltip: 'Protected constructor [confirmed via reflect-baselib] — can be Removed but not Added.',
+    tooltip: 'Can be Removed but not Added.',
   }));
   const options = [
     ...statusOptionsData().map(o=>({...o, kind:'vanilla'})),
@@ -12801,7 +12815,7 @@ function renderStatusPicker(act){
       const protectedAdd = showAmounts && o.kind === 'vanilla' && PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND.includes(o.value);
       const amtInput = showAmounts ? `<input type="number" class="picker-amount" value="${entry ? (entry.amount ?? 1) : 1}" title="Amount for ${escapeAttr(o.label)}">` : '';
       const title = protectedAdd
-        ? `${o.tooltip} — this status has a protected constructor [confirmed via reflect-baselib] and can't be Added (only Removed).`
+        ? `${o.tooltip} — this status can't be Added (only Removed).`
         : o.tooltip;
       return `
       <label class="picker-option${checked?' checked':''}${protectedAdd?' picker-option-disabled':''}" title="${escapeAttr(title)}">
@@ -13161,7 +13175,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // sentence introduced, just built once here and reused across every
   // type's switch case below instead of copy-pasted 12 times.
   const amountHtml = needsAmount ? ((isX || isStarX)
-    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value (CardModel.${isStarX ? 'ResolveStarXValue' : 'ResolveEnergyXValue'}()) instead of a literal amount.">X</span>`
+    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
     : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`) : '';
   // [Round 74] Two independent checkboxes when both energy-X and star-X
   // are eligible on this card (labeled "(Energy)"/"(Star)" only in that
@@ -13170,8 +13184,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // wireActionRowHandlers) — compiler.js's resolveAmountExpr checks
   // amountIsX before amountIsStarX, so only one can ever actually apply.
   const useXLabelSuffix = showUseStarXCheckbox ? ' (Energy)' : '';
-  const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'} Tylers &quot;deal X damage&quot;/&quot;apply X &lt;status&gt;&quot; ask. Confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'} CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '');
+  const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '');
   // [Round 75/76] DealDamage-only relabeled/outside-the-sentence versions
   // — same checkboxes (same classes), rendered in their own row below the
   // sentence instead of inline within it (see row.innerHTML's new
@@ -13183,10 +13197,10 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   const dealDamageBothXEligible = xEligible && xStarEligible;
   const dealDamageAmountLabel = kind => dealDamageBothXEligible ? `X ${kind} Damage` : 'X Damage';
   const dealDamageHitsLabel = kind => dealDamageBothXEligible ? `X ${kind} Hits` : 'X Hits';
-  const dealDamageAmountUseXHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved X value instead of the amount above. Tylers &quot;deal X damage&quot; ask. Confirmed used exactly this way by a real working X-cost card (Retaliation)."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> ${dealDamageAmountLabel('Energy')}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above. CardModel.ResolveStarXValue() confirmed used exactly this way by a real working X-star-cost card (X Star)."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '');
-  const dealDamageHitCountUseXHtml = (xEligible ? `<label class="a-usex-label" title="Use this card's own resolved X value as the hit count instead — Tyler's &quot;deal damage X times&quot; ask. Real AttackCommand.WithHitCount(int), confirmed used exactly this way by Retaliation."><input type="checkbox" class="a-hitcount-usex" ${hitCountIsX?'checked':''}> ${dealDamageHitsLabel('Energy')}</label>` : '')
-    + (xStarEligible ? `<label class="a-usex-label" title="Use this card's own resolved star-X value as the hit count instead. CardModel.ResolveStarXValue() confirmed used exactly this way by a real working card (NEW X STAR): DamageCmd.Attack(fixed base damage).WithHitCount(ResolveStarXValue())."><input type="checkbox" class="a-hitcount-usestarx" ${hitCountIsStarX?'checked':''}> ${dealDamageHitsLabel('Star')}</label>` : '');
+  const dealDamageAmountUseXHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved X value instead of the amount above."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> ${dealDamageAmountLabel('Energy')}</label>` : '')
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '');
+  const dealDamageHitCountUseXHtml = (xEligible ? `<label class="a-usex-label" title="Use this card's own resolved X value as the hit count instead."><input type="checkbox" class="a-hitcount-usex" ${hitCountIsX?'checked':''}> ${dealDamageHitsLabel('Energy')}</label>` : '')
+    + (xStarEligible ? `<label class="a-usex-label" title="Use this card's own resolved star-X value as the hit count instead."><input type="checkbox" class="a-hitcount-usestarx" ${hitCountIsStarX?'checked':''}> ${dealDamageHitsLabel('Star')}</label>` : '');
   const dealDamageUseXHtml = dealDamageAmountUseXHtml + dealDamageHitCountUseXHtml;
   // Legible target dropdown (ACTION_TARGET_LABELS/targetOptList, see their
   // own comment) — not rendered at all for PLAYER_ONLY_ACTIONS (Draw/
@@ -13239,12 +13253,12 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // plain literal input — mirrors amountHtml's own isX/isStarX branch and
   // the old hit-count ternary exactly, just with a 3rd branch added.
   const dealDamageAmountSlotHtml = (isX || isStarX)
-    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value (CardModel.${isStarX ? 'ResolveStarXValue' : 'ResolveEnergyXValue'}()) instead of a literal amount.">X</span>`
+    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
     : (isScaling
         ? `<span class="a-scale-inline"><span class="cond-word">(</span><input class="a-amount as-amount" type="number" value="${act.amount??0}"><span class="a-scale-x">x</span><select class="a-scale-subject">${actionScaleSubjectOptList(act.amountScalesWithSubject, trigger, true)}</select><span class="cond-word">stacks of</span>${mergedStatusPickerHtml(act, ACTION_SCALE_FIELDS, 'a-scale-picker')}<span class="cond-word">)</span></span>`
         : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`);
   const dealDamageHitCountSlotHtml = (hitCountIsX || hitCountIsStarX)
-    ? `<span class="a-amount-x" title="Using this card's own resolved ${hitCountIsStarX ? 'star ' : ''}X value (CardModel.${hitCountIsStarX ? 'ResolveStarXValue' : 'ResolveEnergyXValue'}()) as the hit count.">X</span>`
+    ? `<span class="a-amount-x" title="Using this card's own resolved ${hitCountIsStarX ? 'star ' : ''}X value as the hit count.">X</span>`
     : (hitCountIsScaling
         ? `<span class="a-scale-inline"><span class="cond-word">(</span><input class="a-hitcount as-hitcount" type="number" min="1" value="${act.hitCount??1}"><span class="a-scale-x">x</span><select class="a-hitcount-scale-subject">${actionScaleSubjectOptList(act.hitCountScalesWithSubject, trigger, true)}</select><span class="cond-word">stacks of</span>${mergedStatusPickerHtml(act, ACTION_HITCOUNT_SCALE_FIELDS, 'a-hitcount-scale-picker')}<span class="cond-word">)</span></span>`
         : `<input class="a-hitcount as-hitcount" type="number" min="1" value="${act.hitCount??1}">`);
@@ -13339,7 +13353,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       break;
     }
     case 'DiscardCard': case 'ExhaustCard': {
-      const randomHtml = `<label class="a-check-label" title="Tyler: &quot;Discard and exhaust should get an option to make them randomly selected.&quot; Player.RunState.Rng.CombatCardSelection.NextItem(...) is real; compiles for real wherever a real cardPlay.Player/choiceContext is in scope (same gating as the non-random path)."><input type="checkbox" class="a-random" ${act.random?'checked':''}> Randomly selected</label>`;
+      const randomHtml = `<label class="a-check-label" title="Discard and exhaust can be set to select randomly instead of letting you choose."><input type="checkbox" class="a-random" ${act.random?'checked':''}> Randomly selected</label>`;
       sentenceHtml = `${playerOnlyCardSentence(act.type === 'DiscardCard' ? 'Discard' : 'Exhaust', '(s) from your hand.')}${randomHtml}`;
       break;
     }
@@ -13360,7 +13374,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // the card this turn") is real too — CardModel.GiveSingleTurnRetain()
     // — [VERIFIED via direct sts2.dll IL read].
     case 'ReturnToHand': {
-      const retainHtml = `<label class="a-check-label" title="Tyler: &quot;There should also be a check box to 'retain the card this turn' if the return to hand is selected.&quot; CardModel.GiveSingleTurnRetain() is a real, public, parameterless instance method — sets the same private backing flag CardModel.ShouldRetainThisTurn reads back (alongside the static Retain keyword check), i.e. a genuine one-turn-only version of Retain."><input type="checkbox" class="a-retainthisturn" ${act.retainThisTurn?'checked':''}> Retain the card this turn</label>`;
+      const retainHtml = `<label class="a-check-label" title="Keeps the card in your hand for the rest of this turn only — a one-turn version of Retain."><input type="checkbox" class="a-retainthisturn" ${act.retainThisTurn?'checked':''}> Retain the card this turn</label>`;
       sentenceHtml = `<span class="cond-word">Return this card to your hand.</span>${retainHtml}`;
       break;
     }
@@ -13371,7 +13385,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // same shape as ModifyGold right below (see compiler.js's ModifyEnergy
     // case for the codegen side).
     case 'ModifyEnergy': {
-      const doubleHtml = `<label class="a-check-label" title="Tyler: &quot;a check box for double energy which doubles the user's current energy.&quot; — compiles to a real PlayerCmd.GainEnergy call using the player's own current PlayerCombatState.Energy as the amount, not a dedicated &quot;double&quot; API."><input type="checkbox" class="a-doubleenergy" ${act.doubleEnergy?'checked':''}> Double Energy</label>`;
+      const doubleHtml = `<label class="a-check-label" title="Doubles your current Energy."><input type="checkbox" class="a-doubleenergy" ${act.doubleEnergy?'checked':''}> Double Energy</label>`;
       sentenceHtml = act.doubleEnergy
         ? `<span class="cond-word">Gain double your current Energy.</span>${doubleHtml}`
         : `${modeSelectHtml}${amountHtml}${useXAmountHtml}<span class="cond-word">Energy.</span>${doubleHtml}`;
@@ -13385,7 +13399,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // the word" shape modeSelectHtml already uses for Gain/Lose. Built
       // by hand here (not via amountForTargetSentence, which only takes a
       // plain-text noun) since the noun itself is now the control.
-      const hpKindSelectHtml = `<select class="a-hpkind as-hpkind" title="&quot;Max HP&quot; routes through the real, separate MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp/LoseMaxHp instead of the current-HP LoseHpInternal/HealInternal &quot;HP&quot; uses."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
+      const hpKindSelectHtml = `<select class="a-hpkind as-hpkind" title="Max HP is tracked separately from current HP."><option value="current" ${act.hpKind === 'max' ? '' : 'selected'}>HP</option><option value="max" ${act.hpKind === 'max' ? 'selected' : ''}>Max HP</option></select>`;
       sentenceHtml = `${modeSelectHtml}${amountHtml}${useXAmountHtml}${hpKindSelectHtml}<span class="cond-word">for</span>${targetHtml}<span class="cond-word">${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
       break;
     }
@@ -13397,9 +13411,9 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const customGroup = tokenCards.length
         ? `<optgroup label="Your token cards">${tokenCards.map(c=>`<option value="custom:${escapeAttr(c.id)}" ${act.tokenRefKind!=='vanilla'&&act.tokenRef===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('')}</optgroup>`
         : '';
-      const vanillaGroup = `<optgroup label="Vanilla status cards (best-effort guess, unverified)">${VANILLA_TOKEN_CARDS.map(v=>`<option value="vanilla:${escapeAttr(v)}" ${act.tokenRefKind==='vanilla'&&act.tokenVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`;
+      const vanillaGroup = `<optgroup label="Vanilla status cards">${VANILLA_TOKEN_CARDS.map(v=>`<option value="vanilla:${escapeAttr(v)}" ${act.tokenRefKind==='vanilla'&&act.tokenVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`;
       const tokenSelectHtml = (tokenCards.length || VANILLA_TOKEN_CARDS.length)
-        ? `<select class="a-token-ref" title="Tyler: &quot;this should pull a dropdown menu containing all of the user's created token cards, as well as the vanilla status cards if possible.&quot;">${customGroup}${vanillaGroup}</select>`
+        ? `<select class="a-token-ref" title="Choose from your own created token cards, or a vanilla status card.">${customGroup}${vanillaGroup}</select>`
         : `<span class="cond-word hint-small">(create a Token card first)</span>`;
       sentenceHtml = `<span class="cond-word">Create</span>${amountHtml}${useXAmountHtml}<span class="cond-word">copies of</span> ${tokenSelectHtml} <span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select><span class="cond-word">.</span>`;
       break;
@@ -13940,6 +13954,8 @@ function blankModifier(hookId){
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
   else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
+  else if(hook.shape === 'shuffleOrder'){ m.shuffleCardTypeFilter = null; m.shuffleCardTagFilter = null; m.shuffleDestination = 'Top'; m.shuffleScope = 'Any'; }
+  else if(hook.shape === 'extraHealText'){ m.extraHealText = ''; }
   else if(hook.shape === 'creatureRedirect'){ m.redirectMode = 'Ally'; }
   else if(hook.shape === 'cardRewardPoolAppend'){ m.addPools = []; }
   else if(hook.shape === 'cardRewardCountDelta'){ m.rewardCountDelta = 1; m.autoUpgradeRewards = false; }
@@ -13955,11 +13971,29 @@ function blankModifier(hookId){
 // relics AND mechanics -- MODIFIER_HOOKS/renderModifiersList), plus, for
 // relics only, "Experimental" (round 217 autoClaimShopInventory) and
 // "Weak / Vulnerable math" (round 218 incomingWeakBonus/
-// vulnerableDamageBonus/amplifyWeakAndVulnerable) -- neither of the
-// latter two applies to a mechanic/status, since both compile to code
-// keyed off a real RELIC class via Player.GetRelic<T>() (see
+// vulnerableDamageBonus) -- neither of the latter two applies to a
+// mechanic/status, since both compile to code keyed off a real RELIC
+// class via Player.GetRelic<T>() (see
 // generateClaimShopInventoryOverride/generateDebuffMultiplierSupportFile
 // in backend/compiler.js), which a mechanic/status simply isn't.
+// [Round 221] Tyler asked to drop amplifyWeakAndVulnerable (#39) entirely
+// (kept in backend/validate.js history but no longer offered here or
+// compiled), and to fold the Weak/Vulnerable fields into this same
+// "Modifiers (advanced)" area as live sentences instead of their own
+// separate labeled section -- see wirePassiveConfig below for the live
+// number-in-sentence wiring.
+// WEAK_BASE_PCT/VULN_BASE_PCT: real base multipliers confirmed via direct
+// ECMA-335 IL read of WeakPower/VulnerablePower's own get_CanonicalVars
+// (round 221) -- WeakPower's "DamageDecrease" is literally
+// `new System.Decimal(75, 0, 0, false, 2)` (0.75x = -25%);
+// VulnerablePower's "DamageIncrease" is `new System.Decimal(15, 0, 0,
+// false, 1)` (1.5x = +50%). See generateDebuffMultiplierSupportFile's own
+// header comment in backend/compiler.js for the full evidence trail.
+// Shared here between passiveConfigMarkup (initial render) and
+// wirePassiveConfig (live "(Current X%)" update on input) so the two
+// never drift apart.
+const WEAK_BASE_PCT = 25;
+const VULN_BASE_PCT = 50;
 function passiveConfigMarkup(entity, isRelic){
   let html = `
     <label style="margin-top:4px">Modifiers (advanced)</label>
@@ -13967,30 +14001,25 @@ function passiveConfigMarkup(entity, isRelic){
     <button class="secondary" id="passive-add-modifier" type="button" style="margin-top:6px">+ Add modifier</button>
   `;
   if(isRelic){
+    const weakBonusVal = entity.incomingWeakBonus ?? 0;
+    const vulnBonusVal = entity.vulnerableDamageBonus ?? 0;
     html += `
-    <label style="margin-top:20px">Experimental (round 217 — test live before trusting)</label>
+    <div class="mod-fields" style="margin-top:14px;">
+      <span class="cond-word">Take</span>
+      <input type="number" step="any" id="m-incoming-weak-bonus" value="${weakBonusVal}">
+      <span class="cond-word">% less damage from Weak targets. (Base ${WEAK_BASE_PCT}%) (Current <span id="m-incoming-weak-current">${WEAK_BASE_PCT + weakBonusVal}</span>%)</span>
+    </div>
+    <div class="mod-fields" style="margin-top:4px;">
+      <span class="cond-word">Deal</span>
+      <input type="number" step="any" id="m-vulnerable-damage-bonus" value="${vulnBonusVal}">
+      <span class="cond-word">% more damage to Vulnerable targets. (Base ${VULN_BASE_PCT}%) (Current <span id="m-vulnerable-damage-current">${VULN_BASE_PCT + vulnBonusVal}</span>%)</span>
+    </div>
+
+    <label style="margin-top:20px">Optional Relic Effects</label>
     <label class="chk-inline" style="display:block;">
       <input type="checkbox" id="m-auto-claim-shop" ${entity.autoClaimShopInventory ? 'checked' : ''}>
-      Automatically claim shop items for free on room entry (#14 claimShopInventory)
+      Automatically claim shop items for free on room entry (Lord's Parasol)
     </label>
-    <div class="hint-small not-real">[BEST EFFORT] Drives live Godot UI screen nodes with hardcoded real-time waits (blocks map/deck buttons and travel, opens the merchant screen, purchases every stocked entry for free) — a genuinely different, riskier class of feature than every other modifier/effect on this page, which only compute values or mutate data-layer lists. Compiles clean, but has only ever been checked by compiling it, never by actually playing it — test this specific relic in-game before trusting it in a real run. See generateClaimShopInventoryOverride in backend/compiler.js for the full evidence trail.</div>
-
-    <label style="margin-top:20px">Weak / Vulnerable math (round 218)</label>
-    <div style="display:flex; gap:12px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:180px;">
-        <label class="dim-hint">Incoming Weak bonus (%)</label>
-        <input type="number" step="any" id="m-incoming-weak-bonus" value="${entity.incomingWeakBonus ?? 0}">
-      </div>
-      <div style="flex:1; min-width:180px;">
-        <label class="dim-hint">Vulnerable damage bonus (%)</label>
-        <input type="number" step="any" id="m-vulnerable-damage-bonus" value="${entity.vulnerableDamageBonus ?? 0}">
-      </div>
-      <div style="flex:1; min-width:180px;">
-        <label class="dim-hint">Amplify Weak &amp; Vulnerable (%, 100 = no change)</label>
-        <input type="number" step="any" id="m-amplify-weak-vuln" value="${entity.amplifyWeakAndVulnerable ?? 100}">
-      </div>
-    </div>
-    <div class="hint-small">[VERIFIED via direct ECMA-335 IL trace, round 218] "Incoming Weak bonus": while THIS relic's owner is attacked by a Weakened dealer, take that much LESS damage on top of Weak's own normal reduction. "Vulnerable damage bonus": while THIS relic's owner attacks a Vulnerable target (not itself), deal that much MORE damage on top of Vulnerable's own normal bonus. "Amplify Weak &amp; Vulnerable": multiplies how strongly BOTH debuffs affect THIS relic's owner specifically (135 = 35% stronger; 50 = half as strong). Compiles to a real Harmony postfix on WeakPower/VulnerablePower's own real damage-multiplier method (Generated/ForgeDebuffMultiplierSupport.cs, only generated at all when a relic actually sets one of these three fields) — see generateDebuffMultiplierSupportFile in backend/compiler.js for the full evidence trail.</div>
     `;
   }
   return html;
@@ -14015,13 +14044,19 @@ function wirePassiveConfig(container, entity, isRelic){
   const claimCb = document.getElementById('m-auto-claim-shop');
   claimCb.onchange = e=>{ entity.autoClaimShopInventory = e.target.checked; save(); };
   const weakEl = document.getElementById('m-incoming-weak-bonus');
-  weakEl.oninput = e=>{ entity.incomingWeakBonus = parseFloat(e.target.value) || 0; save(); };
+  const weakCurrentEl = document.getElementById('m-incoming-weak-current');
+  weakEl.oninput = e=>{
+    const v = parseFloat(e.target.value) || 0;
+    entity.incomingWeakBonus = v;
+    weakCurrentEl.textContent = WEAK_BASE_PCT + v;
+    save();
+  };
   const vulnEl = document.getElementById('m-vulnerable-damage-bonus');
-  vulnEl.oninput = e=>{ entity.vulnerableDamageBonus = parseFloat(e.target.value) || 0; save(); };
-  const ampEl = document.getElementById('m-amplify-weak-vuln');
-  ampEl.oninput = e=>{
-    const v = parseFloat(e.target.value);
-    entity.amplifyWeakAndVulnerable = Number.isFinite(v) ? v : 100;
+  const vulnCurrentEl = document.getElementById('m-vulnerable-damage-current');
+  vulnEl.oninput = e=>{
+    const v = parseFloat(e.target.value) || 0;
+    entity.vulnerableDamageBonus = v;
+    vulnCurrentEl.textContent = VULN_BASE_PCT + v;
     save();
   };
 }
@@ -14082,6 +14117,8 @@ function renderModifiersList(entity){
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
       const rm = fieldsEl.querySelector('.mod-redirect-mode'); if(rm) rm.onchange = e=> mod.redirectMode = e.target.value;
+      const sd = fieldsEl.querySelector('.mod-shuffle-destination'); if(sd) sd.onchange = e=> mod.shuffleDestination = e.target.value;
+      const ss = fieldsEl.querySelector('.mod-shuffle-scope'); if(ss) ss.onchange = e=> mod.shuffleScope = e.target.value;
       const rcd = fieldsEl.querySelector('.mod-reward-count-delta'); if(rcd) rcd.oninput = e=> mod.rewardCountDelta = Math.max(1, parseInt(e.target.value)||1);
       const aur = fieldsEl.querySelector('.mod-auto-upgrade-rewards'); if(aur) aur.onchange = e=> mod.autoUpgradeRewards = e.target.checked;
       fieldsEl.querySelectorAll('.mod-add-pool').forEach(cb=>{
@@ -14092,7 +14129,7 @@ function renderModifiersList(entity){
       });
     };
     if(hook.shape === 'deferred'){
-      fieldsEl.innerHTML = `<div class="hint-small not-real">[DEFERRED] ${escapeHtml(hook.reason)} Compiles to an honest stub (ForgeActions.Todo) that throws if actually reached — no shape-specific fields to set yet.</div>`;
+      fieldsEl.innerHTML = `<div class="hint-small not-real">${escapeHtml(hook.reason)} This option isn't available yet.</div>`;
     } else if(hook.shape === 'gate'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, return</span>
         <select class="mod-gate-value">
@@ -14111,16 +14148,42 @@ function renderModifiersList(entity){
         </select>
         <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>
         <div class="cond-word" style="margin-top:6px;">Only in these room types (leave all unchecked for every room type — matches this hook's old, unfiltered behavior):</div>
-        <div>${roomBoxes}</div>
-        <div class="hint-small">Compiles to a real check against <code>roomType == MegaCrit.Sts2.Core.Rooms.RoomType.X</code> — the real RoomType enum (Unassigned/Monster/Elite/Boss/Treasure/Shop/Event/RestSite/Map) confirmed via direct sts2.dll Field/Constant metadata read.</div>`;
+        <div>${roomBoxes}</div>`;
       wireFields();
     } else if(hook.shape === 'numeric'){
-      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
-        ${hook.lockedOp
-          ? `<span class="cond-word">${hook.lockedOp} the result by</span>`
-          : `<select class="mod-numeric-mode">${['Add','Multiply','Set'].map(o=>`<option value="${o}" ${((mod.numericMode||'Add')===o)?'selected':''}>${o}</option>`).join('')}</select><span class="cond-word">the result by</span>`}
+      // [2026-09-23] Tyler: "make sure to use the slim boxes we have used
+      // before when adding options into the sentence" + "go through all
+      // of the hook effects and make sure they are in 'sentence
+      // structure.'" This shape used to say "[Add] the result by [0]" for
+      // EVERY numeric hook regardless of what "the result" actually was
+      // (play count? gold? HP healed? hit count?) -- generic and
+      // ambiguous, same complaint Round 35 already fixed for the trigger
+      // labels. `hook.unit` is a per-hook noun phrase (reviewed/approved
+      // hook by hook, category by category, same as the label pass) that
+      // replaces "the result by [value]" with "[value] <unit phrase>" --
+      // e.g. ModifyCardPlayCount's unit ("extra play(s) to this card")
+      // reads "Add 0 extra play(s) to this card." A hook not yet reviewed
+      // falls back to the old generic "the result" wording rather than
+      // silently showing nothing.
+      const numUnit = hook.unit || 'the result';
+      // [2026-09-23] Multiply reads backwards in the old value-first order
+      // ("Multiply 2 the Block you gain" is broken) -- Multiply's own
+      // grammar wants the subject before "by", unlike Add/Set which read
+      // fine value-first. Only the two Multiply-locked hooks get a
+      // subject-first unit phrase written for them, so only lockedOp
+      // 'Multiply' gets this branch; free-dropdown hooks keep the
+      // original order since their unit text was written for Add.
+      fieldsEl.innerHTML = hook.lockedOp === 'Multiply'
+        ? `<span class="cond-word">When the condition(s) below match, multiply ${numUnit} by</span>
         <input class="mod-numeric-value" type="number" step="any" value="${mod.numericValue??0}">
-        ${hook.lockedOp ? `<div class="hint-small">This hook's own name locks its operation to "${hook.lockedOp}" — the mode dropdown is hidden because compiler.js ignores it here (see MODIFIER_HOOKS' lockedOp).</div>` : ''}`;
+        <div class="hint-small">This hook always operates as "Multiply" — the mode dropdown is hidden.</div>`
+        : `<span class="cond-word">When the condition(s) below match,</span>
+        ${hook.lockedOp
+          ? `<span class="cond-word">${hook.lockedOp}</span>`
+          : `<select class="mod-numeric-mode">${['Add','Multiply','Set'].map(o=>`<option value="${o}" ${((mod.numericMode||'Add')===o)?'selected':''}>${o}</option>`).join('')}</select>`}
+        <input class="mod-numeric-value" type="number" step="any" value="${mod.numericValue??0}">
+        <span class="cond-word">${numUnit}</span>
+        ${hook.lockedOp ? `<div class="hint-small">This hook always operates as "${hook.lockedOp}" — the mode dropdown is hidden.</div>` : ''}`;
       wireFields();
     } else if(hook.shape === 'damageNumeric'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, ${hook.lockedOp} the result by</span>
@@ -14129,17 +14192,16 @@ function renderModifiersList(entity){
         <select class="mod-damage-direction">
           <option value="Dealt" ${(mod.damageDirection||'Dealt')==='Dealt'?'selected':''}>damage YOU deal</option>
           <option value="Taken" ${mod.damageDirection==='Taken'?'selected':''}>damage YOU take</option>
-        </select>
-        <div class="hint-small">[Round 217, resolves Flag B] Always auto-scoped to this relic's own owner — <code>dealer == this.Owner.Creature</code> for "damage YOU deal", <code>target == this.Owner.Creature</code> for "damage YOU take" — no author condition needed. Matches the real game's own compiled pattern (every real example hand-writes this exact check; see round206b's TheBurdenedNewCharacter_v3.dll Passive8 evidence). This is a deliberate behavior change from this hook's previous unscoped default, confirmed directly by Tyler.</div>`;
+        </select>`;
       wireFields();
     } else if(hook.shape === 'hpLossDisplayFixed'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, reduce HP lost by</span>
         <input class="mod-numeric-value" type="number" step="any" value="${mod.numericValue??0}">
-        <span class="cond-word">(flat).</span>
-        <div class="hint-small">Compiles to two real overrides so this shows up correctly in the enemy's attack-intent number, not just in the actual HP taken — see MODIFIER_HOOKS' ReduceHpLossBeforeBlock entry for why a plain "Modify HP lost before your pet intercepts it" hook alone doesn't.</div>`;
+        <span class="cond-word">(flat).</span>`;
       wireFields();
     } else if(hook.shape === 'tryRefNumeric'){
-      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, set the result to</span>
+      const tryUnit = hook.unit || 'the result';
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, set ${tryUnit} to</span>
         <input class="mod-set-value" type="number" step="any" value="${mod.setValue??0}">
         <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>`;
       wireFields();
@@ -14150,19 +14212,19 @@ function renderModifiersList(entity){
           <option value="Debuff" ${mod.powerTypeFilter==='Debuff'?'selected':''}>a debuff</option>
           <option value="Buff" ${mod.powerTypeFilter==='Buff'?'selected':''}>a buff</option>
         </select>
-        <span class="cond-word">, set the result to</span>
+        <span class="cond-word">, set ${hook.unit || 'the result'} to</span>
         <input class="mod-set-value" type="number" step="any" value="${mod.setValue??0}">
         <span class="cond-word">(0 = fully negate it) — otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real check against <code>PowerModel.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff/Buff</code> — real enum members (None/Buff/Debuff) confirmed via reflect-baselib. Use 'a debuff' + result 0 for "negate incoming debuffs"; 'a buff' + result 0 for "negate incoming buffs".</div>`;
+        <div class="hint-small">Use 'a debuff' + result 0 for "negate incoming debuffs"; 'a buff' + result 0 for "negate incoming buffs".</div>`;
       wireFields();
     } else if(hook.shape === 'cardTransformOnAdd'){
       const cardOpts = state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${mod.becomesCardId===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('');
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, cards added to your deck become</span>
         <select class="mod-becomes-card-id"><option value="">— pick a card —</option>${cardOpts}</select>
         <span class="cond-word">instead — otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real <code>card.Owner.RunState.CreateCard&lt;T&gt;(Player)</code> call (MegaCrit.Sts2.Core.Runs.ICardScope.CreateCard&lt;T&gt;, confirmed via direct MemberRef/TypeRef metadata resolution of the only real compiled example found) — only applies to YOUR deck (an explicit owner check is always compiled in, matching that real example exactly), and always guards against transforming a card that's already the target (prevents an infinite transform loop).</div>
+        <div class="hint-small">Only applies to YOUR deck, and always guards against transforming a card that's already the target (prevents an infinite transform loop).</div>
         <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-auto-upgrade-on-add" ${mod.autoUpgradeOnAdd?'checked':''}> Instead, auto-upgrade eligible cards added to your deck (ignored if a card above is picked)</label>
-        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair, swapped in via <code>newCard</code> — only for cards that are <code>IsUpgradable</code> and not already upgraded.</div>`;
+        <div class="hint-small">Only applies to cards that are upgradable and not already upgraded.</div>`;
       wireFields();
     } else if(hook.shape === 'keywordSet'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
@@ -14170,8 +14232,9 @@ function renderModifiersList(entity){
           <option value="Add" ${mod.keywordOp!=='Remove'?'selected':''}>Add</option>
           <option value="Remove" ${mod.keywordOp==='Remove'?'selected':''}>Remove</option>
         </select>
+        <span class="cond-word">the</span>
         <select class="mod-keyword">${CARD_KEYWORD_VALUES.map(k=>`<option value="${k}" ${k===mod.keyword?'selected':''}>${k}</option>`).join('')}</select>
-        <span class="cond-word">keyword.</span>`;
+        <span class="cond-word">keyword on this card.</span>`;
       wireFields();
     } else if(hook.shape === 'restSiteOption'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
@@ -14181,7 +14244,7 @@ function renderModifiersList(entity){
         </select>
         <select class="mod-option-type">${REST_SITE_OPTION_VALUES.map(o=>`<option value="${o}" ${o===mod.optionType?'selected':''}>${o}</option>`).join('')}</select>
         <span class="cond-word">rest site option.</span>
-        <div class="hint-small">One of the 9 real built-in rest site options — confirmed via direct sts2.dll read, each with a real public constructor. No custom rest site options yet, only these 9 base-game ones.</div>`;
+        <div class="hint-small">No custom rest site options yet — only these 9 base-game ones.</div>`;
       wireFields();
     } else if(hook.shape === 'restSiteReward'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
@@ -14191,9 +14254,8 @@ function renderModifiersList(entity){
           <option value="None" ${mod.rewardOp==='None'?'selected':''}>Don't touch Gold rewards</option>
         </select>
         ${(mod.rewardOp||'Add')==='Add' ? `<input class="mod-reward-amount" type="number" step="1" min="0" value="${mod.rewardAmount??25}"><span class="cond-word">gold.</span>` : ''}
-        <div class="hint-small">Compiles to a real <code>new GoldReward(amount, player, false)</code> — confirmed real public constructor via direct sts2.dll read. Only Gold is offered for now; other reward types (Card/Relic/Potion) aren't researched yet.</div>
-        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-make-rerollable" ${mod.makeCardRewardsRerollable?'checked':''}> Also make any card rewards in this room rerollable</label>
-        <div class="hint-small">Compiles to a real <code>CardReward.CanReroll = true</code> assignment — a real, public, settable bool property confirmed via direct sts2.dll read.</div>`;
+        <div class="hint-small">Only Gold is offered for now — other reward types (Card/Relic/Potion) aren't available yet.</div>
+        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-make-rerollable" ${mod.makeCardRewardsRerollable?'checked':''}> Also make any card rewards in this room rerollable</label>`;
       wireFields();
     } else if(hook.shape === 'cardLocation'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, send the just-played card to your</span>
@@ -14203,8 +14265,75 @@ function renderModifiersList(entity){
           <option value="Bottom" ${mod.destPosition==='Bottom'?'selected':''}>Bottom</option>
           <option value="Random" ${mod.destPosition==='Random'?'selected':''}>Random position</option>
         </select>
-        <span class="cond-word">instead — otherwise, fall through to the base game's own real result.</span>
-        <div class="hint-small">Compiles to a real <code>new CardLocation(card.Owner, PileType, CardPilePosition)</code> — confirmed real public constructor via direct sts2.dll IL read.</div>`;
+        <span class="cond-word">instead — otherwise, fall through to the base game's own real result.</span>`;
+      wireFields();
+    } else if(hook.shape === 'shuffleOrder'){
+      // [2026-09-23] ModifyShuffleOrder's authoring-UI design pass -- Tyler
+      // asked for this to actually be implemented, not just relabeled. Same
+      // optional type/tag filter checkboxes as the cost-reduction rule
+      // editor (renderCostReductionRows, round 165) so this doesn't
+      // introduce a second UI convention for "which cards match" -- reuses
+      // CARD_TYPE_ORDER and allGameplayTags() directly.
+      const shuffleTagOptions = allGameplayTags();
+      const hasShuffleTypeFilter = !!mod.shuffleCardTypeFilter;
+      const hasShuffleTagFilter = !!mod.shuffleCardTagFilter;
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, move matching cards to the</span>
+        <select class="mod-shuffle-destination">
+          <option value="Top" ${(mod.shuffleDestination||'Top')==='Top'?'selected':''}>top</option>
+          <option value="Bottom" ${mod.shuffleDestination==='Bottom'?'selected':''}>bottom</option>
+        </select>
+        <span class="cond-word">of the pile whenever it's shuffled, on</span>
+        <select class="mod-shuffle-scope">
+          <option value="Any" ${(mod.shuffleScope||'Any')==='Any'?'selected':''}>every shuffle</option>
+          <option value="InitialOnly" ${mod.shuffleScope==='InitialOnly'?'selected':''}>only the first shuffle of combat</option>
+          <option value="ReshuffleOnly" ${mod.shuffleScope==='ReshuffleOnly'?'selected':''}>only mid-combat reshuffles</option>
+        </select>
+        <span class="cond-word">.</span>
+        <div style="margin-top:6px;">
+          <label class="a-check-label">
+            <input type="checkbox" class="mod-shuffle-typefilter-check" ${hasShuffleTypeFilter?'checked':''}>
+            Only cards of type
+          </label>
+          <select class="mod-shuffle-typefilter" ${hasShuffleTypeFilter?'':'disabled'}>
+            ${CARD_TYPE_ORDER.map(t=>`<option value="${t}" ${mod.shuffleCardTypeFilter===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+          <label class="a-check-label">
+            <input type="checkbox" class="mod-shuffle-tagfilter-check" ${hasShuffleTagFilter?'checked':''} ${shuffleTagOptions.length?'':'disabled'}>
+            Only cards tagged
+          </label>
+          ${shuffleTagOptions.length
+            ? `<select class="mod-shuffle-tagfilter" ${hasShuffleTagFilter?'':'disabled'}>${shuffleTagOptions.map(t=>`<option value="${escapeAttr(t)}" ${mod.shuffleCardTagFilter===t?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>`
+            : `<select class="mod-shuffle-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`}
+        </div>
+        <div class="hint-small">Leave both filters off to move every card in the pile (a no-op reorder).</div>`;
+      const shuffleTypeCheck = fieldsEl.querySelector('.mod-shuffle-typefilter-check');
+      const shuffleTypeSel = fieldsEl.querySelector('.mod-shuffle-typefilter');
+      const shuffleTagCheck = fieldsEl.querySelector('.mod-shuffle-tagfilter-check');
+      const shuffleTagSel = fieldsEl.querySelector('.mod-shuffle-tagfilter');
+      shuffleTypeCheck.onchange = e=>{
+        mod.shuffleCardTypeFilter = e.target.checked ? (shuffleTypeSel.value || CARD_TYPE_ORDER[0]) : null;
+        shuffleTypeSel.disabled = !e.target.checked;
+      };
+      shuffleTypeSel.onchange = e=>{ if(shuffleTypeCheck.checked) mod.shuffleCardTypeFilter = e.target.value; };
+      shuffleTagCheck.onchange = e=>{
+        mod.shuffleCardTagFilter = (e.target.checked && shuffleTagSel.value) ? shuffleTagSel.value : null;
+        shuffleTagSel.disabled = !e.target.checked;
+      };
+      shuffleTagSel.onchange = e=>{ if(shuffleTagCheck.checked) mod.shuffleCardTagFilter = e.target.value; };
+      wireFields();
+    } else if(hook.shape === 'extraHealText'){
+      // [2026-09-23] ModifyExtraRestSiteHealText's authoring-UI design
+      // pass -- Tyler asked for this implemented for real too. The
+      // author's typed text becomes a real BaseLib.Abstracts.
+      // ILocalizationProvider.Localization row (see compiler.js's
+      // generateExtraHealTextLocalization), appended as a real LocString
+      // the base game's own Heal rest site option reads. No card-match
+      // filters here -- this hook takes no per-card params at all (real
+      // signature: ModifyExtraRestSiteHealText(Player, IReadOnlyList<LocString>))
+      // -- just the text and the usual condition block below.
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, show this extra line under the Heal option:</span>
+        <textarea class="mod-extra-heal-text" rows="2" style="width:100%; margin-top:4px;" placeholder="e.g. Also removes 1 Afflicted card from your deck.">${escapeHtml(mod.extraHealText||'')}</textarea>`;
+      fieldsEl.querySelector('.mod-extra-heal-text').oninput = e=> mod.extraHealText = e.target.value;
       wireFields();
     } else if(hook.shape === 'creatureRedirect'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, redirect this hit to a random</span>
@@ -14212,28 +14341,25 @@ function renderModifiersList(entity){
           <option value="Ally" ${(mod.redirectMode||'Ally')==='Ally'?'selected':''}>ally of the attacker</option>
           <option value="Enemy" ${mod.redirectMode==='Enemy'?'selected':''}>enemy of the attacker</option>
         </select>
-        <span class="cond-word">instead of its original target (falls back to the original target if none exist) — otherwise, fall through to the base game's own real result.</span>
-        <div class="hint-small">Compiles to a real <code>Creature.CombatState.GetTeammatesOf/GetOpponentsOf(Creature): IReadOnlyList&lt;Creature&gt;</code> — both confirmed real, public, abstract members of the ICombatState interface itself via direct sts2.dll read.</div>`;
+        <span class="cond-word">instead of its original target (falls back to the original target if none exist) — otherwise, fall through to the base game's own real result.</span>`;
       wireFields();
     } else if(hook.shape === 'cardRewardPoolAppend'){
       if(!Array.isArray(mod.addPools)) mod.addPools = [];
       const poolBoxes = CARD_POOL_VALUES.map(p=>`<label class="chk-inline"><input type="checkbox" class="mod-add-pool" value="${p}" ${mod.addPools.includes(p)?'checked':''}> ${p}</label>`).join(' ');
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, add these card pools to this reward's options:</span>
         <div>${poolBoxes}</div>
-        <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real <code>CardCreationOptions.WithCardPools(options.CardPools.Concat(...))</code> call, appending real <code>ModelDb.CardPool&lt;T&gt;()</code> instances — confirmed real via direct sts2.dll reads of CardCreationOptions and the CardPools namespace.</div>`;
+        <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>`;
       wireFields();
     } else if(hook.shape === 'cardRewardCountDelta'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, add</span>
         <input class="mod-reward-count-delta" type="number" step="1" min="1" value="${mod.rewardCountDelta??1}">
         <span class="cond-word">extra card reward choice(s) — otherwise, fall through to the base game's own real behavior.</span>
-        <div class="hint-small">Compiles to a real <code>CardFactory.CreateForReward(player, N, creationOptions)</code> call (a real public static factory, confirmed via direct sts2.dll read), appended to the existing reward option list. Only adding is supported — there's no real-evidenced mechanism yet for which specific option to remove.</div>
-        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-auto-upgrade-rewards" ${mod.autoUpgradeRewards?'checked':''}> Also auto-upgrade eligible card reward options</label>
-        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair, swapped in via <code>CardCreationResult.ModifyCard(clone, this)</code> so the shared canonical card template is never mutated in place.</div>`;
+        <div class="hint-small">Only adding is supported — there's no way yet to remove a specific reward option.</div>
+        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-auto-upgrade-rewards" ${mod.autoUpgradeRewards?'checked':''}> Also auto-upgrade eligible card reward options</label>`;
       wireFields();
     } else if(hook.shape === 'cardListUpgradeVoid'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, auto-upgrade every eligible card in this shop's stock — otherwise leave the base game's own real behavior unchanged.</span>
-        <div class="hint-small">Compiles to a real <code>CardModel.CreateClone()</code> + <code>CardCmd.Upgrade(clone, CardPreviewStyle.None)</code> pair per eligible entry (only cards that are <code>IsUpgradable</code> and not already upgraded), swapped in via <code>CardCreationResult.ModifyCard(clone, this)</code>. This is a real VOID hook (ModifyMerchantCardCreationResults) — there's no true/false result to gate on, so conditions just control whether the loop runs at all.</div>`;
+        <div class="hint-small">Only applies to cards that are upgradable and not already upgraded. Conditions just control whether this runs at all — there's no true/false result to gate on.</div>`;
       wireFields();
     }
     if(!isDeferred){
@@ -14372,17 +14498,19 @@ function openRelicEditor(relicId){
   // Modifiers/Experimental/Weak-Vulnerable sections that predate this
   // round's "Passive block hosts them instead" change — without this, a
   // relic that already has modifiers/autoClaimShopInventory/incomingWeakBonus/
-  // vulnerableDamageBonus/amplifyWeakAndVulnerable set, but no effect block
-  // whose trigger is 'Passive', would have that real, still-compiling data
-  // become invisible/unreachable in the editor (nothing left to click to
-  // see or change it). Auto-inserts one Passive block, once, the first
-  // time such a relic is opened after this round ships — same "migrate on
-  // touch" convention as the Array.isArray guards just above.
+  // vulnerableDamageBonus set, but no effect block whose trigger is
+  // 'Passive', would have that real, still-compiling data become
+  // invisible/unreachable in the editor (nothing left to click to see or
+  // change it). Auto-inserts one Passive block, once, the first time such
+  // a relic is opened after this round ships — same "migrate on touch"
+  // convention as the Array.isArray guards just above. [Round 221]
+  // amplifyWeakAndVulnerable dropped from this check along with the rest
+  // of the feature — an old relic with only that (now dead) field set
+  // doesn't need a Passive block inserted just to expose it.
   const hasLegacyPassiveConfig = relic.modifiers.length > 0
     || !!relic.autoClaimShopInventory
     || !!relic.incomingWeakBonus
-    || !!relic.vulnerableDamageBonus
-    || (relic.amplifyWeakAndVulnerable !== undefined && relic.amplifyWeakAndVulnerable !== 100);
+    || !!relic.vulnerableDamageBonus;
   if(hasLegacyPassiveConfig && !relic.effects.some(e=>e.trigger==='Passive')){
     relic.effects.unshift({trigger:'Passive', conditions:[], actions:[], elseActions:[]});
   }
@@ -14420,7 +14548,7 @@ function openRelicEditor(relicId){
       </div>
 
       <label style="margin-top:20px">Effects</label>
-      <div class="panel-desc" style="margin:-4px 0 12px">Set a block's trigger to "Passive" for a relic that doesn't react to anything — that's where Modifiers, and the round 217/218 shop-claim and Weak/Vulnerable fields, now live (round 219 — Tyler: "they should replace all effects when the trigger is set to passive").</div>
+      <div class="panel-desc" style="margin:-4px 0 12px">Set a block's trigger to "Passive" for a relic that doesn't react to anything — that's where Modifiers, and the shop-claim and Weak/Vulnerable fields, now live.</div>
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
     </div>
@@ -14490,12 +14618,11 @@ function openRelicEditor(relicId){
     if(pendingRelicIconDataUrl !== undefined){
       relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
     }
-    // [Round 219] autoClaimShopInventory/incomingWeakBonus/vulnerableDamageBonus/
-    // amplifyWeakAndVulnerable are no longer read here — they're only ever
-    // in the DOM at all while a Passive effect block is open and is this
-    // relic's firstPassiveIdx (see renderEffectsList/passiveConfigMarkup),
-    // so wirePassiveConfig writes them straight to `relic` live, on change,
-    // instead.
+    // [Round 219] autoClaimShopInventory/incomingWeakBonus/vulnerableDamageBonus
+    // are no longer read here — they're only ever in the DOM at all while
+    // a Passive effect block is open and is this relic's firstPassiveIdx
+    // (see renderEffectsList/passiveConfigMarkup), so wirePassiveConfig
+    // writes them straight to `relic` live, on change, instead.
     save(); renderRelics(); closeModal();
   };
 }
@@ -14621,7 +14748,7 @@ function openMechEditor(mechId){
         <div id="m-bar-fields" style="margin-top:8px; display:${mechResourceBar(m) ? '' : 'none'}"></div>
       </div>
       <label style="margin-top:20px">What this does</label>
-      <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks. Set a block's trigger to "Passive" for a status that doesn't react to anything — that's where Modifiers now lives (round 219).</div>
+      <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks. Set a block's trigger to "Passive" for a status that doesn't react to anything — that's where Modifiers now lives.</div>
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
     </div>
@@ -14718,8 +14845,8 @@ function openPetEditor(petId){
     <div class="modal-head"><h3>Edit Pet</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
       <div class="panel-desc" style="margin-top:0; color:var(--danger-bright)">
-        Not yet compiled into your mod's code — see the Pets section description for why. Saved here as a design
-        doc (exported as Pets/README.md) so it's ready once a real mechanism is confirmed.
+        Not yet supported in the compiled mod — see the Pets section description for why. Saved here as a design
+        note, ready for whenever this becomes possible.
       </div>
       <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
       <label>Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
@@ -15830,7 +15957,7 @@ function renderOrbs(){
   state.orbs.forEach(o=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(o.name||'Untitled')}</div><div class="t-meta">orb — PassiveVal/EvokeVal compile for real; behavior is still a design note</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(o.name||'Untitled')}</div><div class="t-meta">orb — passive/evoke values are functional; behavior is still a design note</div>`;
     t.onclick = ()=> openOrbEditor(o.id);
     orbGrid.appendChild(t);
   });
@@ -15858,10 +15985,9 @@ function openOrbEditor(orbId){
     <div class="modal-head"><h3>Edit Orb</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
       <div class="panel-desc" style="margin-top:0">
-        <strong>Passive/Evoke value below ARE real</strong> — they compile into a real <code>CustomOrbModel</code>
-        subclass (<code>PassiveVal</code>/<code>EvokeVal</code> overrides, confirmed against a real working mod example).
+        <strong>Passive/Evoke value below are functional</strong> — they compile into the orb.
         <span style="color:var(--danger-bright)">The passive/evoke effect text and Focus-scaling below are still just design notes</span> —
-        Forge doesn't have an effect editor for orb behavior yet, so they're exported to Orbs/README.md, not compiled.
+        there's no effect editor for orb behavior yet, so they're included as reference notes, not compiled.
       </div>
       <label>Name</label><input type="text" id="o-name" value="${escapeAttr(o.name)}">
       <label>Description / flavor text</label><textarea id="o-desc">${escapeHtml(o.description||'')}</textarea>
@@ -15874,7 +16000,7 @@ function openOrbEditor(orbId){
       <label>Evoke effect text (when passed out of the last slot) — design note only, not compiled</label>
       <textarea id="o-evoke">${escapeHtml(o.evokeText||'')}</textarea>
       <div class="row">
-        <div><label title="No confirmed OrbModel-level mechanism for this yet — design note only, not compiled.">Scales with Focus (design note only)</label><select id="o-focus">${optList(['true','false'], String(o.focusScales!==false))}</select></div>
+        <div><label title="Design note only, not compiled yet.">Scales with Focus (design note only)</label><select id="o-focus">${optList(['true','false'], String(o.focusScales!==false))}</select></div>
       </div>
     </div>
     <div class="modal-foot">

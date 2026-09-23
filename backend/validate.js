@@ -1418,6 +1418,45 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
       // default because it's the one meaningful choice the modifier makes.
       if (mod.destPile !== undefined && !PILE_TYPES.includes(mod.destPile)) errors.push(`${p}.destPile "${mod.destPile}" is not one of: ${PILE_TYPES.join(', ')}.`);
       if (mod.destPosition !== undefined && !['Top', 'Bottom', 'Random'].includes(mod.destPosition)) errors.push(`${p}.destPosition "${mod.destPosition}" is not one of: Top, Bottom, Random.`);
+    } else if (hook.shape === 'shuffleOrder') {
+      // [2026-09-23] ModifyShuffleOrder — shuffleCardTypeFilter/
+      // shuffleCardTagFilter are both optional and independent (compiler.js
+      // ANDs whichever are present; leaving both off matches every card,
+      // same "wide open" convention gateRoomTypeFiltered's empty roomTypes
+      // already uses), so neither is required here. shuffleCardTagFilter
+      // gets the exact same freeform-tag validation as every other
+      // cardTagFilter in this file (non-empty, <=40 chars, cross-checked
+      // against gameplayTagsInUse case-insensitively) — see
+      // validateAdvancedOptions' cardTagFilter block above for the same
+      // pattern. shuffleDestination/shuffleScope are both closed
+      // vocabularies compiler.js's generateModifierOverrides switches on
+      // directly.
+      if (mod.shuffleCardTypeFilter !== undefined && !CARD_TYPES.includes(mod.shuffleCardTypeFilter)) errors.push(`${p}.shuffleCardTypeFilter "${mod.shuffleCardTypeFilter}" is not one of: ${CARD_TYPES.join(', ')}.`);
+      if (mod.shuffleCardTagFilter !== undefined) {
+        if (!isNonEmptyString(mod.shuffleCardTagFilter)) {
+          errors.push(`${p}.shuffleCardTagFilter must be a non-empty string if present.`);
+        } else if (mod.shuffleCardTagFilter.length > 40) {
+          errors.push(`${p}.shuffleCardTagFilter "${mod.shuffleCardTagFilter}" is longer than 40 characters.`);
+        } else if (gameplayTagsInUse && !gameplayTagsInUse.has(mod.shuffleCardTagFilter.toLowerCase())) {
+          errors.push(`${p}.shuffleCardTagFilter "${mod.shuffleCardTagFilter}" isn't a tag used anywhere on this character.`);
+        }
+      }
+      if (mod.shuffleDestination !== undefined && !['Top', 'Bottom'].includes(mod.shuffleDestination)) errors.push(`${p}.shuffleDestination "${mod.shuffleDestination}" is not one of: Top, Bottom.`);
+      if (mod.shuffleScope !== undefined && !['Any', 'InitialOnly', 'ReshuffleOnly'].includes(mod.shuffleScope)) errors.push(`${p}.shuffleScope "${mod.shuffleScope}" is not one of: Any, InitialOnly, ReshuffleOnly.`);
+    } else if (hook.shape === 'extraHealText') {
+      // [2026-09-23] ModifyExtraRestSiteHealText -- required, not optional
+      // like most other free-text fields in this file: compiler.js's
+      // generateModifierOverrides ALWAYS emits the ModifyExtraRestSiteHealText
+      // override once this modifier exists, and that override always
+      // references the "EXTRAHEALTEXT" loc key -- but generateExtraHealTextLocalization
+      // (the paired class-level Localization override that actually
+      // DEFINES that key) only emits anything when mod.extraHealText is a
+      // real, non-empty string. Leaving it blank wouldn't fail to
+      // compile, but would silently point ModifyExtraRestSiteHealText at
+      // a loc key that was never registered -- rejected here instead, same
+      // "reject clearly rather than silently accept something broken"
+      // convention as every other required field in this function.
+      if (!isNonEmptyString(mod.extraHealText)) errors.push(`${p}.extraHealText must be a non-empty string.`);
     }
   });
 }
@@ -2093,19 +2132,18 @@ function validateCharacterPackage(pkg) {
     if (relic.autoClaimShopInventory !== undefined && typeof relic.autoClaimShopInventory !== 'boolean') {
       errors.push(`${p}.autoClaimShopInventory must be a boolean.`);
     }
-    // [Round 218] #37/38/39 -- see backend/compiler.js:
+    // [Round 218] #37/38 -- see backend/compiler.js:
     // generateDebuffMultiplierSupportFile for the full evidence trail.
-    // Simple numeric type-checks only; 0 (incomingWeakBonus/
-    // vulnerableDamageBonus) and 100 (amplifyWeakAndVulnerable) are both
-    // valid "no effect" values, not errors.
+    // Simple numeric type-checks only; 0 is a valid "no effect" value,
+    // not an error. [Round 221] amplifyWeakAndVulnerable (#39) removed
+    // entirely per Tyler's call -- no longer validated, no longer read
+    // by the compiler. A relic saved before this round may still carry
+    // the old field in its JSON; it's simply ignored now, not an error.
     if (relic.incomingWeakBonus !== undefined && typeof relic.incomingWeakBonus !== 'number') {
       errors.push(`${p}.incomingWeakBonus must be a number.`);
     }
     if (relic.vulnerableDamageBonus !== undefined && typeof relic.vulnerableDamageBonus !== 'number') {
       errors.push(`${p}.vulnerableDamageBonus must be a number.`);
-    }
-    if (relic.amplifyWeakAndVulnerable !== undefined && typeof relic.amplifyWeakAndVulnerable !== 'number') {
-      errors.push(`${p}.amplifyWeakAndVulnerable must be a number.`);
     }
   });
 
