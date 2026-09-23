@@ -11162,7 +11162,7 @@ function openCardEditor(cardId){
   };
 }
 
-function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile){
+function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic){
   // listElId defaults to 'effects-list' (the Character/Relic/Mechanic
   // editors' single effects panel, all three unaffected by this param).
   // The card editor is the one place with TWO effects editors open in the
@@ -11179,6 +11179,17 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
   // card property. See renderActionRows/renderActionRowFields' xEligible.
   listElId = listElId || 'effects-list';
   const list = document.getElementById(listElId);
+  // [Round 219] Passive is a real trigger CHOICE (HOOK_TRIGGERS) that
+  // compiles to nothing but a comment (see compiler.js:generateHookEffects
+  // -- "trigger: Passive -- no hook override generated") -- Tyler: "they
+  // should replace all effects when the trigger is set to passive." Only
+  // the FIRST block whose trigger is 'Passive' hosts the real Modifiers/
+  // Experimental/Weak-Vulnerable editor (see refreshPassiveMode below);
+  // relic.modifiers/autoClaimShopInventory/etc. are relic-wide fields, not
+  // per-block, so a second Passive block would just be editing the exact
+  // same underlying data through a second copy of the same widget -- the
+  // note shown there points back to this one instead.
+  const firstPassiveIdx = entity.effects.findIndex(e => e.trigger === 'Passive');
   if(entity.effects.length===0){
     list.innerHTML = '<div class="empty">No effects yet — this does nothing. Add a block above.</div>';
     // [Round 161] `showPile` is only ever truthy for the "While in a pile"
@@ -11266,6 +11277,8 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
         ? '<div class="eb-trigger-picker"></div>'
         : `<select class="eb-trigger">${triggerOptList(triggerOptionsForPile(), eff.trigger)}</select>`}
       <div class="eb-trigger-hint hint-small"></div>
+      <div class="eb-passive-config" style="display:none"></div>
+      <div class="eb-normal-body">
       <div class="eb-conditions">
         <div class="eb-conditions-label">If (all of the following are true):</div>
         <div class="eb-conditions-list"></div>
@@ -11278,6 +11291,7 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
         <div class="eb-else-label"></div>
         <div class="eb-else-list"></div>
         <button class="ghost eb-add-else-action">+ else action</button>
+      </div>
       </div>
     `;
     // xEligibleNow — whether "Use X" is offered on this block's action
@@ -11447,6 +11461,30 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       fixConditionsForTrigger(eff.conditions, eff.trigger);
       renderConditionRows(eff, condListEl, onConditionsChanged);
     };
+    // [Round 219] Toggles this block between the normal condition/action
+    // editor and the Modifiers/Experimental/Weak-Vulnerable editor,
+    // depending only on whether THIS block's trigger is 'Passive' (see
+    // firstPassiveIdx above for why only one block per entity ever shows
+    // the real editor). Called on initial render and again from
+    // onTriggerChanged whenever the trigger flips into or out of
+    // 'Passive' — that flip can also change which block is "first",
+    // so onTriggerChanged falls back to a full renderEffectsList() call
+    // in that case rather than trying to patch two blocks' DOM by hand.
+    const normalBodyEl = block.querySelector('.eb-normal-body');
+    const passiveConfigEl = block.querySelector('.eb-passive-config');
+    const refreshPassiveMode = ()=>{
+      const passive = triggerOptions === HOOK_TRIGGERS && eff.trigger === 'Passive';
+      normalBodyEl.style.display = passive ? 'none' : '';
+      passiveConfigEl.style.display = passive ? '' : 'none';
+      if(!passive){ passiveConfigEl.innerHTML = ''; return; }
+      if(i !== firstPassiveIdx){
+        passiveConfigEl.innerHTML = '<div class="hint-small">This relic/status only has one set of Modifiers/Experimental/Weak-Vulnerable fields, shared by the whole relic/status, not per-block — edit them in the first "Passive" block above; remove this one if you don\'t need a second Passive block.</div>';
+        return;
+      }
+      passiveConfigEl.innerHTML = passiveConfigMarkup(entity, isRelic);
+      wirePassiveConfig(passiveConfigEl, entity, isRelic);
+    };
+    refreshPassiveMode();
     refreshHint();
     refreshConditions();
     // Round 23 — self-heals already-saved actions the moment this effect
@@ -11465,7 +11503,19 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
     fixReturnToHandActions(eff.actions, returnToHandEligibleNow());
     fixReturnToHandActions(eff.elseActions, returnToHandEligibleNow());
     const onTriggerChanged = (newTrigger)=>{
+      // [Round 219] Captured BEFORE eff.trigger is reassigned below —
+      // flipping into or out of 'Passive' can change which block is
+      // firstPassiveIdx (computed once, above, for the whole list), so
+      // that case falls all the way through to a full renderEffectsList()
+      // re-render instead of the usual in-place DOM patching this
+      // function otherwise does.
+      const wasPassive = triggerOptions === HOOK_TRIGGERS && eff.trigger === 'Passive';
+      const willBePassive = triggerOptions === HOOK_TRIGGERS && newTrigger === 'Passive';
       eff.trigger = newTrigger;
+      if(wasPassive !== willBePassive){
+        renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic);
+        return;
+      }
       refreshHint();
       refreshConditions();
       // Round 20/23 — an action/condition/scale-subject that only makes
@@ -11505,7 +11555,7 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       eff.conditions.push(blankCondition(defaultKind));
       renderConditionRows(eff, condListEl, onConditionsChanged);
     };
-    block.querySelector('.eb-remove').onclick = ()=>{ entity.effects.splice(i,1); renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile); };
+    block.querySelector('.eb-remove').onclick = ()=>{ entity.effects.splice(i,1); renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic); };
     block.querySelector('.eb-add-action').onclick = ()=>{ eff.actions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow()); };
     block.querySelector('.eb-add-else-action').onclick = ()=>{ eff.elseActions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow()); };
     renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
@@ -13848,6 +13898,86 @@ function blankModifier(hookId){
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
+// [Round 219] Content shown inline inside a relic/mechanic's Effects
+// block once its trigger is set to 'Passive' (see renderEffectsList's own
+// firstPassiveIdx/refreshPassiveMode) -- Tyler: "they should replace all
+// effects when the trigger is set to passive." Replaces the three
+// previously-always-visible, trigger-independent sections this modal used
+// to have below the Effects list: "Modifiers (advanced)" (shared by
+// relics AND mechanics -- MODIFIER_HOOKS/renderModifiersList), plus, for
+// relics only, "Experimental" (round 217 autoClaimShopInventory) and
+// "Weak / Vulnerable math" (round 218 incomingWeakBonus/
+// vulnerableDamageBonus/amplifyWeakAndVulnerable) -- neither of the
+// latter two applies to a mechanic/status, since both compile to code
+// keyed off a real RELIC class via Player.GetRelic<T>() (see
+// generateClaimShopInventoryOverride/generateDebuffMultiplierSupportFile
+// in backend/compiler.js), which a mechanic/status simply isn't.
+function passiveConfigMarkup(entity, isRelic){
+  let html = `
+    <label style="margin-top:4px">Modifiers (advanced)</label>
+    <div id="modifiers-list"></div>
+    <button class="secondary" id="passive-add-modifier" type="button" style="margin-top:6px">+ Add modifier</button>
+  `;
+  if(isRelic){
+    html += `
+    <label style="margin-top:20px">Experimental (round 217 — test live before trusting)</label>
+    <label class="chk-inline" style="display:block;">
+      <input type="checkbox" id="m-auto-claim-shop" ${entity.autoClaimShopInventory ? 'checked' : ''}>
+      Automatically claim shop items for free on room entry (#14 claimShopInventory)
+    </label>
+    <div class="hint-small not-real">[BEST EFFORT] Drives live Godot UI screen nodes with hardcoded real-time waits (blocks map/deck buttons and travel, opens the merchant screen, purchases every stocked entry for free) — a genuinely different, riskier class of feature than every other modifier/effect on this page, which only compute values or mutate data-layer lists. Compiles clean, but has only ever been checked by compiling it, never by actually playing it — test this specific relic in-game before trusting it in a real run. See generateClaimShopInventoryOverride in backend/compiler.js for the full evidence trail.</div>
+
+    <label style="margin-top:20px">Weak / Vulnerable math (round 218)</label>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:180px;">
+        <label class="dim-hint">Incoming Weak bonus (%)</label>
+        <input type="number" step="any" id="m-incoming-weak-bonus" value="${entity.incomingWeakBonus ?? 0}">
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label class="dim-hint">Vulnerable damage bonus (%)</label>
+        <input type="number" step="any" id="m-vulnerable-damage-bonus" value="${entity.vulnerableDamageBonus ?? 0}">
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label class="dim-hint">Amplify Weak &amp; Vulnerable (%, 100 = no change)</label>
+        <input type="number" step="any" id="m-amplify-weak-vuln" value="${entity.amplifyWeakAndVulnerable ?? 100}">
+      </div>
+    </div>
+    <div class="hint-small">[VERIFIED via direct ECMA-335 IL trace, round 218] "Incoming Weak bonus": while THIS relic's owner is attacked by a Weakened dealer, take that much LESS damage on top of Weak's own normal reduction. "Vulnerable damage bonus": while THIS relic's owner attacks a Vulnerable target (not itself), deal that much MORE damage on top of Vulnerable's own normal bonus. "Amplify Weak &amp; Vulnerable": multiplies how strongly BOTH debuffs affect THIS relic's owner specifically (135 = 35% stronger; 50 = half as strong). Compiles to a real Harmony postfix on WeakPower/VulnerablePower's own real damage-multiplier method (Generated/ForgeDebuffMultiplierSupport.cs, only generated at all when a relic actually sets one of these three fields) — see generateDebuffMultiplierSupportFile in backend/compiler.js for the full evidence trail.</div>
+    `;
+  }
+  return html;
+}
+
+// Wires passiveConfigMarkup's live inputs directly to the entity object —
+// same "write straight through on change, no separate Save step" pattern
+// renderModifiersList's own wireFields() already uses for every modifier
+// field, chosen here (over the old read-on-Done-click approach round
+// 217/218 originally shipped with) because this content can now be torn
+// down and rebuilt at any time by a trigger switch elsewhere in the same
+// modal (see renderEffectsList's onTriggerChanged) — a stale id read only
+// at Save time would silently miss whatever the LAST live DOM happened to
+// contain instead of whatever the user actually last edited.
+function wirePassiveConfig(container, entity, isRelic){
+  document.getElementById('passive-add-modifier').onclick = ()=>{
+    entity.modifiers.push(blankModifier(Object.keys(MODIFIER_HOOKS)[0]));
+    renderModifiersList(entity);
+  };
+  renderModifiersList(entity);
+  if(!isRelic) return;
+  const claimCb = document.getElementById('m-auto-claim-shop');
+  claimCb.onchange = e=>{ entity.autoClaimShopInventory = e.target.checked; save(); };
+  const weakEl = document.getElementById('m-incoming-weak-bonus');
+  weakEl.oninput = e=>{ entity.incomingWeakBonus = parseFloat(e.target.value) || 0; save(); };
+  const vulnEl = document.getElementById('m-vulnerable-damage-bonus');
+  vulnEl.oninput = e=>{ entity.vulnerableDamageBonus = parseFloat(e.target.value) || 0; save(); };
+  const ampEl = document.getElementById('m-amplify-weak-vuln');
+  ampEl.oninput = e=>{
+    const v = parseFloat(e.target.value);
+    entity.amplifyWeakAndVulnerable = Number.isFinite(v) ? v : 100;
+    save();
+  };
+}
+
 function renderModifiersList(entity){
   if(!Array.isArray(entity.modifiers)) entity.modifiers = [];
   const list = document.getElementById('modifiers-list');
@@ -14188,6 +14318,25 @@ function renderStartingRelicPicker(){
 function openRelicEditor(relicId){
   const relic = state.relics.find(r=>r.id===relicId);
   if(!Array.isArray(relic.modifiers)) relic.modifiers = []; // upgrade path for relics saved before this field existed
+  if(!Array.isArray(relic.effects)) relic.effects = []; // same upgrade-path convention, belt-and-suspenders
+  // [Round 219] Migration for a relic saved under the OLD, always-visible
+  // Modifiers/Experimental/Weak-Vulnerable sections that predate this
+  // round's "Passive block hosts them instead" change — without this, a
+  // relic that already has modifiers/autoClaimShopInventory/incomingWeakBonus/
+  // vulnerableDamageBonus/amplifyWeakAndVulnerable set, but no effect block
+  // whose trigger is 'Passive', would have that real, still-compiling data
+  // become invisible/unreachable in the editor (nothing left to click to
+  // see or change it). Auto-inserts one Passive block, once, the first
+  // time such a relic is opened after this round ships — same "migrate on
+  // touch" convention as the Array.isArray guards just above.
+  const hasLegacyPassiveConfig = relic.modifiers.length > 0
+    || !!relic.autoClaimShopInventory
+    || !!relic.incomingWeakBonus
+    || !!relic.vulnerableDamageBonus
+    || (relic.amplifyWeakAndVulnerable !== undefined && relic.amplifyWeakAndVulnerable !== 100);
+  if(hasLegacyPassiveConfig && !relic.effects.some(e=>e.trigger==='Passive')){
+    relic.effects.unshift({trigger:'Passive', conditions:[], actions:[], elseActions:[]});
+  }
   pendingRelicIconDataUrl = undefined;
   openModal(`
     <div class="modal-head"><h3>Edit Relic</h3><span class="close" onclick="closeModal()">&times;</span></div>
@@ -14222,43 +14371,16 @@ function openRelicEditor(relicId){
       </div>
 
       <label style="margin-top:20px">Effects</label>
+      <div class="panel-desc" style="margin:-4px 0 12px">Set a block's trigger to "Passive" for a relic that doesn't react to anything — that's where Modifiers, and the round 217/218 shop-claim and Weak/Vulnerable fields, now live (round 219 — Tyler: "they should replace all effects when the trigger is set to passive").</div>
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
-      <label style="margin-top:20px">Modifiers (advanced)</label>
-      <div id="modifiers-list"></div>
-      <button class="secondary" id="add-modifier" style="margin-top:6px">+ Add modifier</button>
-
-      <label style="margin-top:20px">Experimental (round 217 — test live before trusting)</label>
-      <label class="chk-inline" style="display:block;">
-        <input type="checkbox" id="m-auto-claim-shop" ${relic.autoClaimShopInventory ? 'checked' : ''}>
-        Automatically claim shop items for free on room entry (#14 claimShopInventory)
-      </label>
-      <div class="hint-small not-real">[BEST EFFORT] Drives live Godot UI screen nodes with hardcoded real-time waits (blocks map/deck buttons and travel, opens the merchant screen, purchases every stocked entry for free) — a genuinely different, riskier class of feature than every other modifier/effect on this page, which only compute values or mutate data-layer lists. Compiles clean, but has only ever been checked by compiling it, never by actually playing it — test this specific relic in-game before trusting it in a real run. See generateClaimShopInventoryOverride in backend/compiler.js for the full evidence trail.</div>
-
-      <label style="margin-top:20px">Weak / Vulnerable math (round 218)</label>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:180px;">
-          <label class="dim-hint">Incoming Weak bonus (%)</label>
-          <input type="number" step="any" id="m-incoming-weak-bonus" value="${relic.incomingWeakBonus ?? 0}">
-        </div>
-        <div style="flex:1; min-width:180px;">
-          <label class="dim-hint">Vulnerable damage bonus (%)</label>
-          <input type="number" step="any" id="m-vulnerable-damage-bonus" value="${relic.vulnerableDamageBonus ?? 0}">
-        </div>
-        <div style="flex:1; min-width:180px;">
-          <label class="dim-hint">Amplify Weak &amp; Vulnerable (%, 100 = no change)</label>
-          <input type="number" step="any" id="m-amplify-weak-vuln" value="${relic.amplifyWeakAndVulnerable ?? 100}">
-        </div>
-      </div>
-      <div class="hint-small">[VERIFIED via direct ECMA-335 IL trace, round 218] "Incoming Weak bonus": while THIS relic's owner is attacked by a Weakened dealer, take that much LESS damage on top of Weak's own normal reduction. "Vulnerable damage bonus": while THIS relic's owner attacks a Vulnerable target (not itself), deal that much MORE damage on top of Vulnerable's own normal bonus. "Amplify Weak &amp; Vulnerable": multiplies how strongly BOTH debuffs affect THIS relic's owner specifically (135 = 35% stronger; 50 = half as strong). Compiles to a real Harmony postfix on WeakPower/VulnerablePower's own real damage-multiplier method (Generated/ForgeDebuffMultiplierSupport.cs, only generated at all when a relic actually sets one of these three fields) — see generateDebuffMultiplierSupportFile in backend/compiler.js for the full evidence trail.</div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-relic">Delete relic</button>
       <button id="save-relic">Done</button>
     </div>
   `, { wide: true });
-  renderEffectsList(relic, HOOK_TRIGGERS);
-  renderModifiersList(relic);
+  renderEffectsList(relic, HOOK_TRIGGERS, undefined, undefined, undefined, true);
 
   // Icon preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
   // commitAsset pattern openEpochEditor's portrait field uses, wired by
@@ -14306,8 +14428,7 @@ function openRelicEditor(relicId){
     refreshIconPreview();
   };
 
-  document.getElementById('add-effect').onclick = ()=>{ relic.effects.push({trigger:'OnCombatStart', conditions:[], actions:[]}); renderEffectsList(relic, HOOK_TRIGGERS); };
-  document.getElementById('add-modifier').onclick = ()=>{ relic.modifiers.push(blankModifier(Object.keys(MODIFIER_HOOKS)[0])); renderModifiersList(relic); };
+  document.getElementById('add-effect').onclick = ()=>{ relic.effects.push({trigger:'OnCombatStart', conditions:[], actions:[]}); renderEffectsList(relic, HOOK_TRIGGERS, undefined, undefined, undefined, true); };
   document.getElementById('delete-relic').onclick = ()=>{
     if(relic.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==relic.iconAssetRef);
     state.relics = state.relics.filter(r=>r.id!==relicId);
@@ -14320,11 +14441,12 @@ function openRelicEditor(relicId){
     if(pendingRelicIconDataUrl !== undefined){
       relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
     }
-    relic.autoClaimShopInventory = document.getElementById('m-auto-claim-shop').checked;
-    relic.incomingWeakBonus = parseFloat(document.getElementById('m-incoming-weak-bonus').value) || 0;
-    relic.vulnerableDamageBonus = parseFloat(document.getElementById('m-vulnerable-damage-bonus').value) || 0;
-    const ampVal = parseFloat(document.getElementById('m-amplify-weak-vuln').value);
-    relic.amplifyWeakAndVulnerable = Number.isFinite(ampVal) ? ampVal : 100;
+    // [Round 219] autoClaimShopInventory/incomingWeakBonus/vulnerableDamageBonus/
+    // amplifyWeakAndVulnerable are no longer read here — they're only ever
+    // in the DOM at all while a Passive effect block is open and is this
+    // relic's firstPassiveIdx (see renderEffectsList/passiveConfigMarkup),
+    // so wirePassiveConfig writes them straight to `relic` live, on change,
+    // instead.
     save(); renderRelics(); closeModal();
   };
 }
@@ -14421,6 +14543,13 @@ function openMechEditor(mechId){
   const m = state.mechanics.find(x=>x.id===mechId);
   if(!m.effects) m.effects = []; // upgrade path for mechanics saved before this field existed
   if(!Array.isArray(m.modifiers)) m.modifiers = []; // upgrade path for mechanics saved before this field existed
+  // [Round 219] Same migration as openRelicEditor's own — see that
+  // function's comment for the full reasoning. Mechanics only ever carry
+  // .modifiers (no autoClaimShopInventory/Weak-Vulnerable fields — those
+  // are relic-only, see passiveConfigMarkup's own isRelic gate).
+  if(m.modifiers.length > 0 && !m.effects.some(e=>e.trigger==='Passive')){
+    m.effects.unshift({trigger:'Passive', conditions:[], actions:[], elseActions:[]});
+  }
   openModal(`
     <div class="modal-head"><h3>Edit Mechanic</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
@@ -14443,12 +14572,9 @@ function openMechEditor(mechId){
         <div id="m-bar-fields" style="margin-top:8px; display:${mechResourceBar(m) ? '' : 'none'}"></div>
       </div>
       <label style="margin-top:20px">What this does</label>
-      <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks.</div>
+      <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks. Set a block's trigger to "Passive" for a status that doesn't react to anything — that's where Modifiers now lives (round 219).</div>
       <div id="effects-list"></div>
       <button class="secondary" id="add-effect" style="margin-top:6px">+ Add effect block</button>
-      <label style="margin-top:20px">Modifiers (advanced)</label>
-      <div id="modifiers-list"></div>
-      <button class="secondary" id="add-modifier" style="margin-top:6px">+ Add modifier</button>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-mech">Delete</button>
@@ -14456,10 +14582,8 @@ function openMechEditor(mechId){
     </div>
   `);
   renderEffectsList(m, HOOK_TRIGGERS);
-  renderModifiersList(m);
   renderMechBarFields(m);
   document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnTurnStart', conditions:[], actions:[]}); renderEffectsList(m, HOOK_TRIGGERS); };
-  document.getElementById('add-modifier').onclick = ()=>{ m.modifiers.push(blankModifier(Object.keys(MODIFIER_HOOKS)[0])); renderModifiersList(m); };
   document.getElementById('delete-mech').onclick = ()=>{
     state.mechanics = state.mechanics.filter(x=>x.id!==mechId);
     // [Round 120] Deleting a status left any resourceBars entry pointing
