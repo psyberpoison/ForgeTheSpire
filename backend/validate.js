@@ -2093,6 +2093,20 @@ function validateCharacterPackage(pkg) {
     if (relic.autoClaimShopInventory !== undefined && typeof relic.autoClaimShopInventory !== 'boolean') {
       errors.push(`${p}.autoClaimShopInventory must be a boolean.`);
     }
+    // [Round 218] #37/38/39 -- see backend/compiler.js:
+    // generateDebuffMultiplierSupportFile for the full evidence trail.
+    // Simple numeric type-checks only; 0 (incomingWeakBonus/
+    // vulnerableDamageBonus) and 100 (amplifyWeakAndVulnerable) are both
+    // valid "no effect" values, not errors.
+    if (relic.incomingWeakBonus !== undefined && typeof relic.incomingWeakBonus !== 'number') {
+      errors.push(`${p}.incomingWeakBonus must be a number.`);
+    }
+    if (relic.vulnerableDamageBonus !== undefined && typeof relic.vulnerableDamageBonus !== 'number') {
+      errors.push(`${p}.vulnerableDamageBonus must be a number.`);
+    }
+    if (relic.amplifyWeakAndVulnerable !== undefined && typeof relic.amplifyWeakAndVulnerable !== 'number') {
+      errors.push(`${p}.amplifyWeakAndVulnerable must be a number.`);
+    }
   });
 
   // --- mechanics ---

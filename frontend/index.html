@@ -14234,6 +14234,23 @@ function openRelicEditor(relicId){
         Automatically claim shop items for free on room entry (#14 claimShopInventory)
       </label>
       <div class="hint-small not-real">[BEST EFFORT] Drives live Godot UI screen nodes with hardcoded real-time waits (blocks map/deck buttons and travel, opens the merchant screen, purchases every stocked entry for free) — a genuinely different, riskier class of feature than every other modifier/effect on this page, which only compute values or mutate data-layer lists. Compiles clean, but has only ever been checked by compiling it, never by actually playing it — test this specific relic in-game before trusting it in a real run. See generateClaimShopInventoryOverride in backend/compiler.js for the full evidence trail.</div>
+
+      <label style="margin-top:20px">Weak / Vulnerable math (round 218)</label>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:180px;">
+          <label class="dim-hint">Incoming Weak bonus (%)</label>
+          <input type="number" step="any" id="m-incoming-weak-bonus" value="${relic.incomingWeakBonus ?? 0}">
+        </div>
+        <div style="flex:1; min-width:180px;">
+          <label class="dim-hint">Vulnerable damage bonus (%)</label>
+          <input type="number" step="any" id="m-vulnerable-damage-bonus" value="${relic.vulnerableDamageBonus ?? 0}">
+        </div>
+        <div style="flex:1; min-width:180px;">
+          <label class="dim-hint">Amplify Weak &amp; Vulnerable (%, 100 = no change)</label>
+          <input type="number" step="any" id="m-amplify-weak-vuln" value="${relic.amplifyWeakAndVulnerable ?? 100}">
+        </div>
+      </div>
+      <div class="hint-small">[VERIFIED via direct ECMA-335 IL trace, round 218] "Incoming Weak bonus": while THIS relic's owner is attacked by a Weakened dealer, take that much LESS damage on top of Weak's own normal reduction. "Vulnerable damage bonus": while THIS relic's owner attacks a Vulnerable target (not itself), deal that much MORE damage on top of Vulnerable's own normal bonus. "Amplify Weak &amp; Vulnerable": multiplies how strongly BOTH debuffs affect THIS relic's owner specifically (135 = 35% stronger; 50 = half as strong). Compiles to a real Harmony postfix on WeakPower/VulnerablePower's own real damage-multiplier method (Generated/ForgeDebuffMultiplierSupport.cs, only generated at all when a relic actually sets one of these three fields) — see generateDebuffMultiplierSupportFile in backend/compiler.js for the full evidence trail.</div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-relic">Delete relic</button>
@@ -14304,6 +14321,10 @@ function openRelicEditor(relicId){
       relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
     }
     relic.autoClaimShopInventory = document.getElementById('m-auto-claim-shop').checked;
+    relic.incomingWeakBonus = parseFloat(document.getElementById('m-incoming-weak-bonus').value) || 0;
+    relic.vulnerableDamageBonus = parseFloat(document.getElementById('m-vulnerable-damage-bonus').value) || 0;
+    const ampVal = parseFloat(document.getElementById('m-amplify-weak-vuln').value);
+    relic.amplifyWeakAndVulnerable = Number.isFinite(ampVal) ? ampVal : 100;
     save(); renderRelics(); closeModal();
   };
 }

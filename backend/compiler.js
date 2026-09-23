@@ -5983,6 +5983,164 @@ function generateClaimShopInventoryOverride(relic) {
     }`;
 }
 
+// [Round 218] #37/38/39 -- Weak/Vulnerable's own math, not "bonus damage vs
+// weak/vulnerable targets". Tyler uploaded a fresh build of the
+// slay.spencerstiles.com evidence rig (project file's Passive 7 relic
+// still carries the same three "kind"s: incomingWeakBonus/
+// vulnerableDamageBonus/amplifyWeakAndVulnerable, amounts 56/32/135) and
+// this round found the REAL mechanism this time: a generated support
+// class (TheBurdenedNewCharacter.DebuffMultiplierSupport) plus two
+// Harmony PREFIX patches (CreatorWeakInteractionPatch/
+// CreatorVulnerableInteractionPatch) that intercept WeakPower/
+// VulnerablePower's own real `ModifyDamageMultiplicative` override
+// directly -- both real, both independently re-confirmed via a direct
+// ECMA-335 read of the real, installed sts2.dll this round:
+//   MegaCrit.Sts2.Core.Models.Powers.WeakPower.ModifyDamageMultiplicative
+//   MegaCrit.Sts2.Core.Models.Powers.VulnerablePower.ModifyDamageMultiplicative
+// both real params (Creature target, decimal amount, ValueProp props,
+// Creature dealer, CardModel cardSource, CardPlay cardPlay) -- same
+// signature already independently confirmed and shipped via this app's
+// own MODIFIER_HOOKS.ModifyDamageMultiplicative entry.
+//
+// The original mod's own Prefix REPLACES the base calculation entirely
+// (reading a base multiplier off DynamicVars, then layering on other
+// real relics/powers it happens to know about -- PaperKrane,
+// DebilitatePower, PaperPhrog, CrueltyPower -- via more Harmony calls).
+// That's real, but risky to copy verbatim: skipping the original method
+// means Forge would have to reproduce ALL of it (including interactions
+// with other mods patching the same method) or silently drop them. This
+// generator instead uses a Harmony POSTFIX -- adjusts `__result` AFTER
+// the real base game (and any other mod) has already computed it, never
+// replaces anything -- which is both simpler and safer, and produces the
+// same net numbers for the two pieces Tyler's passives actually need:
+//
+//   - incomingWeakBonus (#37): when THIS relic's owner is the one being
+//     attacked by a Weakened dealer, subtract an extra flat amount from
+//     the multiplier (real evidence: DebuffMultiplierSupport.
+//     IncomingWeakBonus(target), subtracted in .Weak()'s own real body).
+//   - vulnerableDamageBonus (#38): when THIS relic's owner is the one
+//     DEALING damage to a Vulnerable target (and isn't hitting itself),
+//     add an extra flat amount to the multiplier (real evidence:
+//     DebuffMultiplierSupport.CrueltyBonus(target, dealer), added in
+//     .Vulnerable()'s own real body -- same real "attacker gets a
+//     bonus against a Vulnerable target" shape, generalized off the
+//     specific CrueltyPower-only implementation the original used).
+//   - amplifyWeakAndVulnerable (#39): multiplies how strongly BOTH
+//     debuffs affect THIS relic's own owner specifically -- real
+//     evidence: both .Weak() and .Vulnerable() end with the identical
+//     `1 + (multiplier - 1) * Amplification(holder)` formula, where
+//     `holder` is whoever the power actually belongs to (WeakPower.Owner
+//     = the dealer being weakened; VulnerablePower.Owner = the target
+//     being made vulnerable) -- i.e. always "the one suffering the
+//     debuff", which is why one field covers both directions.
+//
+// Only written when at least one relic in the project actually sets one
+// of these three fields -- an unmodified project gets no new Harmony
+// patch at all. `Player.GetRelic<T>()` is real, public, generic
+// [VERIFIED via direct sts2.dll read] and returns null when the player
+// doesn't have that relic (confirmed via its own real IL -- an `isinst`+
+// `unbox.any` pattern, never throws). Values are stored as their
+// original whole-number percent (matching the editor's UI) and divided
+// by 100m directly in the generated expression to avoid any JS-side
+// floating-point rounding.
+function generateDebuffMultiplierSupportFile(characterPackage, namespace, relicClassById) {
+  const relics = characterPackage.relics || [];
+  const weakBonusRelics = relics.filter(r => typeof r.incomingWeakBonus === 'number' && r.incomingWeakBonus !== 0);
+  const vulnBonusRelics = relics.filter(r => typeof r.vulnerableDamageBonus === 'number' && r.vulnerableDamageBonus !== 0);
+  const ampRelics = relics.filter(r => typeof r.amplifyWeakAndVulnerable === 'number' && r.amplifyWeakAndVulnerable !== 100);
+  if (!weakBonusRelics.length && !vulnBonusRelics.length && !ampRelics.length) return null;
+
+  const relicExpr = (r) => `global::${namespace}.Relics.${relicClassById.get(r.id)}`;
+  const weakBonusLines = weakBonusRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) bonus += ${r.incomingWeakBonus}m / 100m;`).join('\n');
+  const vulnBonusLines = vulnBonusRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) bonus += ${r.vulnerableDamageBonus}m / 100m;`).join('\n');
+  const ampLines = ampRelics.map(r => `        if (player.GetRelic<${relicExpr(r)}>() != null) amp *= ${r.amplifyWeakAndVulnerable}m / 100m;`).join('\n');
+
+  return `using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.ValueProps;
+
+namespace ${namespace}.Generated;
+
+// AUTO-GENERATED by Forge — do not hand-edit, changes will be overwritten on next export.
+//
+// [Round 218, #37/38/39] See generateDebuffMultiplierSupportFile's own
+// header comment in compiler.js for the full evidence trail. Adjusts the
+// real WeakPower/VulnerablePower.ModifyDamageMultiplicative result via a
+// Harmony POSTFIX (ModEntry.cs already bootstraps \`new Harmony(...).
+// PatchAll()\`, which picks up any [HarmonyPatch] class in this assembly
+// automatically — no extra wiring needed) — never replaces the base
+// game's own calculation, just adjusts it afterward, so it composes
+// safely with the base game and any other mod patching the same method.
+public static class ForgeDebuffMultiplierSupport
+{
+    internal static decimal IncomingWeakBonus(Creature target)
+    {
+        decimal bonus = 0m;
+        var player = target?.Player;
+        if (player == null) return bonus;
+${weakBonusLines || '        // no relic sets incomingWeakBonus'}
+        return bonus;
+    }
+
+    internal static decimal VulnerableDamageBonus(Creature dealer)
+    {
+        decimal bonus = 0m;
+        var player = dealer?.Player;
+        if (player == null) return bonus;
+${vulnBonusLines || '        // no relic sets vulnerableDamageBonus'}
+        return bonus;
+    }
+
+    internal static decimal WeakVulnerableAmplification(Creature holder)
+    {
+        decimal amp = 1m;
+        var player = holder?.Player;
+        if (player == null) return amp;
+${ampLines || '        // no relic sets amplifyWeakAndVulnerable'}
+        return amp;
+    }
+}
+
+[HarmonyPatch(typeof(WeakPower), nameof(WeakPower.ModifyDamageMultiplicative))]
+public static class ForgeWeakMultiplierAmplification
+{
+    // [VERIFIED via direct sts2.dll read] WeakPower.ModifyDamageMultiplicative's
+    // own real body already gates its OWN reduction on dealer == this.Owner
+    // (PowerModel.Owner is Creature-typed) — this patch only adjusts the
+    // result further in that same case, so it never fires when Weak wasn't
+    // actually relevant to this particular damage instance.
+    static void Postfix(WeakPower __instance, Creature target, ValueProp props, Creature dealer, ref decimal __result)
+    {
+        if (dealer == null || dealer != __instance.Owner || !ValuePropExtensions.IsPoweredAttack(props)) return;
+        __result -= ForgeDebuffMultiplierSupport.IncomingWeakBonus(target);
+        var amp = ForgeDebuffMultiplierSupport.WeakVulnerableAmplification(dealer);
+        if (amp != 1m) __result = 1m + (__result - 1m) * amp;
+    }
+}
+
+[HarmonyPatch(typeof(VulnerablePower), nameof(VulnerablePower.ModifyDamageMultiplicative))]
+public static class ForgeVulnerableMultiplierAmplification
+{
+    // [VERIFIED via direct sts2.dll read] VulnerablePower.ModifyDamageMultiplicative's
+    // own real body already gates its OWN increase on target == this.Owner
+    // (PowerModel.Owner is Creature-typed) — same reasoning as the Weak
+    // patch above.
+    static void Postfix(VulnerablePower __instance, Creature target, ValueProp props, Creature dealer, ref decimal __result)
+    {
+        if (target == null || target != __instance.Owner || !ValuePropExtensions.IsPoweredAttack(props)) return;
+        if (dealer != null && dealer != target)
+        {
+            __result += ForgeDebuffMultiplierSupport.VulnerableDamageBonus(dealer);
+        }
+        var amp = ForgeDebuffMultiplierSupport.WeakVulnerableAmplification(target);
+        if (amp != 1m) __result = 1m + (__result - 1m) * amp;
+    }
+}
+`;
+}
+
 function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverride) {
   const tpl = loadTemplate('Relic.cs.template');
   return fillTemplate(tpl, {
@@ -8915,6 +9073,15 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // actionToCSharp's AfflictCard/EnchantCard cases (ctx.afflictionClassById/
   // ctx.enchantmentClassById).
   const afflictionClassById = new Map((characterPackage.afflictions || []).map(a => [a.id, `global::${namespace}.Afflictions.${pascalCase(a.name)}Affliction`]));
+
+  // [Round 218] #37/38/39 -- only writes a file at all when at least one
+  // relic in the project sets incomingWeakBonus/vulnerableDamageBonus/
+  // amplifyWeakAndVulnerable. See generateDebuffMultiplierSupportFile's
+  // own header comment for the full evidence trail.
+  const debuffMultiplierSupportSrc = generateDebuffMultiplierSupportFile(characterPackage, namespace, relicClassById);
+  if (debuffMultiplierSupportSrc) {
+    write('Generated/ForgeDebuffMultiplierSupport.cs', debuffMultiplierSupportSrc);
+  }
   const enchantmentClassById = new Map((characterPackage.enchantments || []).map(e => [e.id, `global::${namespace}.Enchantments.${pascalCase(e.name)}Enchantment`]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
