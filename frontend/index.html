@@ -13896,6 +13896,7 @@ function renderModifiersList(entity){
       const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
       const ot = fieldsEl.querySelector('.mod-option-type'); if(ot) ot.onchange = e=> mod.optionType = e.target.value;
       const ro = fieldsEl.querySelector('.mod-reward-op'); if(ro) ro.onchange = e=> { mod.rewardOp = e.target.value; renderModifiersList(entity); };
+      const mcr = fieldsEl.querySelector('.mod-make-rerollable'); if(mcr) mcr.onchange = e=> mod.makeCardRewardsRerollable = e.target.checked;
       const ra = fieldsEl.querySelector('.mod-reward-amount'); if(ra) ra.oninput = e=> mod.rewardAmount = parseFloat(e.target.value)||0;
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
@@ -13991,11 +13992,14 @@ function renderModifiersList(entity){
     } else if(hook.shape === 'restSiteReward'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
         <select class="mod-reward-op">
-          <option value="Add" ${mod.rewardOp!=='Remove'?'selected':''}>Add a Gold reward of</option>
+          <option value="Add" ${(mod.rewardOp||'Add')==='Add'?'selected':''}>Add a Gold reward of</option>
           <option value="Remove" ${mod.rewardOp==='Remove'?'selected':''}>Remove any existing Gold rewards</option>
+          <option value="None" ${mod.rewardOp==='None'?'selected':''}>Don't touch Gold rewards</option>
         </select>
-        ${mod.rewardOp!=='Remove' ? `<input class="mod-reward-amount" type="number" step="1" min="0" value="${mod.rewardAmount??25}"><span class="cond-word">gold.</span>` : ''}
-        <div class="hint-small">Compiles to a real <code>new GoldReward(amount, player, false)</code> — confirmed real public constructor via direct sts2.dll read. Only Gold is offered for now; other reward types (Card/Relic/Potion) aren't researched yet.</div>`;
+        ${(mod.rewardOp||'Add')==='Add' ? `<input class="mod-reward-amount" type="number" step="1" min="0" value="${mod.rewardAmount??25}"><span class="cond-word">gold.</span>` : ''}
+        <div class="hint-small">Compiles to a real <code>new GoldReward(amount, player, false)</code> — confirmed real public constructor via direct sts2.dll read. Only Gold is offered for now; other reward types (Card/Relic/Potion) aren't researched yet.</div>
+        <label class="chk-inline" style="display:block;margin-top:6px;"><input type="checkbox" class="mod-make-rerollable" ${mod.makeCardRewardsRerollable?'checked':''}> Also make any card rewards in this room rerollable</label>
+        <div class="hint-small">Compiles to a real <code>CardReward.CanReroll = true</code> assignment — a real, public, settable bool property confirmed via direct sts2.dll read.</div>`;
       wireFields();
     } else if(hook.shape === 'cardLocation'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, send the just-played card to your</span>

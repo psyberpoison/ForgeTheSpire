@@ -4526,12 +4526,22 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       // `wasGoldStolenBack: false` for an authored bonus reward (it's not
       // stolen back from anything). See the shape-list comment above for
       // why only Gold is offered.
-      const op = mod.rewardOp === 'Remove' ? 'Remove' : 'Add';
+      const op = mod.rewardOp === 'Remove' ? 'Remove' : (mod.rewardOp === 'None' ? 'None' : 'Add');
       const rawAmount = typeof mod.rewardAmount === 'number' ? Math.round(mod.rewardAmount) : 0;
-      const mutate = op === 'Remove'
+      const mutate = op === 'None' ? ''
+        : op === 'Remove'
         ? `foreach (var rew in rewards.Where(r => r is GoldReward).ToList()) { rewards.Remove(rew); }`
         : `rewards.Add(new GoldReward(${rawAmount}, player, false));`;
-      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${mutate}\n            return true;\n        }\n        return baseResult;`;
+      // [Round 215] Orthogonal, optional extra mutation -- closes #25
+      // cardRewardsCanReroll. CardReward.CanReroll is a real, public,
+      // settable bool property (confirmed via direct ecma_dump_ext.py read
+      // of MegaCrit.Sts2.Core.Rewards.CardReward this round). Applies
+      // ALONGSIDE the Add/Remove Gold operation above (both are optional
+      // and independent -- a modifier can do one, the other, or both) so
+      // this stays a single override of the same real hook rather than a
+      // second, colliding modifier entry on the same method name.
+      const rerollMutate = mod.makeCardRewardsRerollable ? ` foreach (var rew in rewards.OfType<CardReward>()) { rew.CanReroll = true; }` : '';
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${mutate}${rerollMutate}\n            return true;\n        }\n        return baseResult;`;
     }
     blocks.push(
 `    // modifier: ${mod.hook} -> ${hook.method}(${hook.params}) [Round 20 — see claude/round20-groupb-findings.md]
