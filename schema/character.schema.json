@@ -1481,6 +1481,7 @@
               "RemoveAffliction",
               "EnchantCard",
               "RemoveEnchantment",
+              "ClearAfflictionFromPile",
               "SwapDrawDiscard",
               "TransformDeckCards"
             ],
