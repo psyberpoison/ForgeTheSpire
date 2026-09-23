@@ -879,6 +879,23 @@
     padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:31;
   }
   .trig-cat-row:hover .trig-sub-list, .trig-cat-row:focus-within .trig-sub-list{display:block;}
+  /* [Tyler: "hovering over triggers in relics make the menu freak out.
+     I think it is trying to extend the cascading window past the open
+     window"] The flyout above always opens to the RIGHT of its category
+     row (left:100%), with no regard for how close that row already is
+     to the right edge of the viewport. When a relic's trigger picker
+     sits far enough right, the flyout's real width pushes past the
+     viewport edge, which can force a page-level horizontal scrollbar to
+     appear/disappear as the cursor crosses in and out of the flyout --
+     shifting layout under the mouse mid-hover, which breaks and
+     re-triggers the :hover chain in a loop (the "freak out"). Fixed with
+     a small JS check (see renderTriggerPicker's mouseenter/focusin
+     handlers) that flips the flyout to the LEFT of its row instead
+     whenever there isn't enough real room on the right -- same idea as
+     a real OS context menu flipping near a screen edge. */
+  .trig-cat-row.trig-flip-left .trig-sub-list{
+    left:auto; right:100%;
+  }
   .trig-sub-list .picker-option{color:var(--parchment); font-weight:normal;}
   /* Conditions render BEFORE "Then:"/actions again (natural "If... Then..."
      reading order — a round putting Then first read as though the action
@@ -15796,6 +15813,26 @@ function renderTriggerPicker(container, values, selected, onSelect){
         render();
         if(changed) onSelect(newTrigger);
       };
+    });
+    // [Tyler: "hovering over triggers in relics make the menu freak
+    // out... trying to extend the cascading window past the open
+    // window"] Flip .trig-sub-list to the LEFT of its row (see the
+    // .trig-flip-left CSS rule above) whenever opening it to the right
+    // wouldn't fit in the viewport. Measured on the ROW rather than the
+    // flyout itself, since the flyout is display:none (no layout box to
+    // measure) until :hover/:focus-within reveals it -- 260 is a little
+    // slack over .trig-sub-list's own 240px min-width CSS already
+    // guarantees. Re-measured on every hover/focus (not just once at
+    // render time) since the panel can scroll or the window can resize
+    // between renders.
+    container.querySelectorAll('.trig-cat-row').forEach(rowEl=>{
+      const flip = ()=>{
+        const needed = 260;
+        const rightEdge = rowEl.getBoundingClientRect().right;
+        rowEl.classList.toggle('trig-flip-left', rightEdge + needed > window.innerWidth);
+      };
+      rowEl.addEventListener('mouseenter', flip);
+      rowEl.addEventListener('focusin', flip);
     });
   }
 
