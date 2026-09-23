@@ -4131,8 +4131,8 @@ const MODIFIER_HOOKS = {
 
   // ---- Deferred (7) — real, verified, Tyler-approved hooks that need
   // more research before real codegen. See each `reason`. ----
-  TryModifyCardBeingAddedToDeck: { method: 'TryModifyCardBeingAddedToDeck', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'deferred', reason: 'Forge has no mechanism to author a replacement CardModel yet — same open gap as the existing CreateCardInHand/CreateCardInDrawPile backlog item.' },
-  TryModifyCardBeingAddedToDeckLate: { method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'deferred', reason: 'Same as TryModifyCardBeingAddedToDeck — no mechanism yet to author a replacement CardModel.' },
+  TryModifyCardBeingAddedToDeck: { method: 'TryModifyCardBeingAddedToDeck', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  TryModifyCardBeingAddedToDeckLate: { method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
   TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
   TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
   ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
@@ -4349,6 +4349,36 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
         : mod.powerTypeFilter === 'Buff' ? ' && canonicalPower.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Buff'
         : '';
       body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if ((${condExpr})${typeFilter})\n        {\n            ${hook.refParam} = ${val2};\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'cardTransformOnAdd') {
+      // [Round 211] TryModifyCardBeingAddedToDeck(Late)-specific shape --
+      // closes #69 'deckCardsBecome' (cards added to your deck become a
+      // different, author-picked card). Real mechanism confirmed via a
+      // direct IL read of the only real compiled example found
+      // (TheBurdenedNewCharacter_v3.dll, Relics.Passive12::
+      // TryModifyCardBeingAddedToDeck, round211 evidence pass):
+      //   newCard = null;
+      //   if (card.Owner != this.Owner) return false;
+      //   if (card is <TargetClass>) return false; // guards infinite transform loop
+      //   newCard = card.Owner.RunState.CreateCard<TargetClass>(card.Owner);
+      //   return true;
+      // MegaCrit.Sts2.Core.Runs.ICardScope.CreateCard<T>(Player owner): T
+      // is a real generic instance method -- confirmed via direct
+      // MemberRef/TypeRef metadata resolution of that exact call site (not
+      // guessed from the mnemonic alone), reached off Player.RunState. The
+      // owner check and the self-guard are reproduced verbatim as
+      // UNCONDITIONAL parts of this shape's codegen (not author-optional)
+      // since they're structural requirements of the real hook (without
+      // the self-guard, RunState.CreateCard's own newly-created card would
+      // immediately re-trigger this same hook -- an infinite loop), not a
+      // design choice Forge is free to omit. Author conditions (condExpr)
+      // apply ON TOP of these two mandatory checks to further scope WHEN
+      // the transform applies (e.g. only below some HP threshold).
+      const fgCls = modCtx.cardClassById && modCtx.cardClassById.get(mod.becomesCardId);
+      if (!fgCls) {
+        body = `${bind}        return base.${hook.method}(${paramNames}); // [UNVERIFIED] pick a target card in this modifier's own dropdown -- none selected yet`;
+      } else {
+        body = `${bind}        newCard = null;\n        if (card.Owner != this.Owner || card is ${fgCls} || !(${condExpr}))\n        {\n            return base.${hook.method}(${paramNames});\n        }\n        newCard = card.Owner.RunState.CreateCard<${fgCls}>(card.Owner);\n        return true;`;
+      }
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';
       // [Round 139] mod.keyword may now also be a custom keyword word (see

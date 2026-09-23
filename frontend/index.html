@@ -8594,8 +8594,8 @@ const MODIFIER_HOOKS = {
 
   TryModifyKeywordsInCombat: { method:'TryModifyKeywordsInCombat', ret:'bool', shape:'keywordSet', targetExpr:null, label:'Try to add/remove a keyword in combat' },
 
-  TryModifyCardBeingAddedToDeck: { method:'TryModifyCardBeingAddedToDeck', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify a card being added to deck [deferred]', reason:'Forge has no mechanism to author a replacement CardModel yet — same open gap as the existing CreateCardInHand/CreateCardInDrawPile backlog item.' },
-  TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify a card being added to deck (late) [deferred]', reason:'Same as above — no mechanism yet to author a replacement CardModel.' },
+  TryModifyCardBeingAddedToDeck: { method:'TryModifyCardBeingAddedToDeck', ret:'bool', shape:'cardTransformOnAdd', targetExpr:null, label:'Cards added to your deck become a different card' },
+  TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'cardTransformOnAdd', targetExpr:null, label:'Cards added to your deck become a different card (late)' },
   TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold rest site reward' },
   TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'restSiteOption', targetExpr:null, label:'Add/remove a rest site option' },
   // [2026-09-23] "fill in the gaps" round -- moved from 'deferred' to a
@@ -8649,6 +8649,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
   { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
   { label:'Try-modify power received (Buff/Debuff filter)', shape:'powerReceivedFilter' },
+  { label:'Deck-add card transform', shape:'cardTransformOnAdd' },
   { label:'Keyword modifiers', shape:'keywordSet' },
   { label:'Rest site options', shape:'restSiteOption' },
   { label:'Rest site rewards', shape:'restSiteReward' },
@@ -13809,6 +13810,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
   else if(hook.shape === 'powerReceivedFilter'){ m.setValue = 0; m.powerTypeFilter = 'Any'; }
+  else if(hook.shape === 'cardTransformOnAdd'){ m.becomesCardId = null; }
   else if(hook.shape === 'keywordSet'){ m.keywordOp = 'Add'; m.keyword = CARD_KEYWORD_VALUES[0]; }
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
@@ -13857,6 +13859,7 @@ function renderModifiersList(entity){
       const nv = fieldsEl.querySelector('.mod-numeric-value'); if(nv) nv.oninput = e=> mod.numericValue = parseFloat(e.target.value)||0;
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
       const ptf = fieldsEl.querySelector('.mod-power-type-filter'); if(ptf) ptf.onchange = e=> mod.powerTypeFilter = e.target.value;
+      const bci = fieldsEl.querySelector('.mod-becomes-card-id'); if(bci) bci.onchange = e=> mod.becomesCardId = e.target.value || null;
       const ko = fieldsEl.querySelector('.mod-keyword-op'); if(ko) ko.onchange = e=> mod.keywordOp = e.target.value;
       const kw = fieldsEl.querySelector('.mod-keyword'); if(kw) kw.onchange = e=> mod.keyword = e.target.value;
       const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
@@ -13907,6 +13910,13 @@ function renderModifiersList(entity){
         <input class="mod-set-value" type="number" step="any" value="${mod.setValue??0}">
         <span class="cond-word">(0 = fully negate it) — otherwise, fall through to the base game's own real behavior.</span>
         <div class="hint-small">Compiles to a real check against <code>PowerModel.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff/Buff</code> — real enum members (None/Buff/Debuff) confirmed via reflect-baselib. Use 'a debuff' + result 0 for "negate incoming debuffs"; 'a buff' + result 0 for "negate incoming buffs".</div>`;
+      wireFields();
+    } else if(hook.shape === 'cardTransformOnAdd'){
+      const cardOpts = state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${mod.becomesCardId===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('');
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, cards added to your deck become</span>
+        <select class="mod-becomes-card-id"><option value="">— pick a card —</option>${cardOpts}</select>
+        <span class="cond-word">instead — otherwise, fall through to the base game's own real behavior.</span>
+        <div class="hint-small">Compiles to a real <code>card.Owner.RunState.CreateCard&lt;T&gt;(Player)</code> call (MegaCrit.Sts2.Core.Runs.ICardScope.CreateCard&lt;T&gt;, confirmed via direct MemberRef/TypeRef metadata resolution of the only real compiled example found) — only applies to YOUR deck (an explicit owner check is always compiled in, matching that real example exactly), and always guards against transforming a card that's already the target (prevents an infinite transform loop).</div>`;
       wireFields();
     } else if(hook.shape === 'keywordSet'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
