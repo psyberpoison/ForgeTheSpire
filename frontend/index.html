@@ -8608,6 +8608,29 @@ const MODIFIER_HOOKS = {
   ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'cardLocation', targetExpr:null, label:'Modify where a played card ends up' },
   ModifyExtraRestSiteHealText: { method:'ModifyExtraRestSiteHealText', ret:'IReadOnlyList<LocString>', shape:'deferred', targetExpr:null, label:'Modify extra rest site heal text [deferred]', reason:'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method:'ModifyShuffleOrder', ret:'void', shape:'deferred', targetExpr:null, label:'Modify shuffle order [deferred]', reason:'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
+
+  // ---- Round 207 (2026-09-23) — 16 new hooks, mirrors backend/
+  // compiler.js:MODIFIER_HOOKS' own round-207 comment field-for-field.
+  // Closes 16 of the 93 slay.spencerstiles.com confirmed-passives list —
+  // see claude/round207-passive-buildout-punchlist.md (a Claude Project
+  // doc) for the full item-by-item mapping.
+  ShouldProcurePotion: { method:'ShouldProcurePotion', ret:'bool', shape:'gate', targetExpr:null, label:'Should this potion be allowed to be procured (gate)' },
+  ShouldAfflict: { method:'ShouldAfflict', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card be allowed to receive this affliction (gate)' },
+  ShouldGenerateTreasure: { method:'ShouldGenerateTreasure', ret:'bool', shape:'gate', targetExpr:null, label:'Should a treasure room generate treasure (gate)' },
+  ShouldAllowMerchantCardRemoval: { method:'ShouldAllowMerchantCardRemoval', ret:'bool', shape:'gate', targetExpr:null, label:'Should card removal be allowed at shops (gate)' },
+  ShouldDisableRemainingRestSiteOptions: { method:'ShouldDisableRemainingRestSiteOptions', ret:'bool', shape:'gate', targetExpr:null, label:'Should the other rest site options be disabled after picking one (gate)' },
+  ShouldTakeExtraTurn: { method:'ShouldTakeExtraTurn', ret:'bool', shape:'gate', targetExpr:null, label:'Should an extra turn be taken (gate)' },
+  ShouldFlush: { method:'ShouldFlush', ret:'bool', shape:'gate', targetExpr:null, label:'Should the hand be discarded at end of turn (gate)' },
+  ShouldEtherealTrigger: { method:'ShouldEtherealTrigger', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card\'s Ethereal exhaust trigger (gate)' },
+  ShouldGainStars: { method:'ShouldGainStars', ret:'bool', shape:'gate', targetExpr:null, label:'Should Stars be allowed to be gained (gate)' },
+  ShouldAllowFreeTravel: { method:'ShouldAllowFreeTravel', ret:'bool', shape:'gate', targetExpr:null, label:'Should free travel to unconnected map rooms be allowed (gate, no conditions bound to "you" — see reason)', reason:'Real signature takes no parameters at all (confirmed — ShouldAllowFreeTravel() takes nothing), so conditions here cannot reference "you"/fgPlayer. Author a plain unconditional gate (no conditions) for a straightforward "always allow free travel" relic.' },
+  ShouldRefillMerchantEntry: { method:'ShouldRefillMerchantEntry', ret:'bool', shape:'gate', targetExpr:null, label:'Should this shop entry restock after being purchased (gate)' },
+  ShouldForcePotionReward: { method:'ShouldForcePotionReward', ret:'bool', shape:'gate', targetExpr:null, label:'Should this room force a potion reward (gate) [not room-type-filtered — see reason]', reason:'Real params include a RoomType this hook fires per-room, but Forge has no RoomType condition kind yet, so this gate is NOT room-type-filtered — it applies to every room this hook fires for unless you add your own conditions.' },
+
+  ModifyEnergyGain: { method:'ModifyEnergyGain', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify energy gained' },
+  ModifyPowerAmountGivenMultiplicative: { method:'ModifyPowerAmountGivenMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'target', label:'Modify a power\'s amount given (multiplicative, locked to Multiply)' },
+  ModifyMerchantPrice: { method:'ModifyMerchantPrice', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a shop item\'s price' },
+  ModifyCardRewardUpgradeOdds: { method:'ModifyCardRewardUpgradeOdds', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card reward\'s upgrade odds' },
 };
 // Grouped for the hook <select>'s <optgroup>s — same 4-shape-plus-deferred
 // breakdown as compiler.js:MODIFIER_HOOKS' own comment header.

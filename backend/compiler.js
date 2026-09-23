@@ -4138,6 +4138,54 @@ const MODIFIER_HOOKS = {
   ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
   ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'deferred', reason: 'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'deferred', reason: 'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
+
+  // ---- Round 207 (2026-09-23) — 16 new hooks, all confirmed via a full,
+  // authoritative dump of the REAL, installed sts2.dll's own
+  // MegaCrit.Sts2.Core.Models.AbstractModel (207 real methods read whole,
+  // not grepped piecemeal — tools/sts2tools/ecma_dump_ext.py against
+  // Tyler's actual Steam install, not just TheBurdenedNewCharacter_v3.dll's
+  // derived evidence). Closes 16 of the 93 slay.spencerstiles.com
+  // confirmed-passives list (claude/round206-spencerstiles-passive-list-gap-
+  // analysis.md + round206b's DLL evidence) — every one below reuses the
+  // exact 'gate'/'numeric' shapes already proven by the 8 gates/17
+  // numerics above, so generateModifierOverrides needed zero new codegen
+  // to support them. See claude/round207-passive-buildout-punchlist.md for
+  // the full item-by-item mapping and what's still open after this round.
+  ShouldProcurePotion: { method: 'ShouldProcurePotion', ret: 'bool', params: 'PotionModel potion, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAfflict: { method: 'ShouldAfflict', ret: 'bool', params: 'CardModel card, AfflictionModel affliction', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  ShouldGenerateTreasure: { method: 'ShouldGenerateTreasure', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAllowMerchantCardRemoval: { method: 'ShouldAllowMerchantCardRemoval', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldDisableRemainingRestSiteOptions: { method: 'ShouldDisableRemainingRestSiteOptions', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldTakeExtraTurn: { method: 'ShouldTakeExtraTurn', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldFlush: { method: 'ShouldFlush', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldEtherealTrigger: { method: 'ShouldEtherealTrigger', ret: 'bool', params: 'CardModel card', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  ShouldGainStars: { method: 'ShouldGainStars', ret: 'bool', params: 'decimal amount, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  // No real params at all on this one (confirmed — ShouldAllowFreeTravel()
+  // takes nothing), so playerExpr is null same as ShouldPlay/
+  // ModifyAttackHitCount/ModifyOrbPassiveTriggerCounts/ModifyOrbValue
+  // above — conditions here can't reference "you" via fgPlayer, but a
+  // plain unconditional gate (no conditions authored) is exactly what
+  // "freeMapTravel" (#29) needs.
+  ShouldAllowFreeTravel: { method: 'ShouldAllowFreeTravel', ret: 'bool', params: '', shape: 'gate', playerExpr: null, targetExpr: null },
+  ShouldRefillMerchantEntry: { method: 'ShouldRefillMerchantEntry', ret: 'bool', params: 'MerchantEntry entry, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  // [Caveat, see round207 punchlist] Real params include `RoomType
+  // roomType` (TheBurdenedNewCharacter's own compiled body gated on a
+  // roomType range check) but Forge has no RoomType condition kind yet,
+  // so this gate is NOT room-type-filtered here — an author's "force a
+  // potion reward" gate applies to every room this hook fires for unless
+  // they add their own conditions. Flagged, not silently narrowed.
+  ShouldForcePotionReward: { method: 'ShouldForcePotionReward', ret: 'bool', params: 'Player player, RoomType roomType', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+
+  ModifyEnergyGain: { method: 'ModifyEnergyGain', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  // Real sibling of ModifyPowerAmountGivenAdditive above — SAME real
+  // params, SAME playerExpr/targetExpr ('giver'/'target'), just the
+  // Multiplicative override instead of Additive. [VERIFIED hook identity
+  // via TheBurdenedNewCharacter_v3.dll kind 74 powerAmountGivenPercent —
+  // real percent-multiply body, degenerate *1 test value] and confirmed
+  // to exist verbatim in the real sts2.dll's own AbstractModel this round.
+  ModifyPowerAmountGivenMultiplicative: { method: 'ModifyPowerAmountGivenMultiplicative', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'giver', targetExpr: 'target' },
+  ModifyMerchantPrice: { method: 'ModifyMerchantPrice', ret: 'decimal', params: 'Player player, MerchantEntry entry, decimal cost', shape: 'numeric', valueParam: 'cost', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardRewardUpgradeOdds: { method: 'ModifyCardRewardUpgradeOdds', ret: 'decimal', params: 'Player player, CardModel card, decimal odds', shape: 'numeric', valueParam: 'odds', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
 };
 
 // "ref decimal modifiedCost" -> "modifiedCost" (declaration -> a plain
