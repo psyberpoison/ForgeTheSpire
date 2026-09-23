@@ -2085,6 +2085,14 @@ function validateCharacterPackage(pkg) {
     if (!RELIC_RARITIES.includes(relic.rarity)) errors.push(`${p}.rarity "${relic.rarity}" is not one of: ${RELIC_RARITIES.join(', ')}.`);
     validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'relic', gameplayTagsInUse });
     validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse);
+    // [Round 217] autoClaimShopInventory compiles to a real, dedicated
+    // AfterRoomEntered override (backend/compiler.js:
+    // generateClaimShopInventoryOverride) -- [BEST EFFORT], see that
+    // function's own header comment for the full evidence trail. Simple
+    // boolean type-check only, same pattern as mechanics' hideIcon below.
+    if (relic.autoClaimShopInventory !== undefined && typeof relic.autoClaimShopInventory !== 'boolean') {
+      errors.push(`${p}.autoClaimShopInventory must be a boolean.`);
+    }
   });
 
   // --- mechanics ---

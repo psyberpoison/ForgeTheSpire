@@ -14227,6 +14227,13 @@ function openRelicEditor(relicId){
       <label style="margin-top:20px">Modifiers (advanced)</label>
       <div id="modifiers-list"></div>
       <button class="secondary" id="add-modifier" style="margin-top:6px">+ Add modifier</button>
+
+      <label style="margin-top:20px">Experimental (round 217 — test live before trusting)</label>
+      <label class="chk-inline" style="display:block;">
+        <input type="checkbox" id="m-auto-claim-shop" ${relic.autoClaimShopInventory ? 'checked' : ''}>
+        Automatically claim shop items for free on room entry (#14 claimShopInventory)
+      </label>
+      <div class="hint-small not-real">[BEST EFFORT] Drives live Godot UI screen nodes with hardcoded real-time waits (blocks map/deck buttons and travel, opens the merchant screen, purchases every stocked entry for free) — a genuinely different, riskier class of feature than every other modifier/effect on this page, which only compute values or mutate data-layer lists. Compiles clean, but has only ever been checked by compiling it, never by actually playing it — test this specific relic in-game before trusting it in a real run. See generateClaimShopInventoryOverride in backend/compiler.js for the full evidence trail.</div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-relic">Delete relic</button>
@@ -14296,6 +14303,7 @@ function openRelicEditor(relicId){
     if(pendingRelicIconDataUrl !== undefined){
       relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
     }
+    relic.autoClaimShopInventory = document.getElementById('m-auto-claim-shop').checked;
     save(); renderRelics(); closeModal();
   };
 }

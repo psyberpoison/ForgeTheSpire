@@ -5879,6 +5879,110 @@ ${resolvedTiers.map((t, i) => `            case ${i + 1}: ${t.costDelta ? `Energ
   });
 }
 
+// [Round 217] "Automatically claim shop items for free" (#14
+// claimShopInventory) -- Tyler's direct call after reviewing the round
+// 207-216 punchlist: build it now, test the live sequencing together.
+// [BEST EFFORT] -- built from a full IL trace of a real, compiled
+// third-party mod's own <ClaimCreatorShopInventory>d__12.MoveNext async
+// state machine, done in an earlier round (the evidence-rig DLL that
+// override was decompiled from is no longer present on disk this round --
+// see claude/round207-216-passive-buildout-punchlist.md for that original
+// trace). Every real API member this override actually calls was
+// independently re-confirmed THIS round via a direct ECMA-335 metadata
+// read of the real, installed sts2.dll (Steam install folder), not
+// carried over from memory:
+//   - MegaCrit.Sts2.Core.Models.AbstractModel.AfterRoomEntered(AbstractRoom):
+//     Task -- real, virtual, base body is just `return Task.CompletedTask`.
+//   - MegaCrit.Sts2.Core.Rooms.MerchantRoom.GetLocalInventory(): MerchantInventory
+//     -- real, public.
+//   - MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory.AllEntries:
+//     IEnumerable<MerchantEntry> -- real, public; covers card/relic/potion/
+//     card-removal entries in ONE collection (an improvement over the
+//     original trace, which only independently confirmed the CardEntries
+//     sub-loop and left relic/potion entries unconfirmed).
+//   - MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.IsStocked (bool,
+//     public abstract) and .OnTryPurchaseWrapper(MerchantInventory, bool
+//     ignoreCost): Task<bool> -- real, public.
+//   - MegaCrit.Sts2.Core.Nodes.NRun.Instance -> .GlobalUi -> .TopBar ->
+//     .Map / .Deck -- real chain, all public. Map/Deck's real TypeDefs
+//     (NTopBarMapButton/NTopBarDeckButton) were walked up their real
+//     Extends chain this round (NTopBarButton -> NButton ->
+//     NClickableControl) to independently confirm they really do carry
+//     NClickableControl's real public Disable()/Enable().
+//   - MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance ->
+//     .SetTravelEnabled(bool) -- real, public.
+//   - MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance -> .Inventory
+//     (the live UI node, distinct from the data-layer MerchantInventory
+//     above) -> .BlockInput()/.Open()/.UnblockInput() -- real, public.
+//   - MegaCrit.Sts2.Core.Commands.Cmd.Wait(float seconds, bool
+//     ignoreCombatEnd): Task -- real, public, static.
+// The exact "undo the disable" step after the purchase loop was never
+// captured in the original trace (it ran out of excerpt before reaching
+// it) -- the try/finally below, and the re-enable calls inside it, are a
+// deliberate FORGE-ADDED safety net (not claimed as [VERIFIED] real game
+// behavior) so a purchase exception or an unexpected null Instance can
+// never leave the player permanently locked out of the map/deck buttons
+// or map travel. `.ToList()` on AllEntries snapshots the collection
+// before the purchase loop starts mutating it (purchasing an entry can
+// trigger restock/removal logic that would otherwise throw
+// InvalidOperationException on a live-mutated enumerable mid-iteration).
+// `_fgClaimedShops`/`_fgClaimingShop` are Forge's OWN private state (the
+// original mod's own `_claimedShops`/`_claimingShop` fields are private to
+// ITS class, not reachable from a separately-compiled relic) -- same
+// re-entry-guard intent, new fields.
+//
+// Deliberately NOT built into the generic modifiers/effects DSL -- this
+// is live Godot UI-node orchestration with hardcoded real-time waits, not
+// a data-layer AbstractModel value override, so it's its own dedicated
+// relic.autoClaimShopInventory boolean instead of a MODIFIER_HOOKS/
+// TRIGGER_HOOKS entry. If a future round adds a second AfterRoomEntered-
+// based feature (e.g. #15 combatEntryStatus), it needs to be merged into
+// THIS same override rather than added as a competing one -- same
+// hook-collision rule as MODIFIER_HOOKS/TRIGGER_HOOKS (a relic can only
+// have one compiled override per real method name).
+function generateClaimShopInventoryOverride(relic) {
+  if (!relic.autoClaimShopInventory) return null;
+  return `    // modifier: autoClaimShopInventory -> AfterRoomEntered(AbstractRoom) [BEST EFFORT, round 217 -- see generateClaimShopInventoryOverride's own header comment for the full evidence trail] #14 claimShopInventory
+    private readonly System.Collections.Generic.HashSet<MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory> _fgClaimedShops = new System.Collections.Generic.HashSet<MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory>();
+    private bool _fgClaimingShop = false;
+
+    public override async System.Threading.Tasks.Task AfterRoomEntered(MegaCrit.Sts2.Core.Rooms.AbstractRoom room)
+    {
+        if (!(room is MegaCrit.Sts2.Core.Rooms.MerchantRoom fgMerchantRoom)) { await System.Threading.Tasks.Task.CompletedTask; return; }
+        var fgInventory = fgMerchantRoom.GetLocalInventory();
+        if (fgInventory == null || _fgClaimingShop || _fgClaimedShops.Contains(fgInventory)) { await System.Threading.Tasks.Task.CompletedTask; return; }
+        _fgClaimingShop = true;
+        _fgClaimedShops.Add(fgInventory);
+        var fgTopBar = MegaCrit.Sts2.Core.Nodes.NRun.Instance?.GlobalUi?.TopBar;
+        var fgNInventory = MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance?.Inventory;
+        try
+        {
+            fgTopBar?.Map?.Disable();
+            fgTopBar?.Deck?.Disable();
+            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(false);
+            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.75f, false);
+            fgNInventory?.BlockInput();
+            fgNInventory?.Open();
+            await MegaCrit.Sts2.Core.Commands.Cmd.Wait(1.0f, false);
+            foreach (var fgEntry in fgInventory.AllEntries.ToList())
+            {
+                if (fgEntry.IsStocked)
+                {
+                    await fgEntry.OnTryPurchaseWrapper(fgInventory, true);
+                }
+            }
+        }
+        finally
+        {
+            fgNInventory?.UnblockInput();
+            fgTopBar?.Map?.Enable();
+            fgTopBar?.Deck?.Enable();
+            MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen.Instance?.SetTravelEnabled(true);
+            _fgClaimingShop = false;
+        }
+    }`;
+}
+
 function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverride) {
   const tpl = loadTemplate('Relic.cs.template');
   return fillTemplate(tpl, {
@@ -5889,7 +5993,7 @@ function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverr
     relicName: relic.name.replace(/"/g, '\\"'),
     rarity: relic.rarity,
     iconOverride: iconOverride || '',
-    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps)].filter(Boolean).join('\n\n'),
+    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps), generateClaimShopInventoryOverride(relic)].filter(Boolean).join('\n\n'),
   });
 }
 

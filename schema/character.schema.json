@@ -867,6 +867,10 @@
           "items": {
             "$ref": "#/definitions/modifierBlock"
           }
+        },
+        "autoClaimShopInventory": {
+          "type": "boolean",
+          "description": "Round 217 \u2014 #14 claimShopInventory (\"Automatically take shop items for free\"). [BEST EFFORT] Optional; omitted/false = normal shop behavior (the common case). When true, compiles to a dedicated `AfterRoomEntered(AbstractRoom)` override (backend/compiler.js:generateClaimShopInventoryOverride) that, on entering a MerchantRoom, disables the top-bar Map/Deck buttons and map travel, opens/blocks the merchant UI, and purchases every stocked entry (cards, relics, potions, card removal) for free \u2014 built from a full IL trace of a real, compiled third-party mod's own async claim-shop method, with every real API member it calls independently re-confirmed via a direct ECMA-335 read of the real, installed sts2.dll. Drives live Godot UI screen nodes with hardcoded real-time waits \u2014 a genuinely different, riskier class of feature than every other modifier/effect this app generates (which only compute values or mutate data-layer lists). Compile-tested only, never played \u2014 test any relic using this in-game before trusting it in a real run."
         }
       }
     },
