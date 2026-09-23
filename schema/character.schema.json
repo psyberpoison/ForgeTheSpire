@@ -1254,7 +1254,7 @@
       ],
       "properties": {
         "hook": {
-          "description": "Which real AbstractModel hook this modifier overrides — see backend/compiler.js:MODIFIER_HOOKS for the real params/return type/shape behind each one. 30 of these 37 compile to real, working code this round; the other 7 are real, verified hooks that need more research before they can do anything but an honest ForgeActions.Todo(...) stub (see MODIFIER_HOOKS' own `reason` on each) — the frontend flags those 7 clearly rather than letting them look fully wired.",
+          "description": "Which real AbstractModel hook this modifier overrides — see backend/compiler.js:MODIFIER_HOOKS for the real params/return type/shape behind each one. 32 of these 37 compile to real, working code now (TryModifyRestSiteHealRewards/TryModifyRestSiteOptions moved from deferred to real, closed-vocabulary shapes on 2026-09-22 — see optionOp/optionType/rewardOp/rewardAmount below); the other 5 are real, verified hooks that need more research or authoring-UI design before they can do anything but an honest ForgeActions.Todo(...) stub (see MODIFIER_HOOKS' own `reason` on each) — the frontend flags those 5 clearly rather than letting them look fully wired.",
           "enum": [
             "ShouldPlay", "ShouldDie", "ShouldClearBlock", "ShouldDraw", "ShouldAllowHitting",
             "ShouldPlayerResetEnergy", "ShouldPayExcessEnergyCostWithStars", "ShouldCreatureBeRemovedFromCombatAfterDeath",
@@ -1295,6 +1295,22 @@
         "keyword": {
           "type": "string",
           "description": "Used only by TryModifyKeywordsInCombat — same real CardKeyword enum as card.keywords, either one of the 7 built-ins (Exhaust/Ethereal/Innate/Retain/Unplayable/Sly/Eternal) or [Round 139] this character's own cardKeywords[].word."
+        },
+        "optionOp": {
+          "enum": ["Add", "Remove"],
+          "description": "[2026-09-22] Used only by TryModifyRestSiteOptions — whether to add `optionType` to, or remove it from, the rest site's real options collection when `conditions` match. Falls through to base.TryModifyRestSiteOptions(...)'s own bool result when they don't."
+        },
+        "optionType": {
+          "enum": ["Clone", "Cook", "Dig", "Hatch", "Heal", "Kindle", "Lift", "Mend", "Smith"],
+          "description": "[2026-09-22] Used only by TryModifyRestSiteOptions — one of the 9 real built-in RestSiteOption types (MegaCrit.Sts2.Core.Entities.RestSite.*RestSiteOption). All 9 confirmed via direct sts2.dll read: each has a real, public constructor taking just the Player — see backend/compiler.js:BUILTIN_REST_SITE_OPTION_CLASS_MAP. No custom rest site options — only these 9 base-game ones can be added/removed."
+        },
+        "rewardOp": {
+          "enum": ["Add", "Remove"],
+          "description": "[2026-09-22] Used only by TryModifyRestSiteHealRewards — whether to add a new Gold reward (amount = `rewardAmount`) or remove any existing Gold rewards from the rest site's real rewards list when `conditions` match. Falls through to base.TryModifyRestSiteHealRewards(...)'s own bool result when they don't."
+        },
+        "rewardAmount": {
+          "type": "number",
+          "description": "[2026-09-22] Used only by TryModifyRestSiteHealRewards's 'Add' op — the gold amount for `new GoldReward(amount, player, false)`, a real, public constructor confirmed via direct sts2.dll read. Ignored for 'Remove'. Reward itself is abstract with a protected ctor (not directly constructible) — GoldReward is the one concrete subtype investigated so far; other Reward subtypes aren't offered yet."
         }
       }
     },

@@ -3901,6 +3901,27 @@ const TRIGGER_HOOKS = {
   // Passive has no hook override in this model — see generateHookEffects.
 };
 
+// [VERIFIED via direct ECMA-335 metadata read of the real installed
+// sts2.dll, 2026-09-22] The 9 real, concrete subclasses of
+// MegaCrit.Sts2.Core.Entities.RestSite.RestSiteOption (the abstract base
+// itself has a protected ctor -- can't be instantiated directly). Every
+// one of these 9 has a real, PUBLIC `.ctor(Player)` constructor -- dumped
+// directly off sts2.dll's own MethodDef table, not inferred -- so this is
+// a closed, confirmed vocabulary, same shape as BUILTIN_POWER_CLASS_MAP
+// above. Used by MODIFIER_HOOKS.TryModifyRestSiteOptions' 'restSiteOption'
+// shape below.
+const BUILTIN_REST_SITE_OPTION_CLASS_MAP = {
+  Clone: 'CloneRestSiteOption',
+  Cook: 'CookRestSiteOption',
+  Dig: 'DigRestSiteOption',
+  Hatch: 'HatchRestSiteOption',
+  Heal: 'HealRestSiteOption',
+  Kindle: 'KindleRestSiteOption',
+  Lift: 'LiftRestSiteOption',
+  Mend: 'MendRestSiteOption',
+  Smith: 'SmithRestSiteOption',
+};
+
 // --- Group B: value-returning AbstractModel hooks (modifiers/gates, NOT
 // events) --------------------------------------------------------------
 // Round 20 (2026-08-25). Round 19's own working notes for these ("37 value-
@@ -3913,20 +3934,33 @@ const TRIGGER_HOOKS = {
 // sts2tools/ecma_dump.py that reproduced every existing TRIGGER_HOOKS
 // entry byte-identical.
 //
-// 30 of the 37 get real, working codegen this round. 7 are real, verified
-// hooks that Tyler approved but which need more research before they can
-// compile to anything but an honest stub (see `shape: 'deferred'` below,
-// and each entry's own `reason`) — two need a real "construct a new
+// 32 of the 37 get real, working codegen now. 5 are real, verified hooks
+// that Tyler approved but which still need more research/design before
+// they can compile to anything but an honest stub (see `shape: 'deferred'`
+// below, and each entry's own `reason`) — two need a real "construct a new
 // CardModel" mechanism Forge doesn't have yet (same open gap as the
-// existing CreateCardInHand/CreateCardInDrawPile backlog item), three
-// need real, unexplored object types (Reward, RestSiteOption, CardLocation
-// is a real struct {Player, PileType, CardPilePosition} — confirmed via a
-// fresh field-level dump this round, not previously known), and one
-// (ModifyShuffleOrder) is a real in-place reorder of a live card list that
-// needs its own design pass, not a value-editor field.
+// existing CreateCardInHand/CreateCardInDrawPile backlog item), one needs
+// a confirmed ad-hoc LocString authoring path (its real ctor signature —
+// LocString(string locTable, string locEntryKey) — is now confirmed, but
+// not the mod-authoring convention for a fresh custom entry), and two
+// (ModifyCardPlayResultLocation, ModifyShuffleOrder) have fully-confirmed
+// real APIs but need their own authoring-UI design pass, not just a
+// value-editor field — deliberately left deferred, not attempted this
+// round (Tyler's own call, scope check via AskUserQuestion).
 //
-// Four shapes, by return type — see claude/round20-groupb-findings.md's
-// design proposal for the full reasoning:
+// [2026-09-22] TryModifyRestSiteHealRewards and TryModifyRestSiteOptions
+// moved from 'deferred' to real, closed-vocabulary shapes this round —
+// see BUILTIN_REST_SITE_OPTION_CLASS_MAP above and 'restSiteReward'/
+// 'restSiteOption' below. Reward itself is abstract with a protected ctor
+// (can't construct a bare Reward), but GoldReward — one of its 6 concrete
+// subclasses — has a real, public `.ctor(int amount, Player player, bool
+// wasGoldStolenBack)`, confirmed via direct sts2.dll read; the other 5
+// subclasses (CardReward/RelicReward/PotionReward/CardRemovalReward/
+// SpecialCardReward) weren't investigated this round, so only Gold is
+// offered for now.
+//
+// Six shapes, by return type — see claude/round20-groupb-findings.md's
+// design proposal for the original four's full reasoning:
 //   'gate'          — bool, no output param. Force Allow/Prevent when
 //                      conditions match, else fall through to `base`.
 //   'numeric'        — int/decimal, takes the current value as a param.
@@ -3946,6 +3980,16 @@ const TRIGGER_HOOKS = {
 //                      `ref` needed — a set mutates through reference
 //                      semantics). Add/Remove one of the 7 real
 //                      CardKeyword values when conditions match.
+//   'restSiteOption' — bool + a mutable `ICollection<RestSiteOption>`
+//                      param. Add/Remove one of the 9 real built-in
+//                      RestSiteOption types (BUILTIN_REST_SITE_OPTION_CLASS_MAP
+//                      above) when conditions match — same reference-
+//                      mutation reasoning as keywordSet.
+//   'restSiteReward' — bool + a mutable `List<Reward>` param. Add a new
+//                      real GoldReward(amount, player, false), or remove
+//                      any existing GoldReward entries, when conditions
+//                      match — see the 2026-09-22 note above for why only
+//                      Gold is offered.
 //   'deferred'       — real hook, not compiled yet. Emits an honest
 //                      ForgeActions.Todo(...) stub carrying the reason,
 //                      same "compiles but throws" convention as every
@@ -4020,8 +4064,8 @@ const MODIFIER_HOOKS = {
   // more research before real codegen. See each `reason`. ----
   TryModifyCardBeingAddedToDeck: { method: 'TryModifyCardBeingAddedToDeck', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'deferred', reason: 'Forge has no mechanism to author a replacement CardModel yet — same open gap as the existing CreateCardInHand/CreateCardInDrawPile backlog item.' },
   TryModifyCardBeingAddedToDeckLate: { method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'deferred', reason: 'Same as TryModifyCardBeingAddedToDeck — no mechanism yet to author a replacement CardModel.' },
-  TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'deferred', reason: 'Reward is a real but unexplored object type — constructing one for real needs its own research pass.' },
-  TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'deferred', reason: 'RestSiteOption is a real class (confirmed via a fresh field-level sts2.dll dump this round — public static generateForTests + a private Owner backing field, nothing else confirmed yet) — constructing one for real needs its own research pass.' },
+  TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
   ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'deferred', reason: 'CardLocation is a real record with a public constructor CardLocation(Player player, PileType pileType, CardPilePosition position) — all 3 confirmed real via direct sts2.dll reads (round 20\'s field dump, round 24\'s PileType/CardPilePosition Field/Constant dump). Constructing a real replacement CardLocation is no longer the blocker; there\'s just no authoring UI/schema field yet for WHICH pile/position a modifier should force (unlike gate/numeric/tryRefNumeric/keywordSet, which all have an existing mod.* field the frontend already collects) — stays deferred pending that schema/UI work, not pending more evidence.' },
   ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'deferred', reason: 'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'deferred', reason: 'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
@@ -4147,6 +4191,32 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       const kw = (CARD_KEYWORD_VALUES.includes(mod.keyword) || currentCustomKeywordWords.has(mod.keyword)) ? mod.keyword : 'Exhaust';
       const call = op === 'Remove' ? `keywords.Remove(${keywordExpr(kw)});` : `keywords.Add(${keywordExpr(kw)});`;
       body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${call}\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'restSiteOption') {
+      // [VERIFIED via direct sts2.dll read, 2026-09-22 — see
+      // BUILTIN_REST_SITE_OPTION_CLASS_MAP's own comment] All 9 real
+      // RestSiteOption subclasses take just a Player in their public ctor
+      // — `player` here is the hook's own real parameter (already in
+      // scope), not fgPlayer (which is a Creature, not a Player, and only
+      // bound for condition evaluation — see `bind` above).
+      const op = mod.optionOp === 'Remove' ? 'Remove' : 'Add';
+      const cls = BUILTIN_REST_SITE_OPTION_CLASS_MAP[mod.optionType] || BUILTIN_REST_SITE_OPTION_CLASS_MAP.Smith;
+      const mutate = op === 'Remove'
+        ? `foreach (var opt in options.Where(o => o is ${cls}).ToList()) { options.Remove(opt); }`
+        : `options.Add(new ${cls}(player));`;
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${mutate}\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'restSiteReward') {
+      // [VERIFIED via direct sts2.dll read, 2026-09-22] GoldReward(int
+      // amount, Player player, bool wasGoldStolenBack) is a real, public
+      // constructor on Reward's one investigated concrete subclass —
+      // `wasGoldStolenBack: false` for an authored bonus reward (it's not
+      // stolen back from anything). See the shape-list comment above for
+      // why only Gold is offered.
+      const op = mod.rewardOp === 'Remove' ? 'Remove' : 'Add';
+      const rawAmount = typeof mod.rewardAmount === 'number' ? Math.round(mod.rewardAmount) : 0;
+      const mutate = op === 'Remove'
+        ? `foreach (var rew in rewards.Where(r => r is GoldReward).ToList()) { rewards.Remove(rew); }`
+        : `rewards.Add(new GoldReward(${rawAmount}, player, false));`;
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${mutate}\n            return true;\n        }\n        return baseResult;`;
     }
     blocks.push(
 `    // modifier: ${mod.hook} -> ${hook.method}(${hook.params}) [Round 20 — see claude/round20-groupb-findings.md]
@@ -8780,6 +8850,12 @@ module.exports = {
   // ApplyStatus<T>()'s "new()" constraint — see that const above) — 244
   // selectable, not 247.
   BUILTIN_STATUSES: Object.keys(BUILTIN_POWER_CLASS_MAP).filter(k => !PROTECTED_CTOR_BUILTIN_POWERS.has(k)),
+  // [2026-09-22] Same reasoning as BUILTIN_STATUSES above — the 9 real
+  // built-in RestSiteOption types TryModifyRestSiteOptions' 'restSiteOption'
+  // shape can Add/Remove (see BUILTIN_REST_SITE_OPTION_CLASS_MAP), derived
+  // from its own keys so validate.js has one source of truth instead of a
+  // second hand-maintained list.
+  REST_SITE_OPTION_TYPES: Object.keys(BUILTIN_REST_SITE_OPTION_CLASS_MAP),
   // Resource bars (round 92; round 101 — per-entry anchor) — one source
   // of truth for validate.js.
   MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor,

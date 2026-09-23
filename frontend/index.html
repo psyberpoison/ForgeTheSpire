@@ -8473,12 +8473,18 @@ document.addEventListener('click', (e)=>{
 // "no require() in the browser" reasoning HOOK_TRIGGERS/HOOK_TRIGGER_BINDING
 // above already use, kept as a literal copy rather than a fetch. `label` is
 // new here (a plain-English dropdown label, same spirit as HOOK_TRIGGER_LABELS
-// but shape-aware instead of trigger-aware). 30 real (gate/numeric/
-// tryRefNumeric/keywordSet) + 7 deferred (CardLocation/RestSiteOption/etc.
-// construction not yet researched — see claude/round20-groupb-findings.md,
-// a Claude Project doc) = all 37 of Tyler's reconstructed Group B list.
-// (AfterForge, the 38th entry on that list, moved to HOOK_TRIGGERS above —
-// it's really Task-returning, a Group A hook, not Group B at all.)
+// but shape-aware instead of trigger-aware). 32 real (gate/numeric/
+// tryRefNumeric/keywordSet/restSiteOption/restSiteReward) + 5 deferred
+// (CardLocation/LocString/etc. construction or authoring-UI design not
+// finished yet — see claude/round20-groupb-findings.md, a Claude Project
+// doc, and compiler.js:MODIFIER_HOOKS' 2026-09-22 note) = all 37 of Tyler's
+// reconstructed Group B list. (AfterForge, the 38th entry on that list,
+// moved to HOOK_TRIGGERS above — it's really Task-returning, a Group A
+// hook, not Group B at all.)
+//
+// [2026-09-22] TryModifyRestSiteHealRewards/TryModifyRestSiteOptions moved
+// from 'deferred' to real shapes — see REST_SITE_OPTION_VALUES below and
+// compiler.js:BUILTIN_REST_SITE_OPTION_CLASS_MAP for the evidence.
 const MODIFIER_HOOKS = {
   ShouldPlay: { method:'ShouldPlay', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card be allowed to play (gate)' },
   ShouldDie: { method:'ShouldDie', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature die (gate)' },
@@ -8528,8 +8534,8 @@ const MODIFIER_HOOKS = {
 
   TryModifyCardBeingAddedToDeck: { method:'TryModifyCardBeingAddedToDeck', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify a card being added to deck [deferred]', reason:'Forge has no mechanism to author a replacement CardModel yet — same open gap as the existing CreateCardInHand/CreateCardInDrawPile backlog item.' },
   TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify a card being added to deck (late) [deferred]', reason:'Same as above — no mechanism yet to author a replacement CardModel.' },
-  TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify rest site heal rewards [deferred]', reason:'Reward is a real but unexplored object type — constructing one for real needs its own research pass.' },
-  TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify rest site options [deferred]', reason:'RestSiteOption is a real class (confirmed via a fresh field-level sts2.dll dump — public static generateForTests + a private Owner backing field, nothing else confirmed yet) — constructing one for real needs its own research pass.' },
+  TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold rest site reward' },
+  TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'restSiteOption', targetExpr:null, label:'Add/remove a rest site option' },
   ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'deferred', targetExpr:null, label:'Modify where a played card ends up [deferred]', reason:'CardLocation is a real struct {Player player, PileType pileType, CardPilePosition position} — constructing one for real needs more research than this round scoped.' },
   ModifyExtraRestSiteHealText: { method:'ModifyExtraRestSiteHealText', ret:'IReadOnlyList<LocString>', shape:'deferred', targetExpr:null, label:'Modify extra rest site heal text [deferred]', reason:'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method:'ModifyShuffleOrder', ret:'void', shape:'deferred', targetExpr:null, label:'Modify shuffle order [deferred]', reason:'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
@@ -8542,8 +8548,17 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
   { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
   { label:'Keyword modifiers', shape:'keywordSet' },
+  { label:'Rest site options', shape:'restSiteOption' },
+  { label:'Rest site rewards', shape:'restSiteReward' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
+
+// [2026-09-22] The 9 real built-in RestSiteOption types — confirmed via
+// direct sts2.dll read, each with a real public Player-only constructor.
+// Mirrors backend/compiler.js:BUILTIN_REST_SITE_OPTION_CLASS_MAP's keys
+// (kept as a literal copy, same "no require() in the browser" reasoning as
+// every other mirrored list on this page).
+const REST_SITE_OPTION_VALUES = ['Clone', 'Cook', 'Dig', 'Hatch', 'Heal', 'Kindle', 'Lift', 'Mend', 'Smith'];
 
 // General conditions editor — every effect block (card OR relic/mechanic)
 // can gate its actions behind zero or more conditions, ANDed together
@@ -13653,6 +13668,8 @@ function blankModifier(hookId){
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
   else if(hook.shape === 'keywordSet'){ m.keywordOp = 'Add'; m.keyword = CARD_KEYWORD_VALUES[0]; }
+  else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
+  else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13697,6 +13714,10 @@ function renderModifiersList(entity){
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
       const ko = fieldsEl.querySelector('.mod-keyword-op'); if(ko) ko.onchange = e=> mod.keywordOp = e.target.value;
       const kw = fieldsEl.querySelector('.mod-keyword'); if(kw) kw.onchange = e=> mod.keyword = e.target.value;
+      const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
+      const ot = fieldsEl.querySelector('.mod-option-type'); if(ot) ot.onchange = e=> mod.optionType = e.target.value;
+      const ro = fieldsEl.querySelector('.mod-reward-op'); if(ro) ro.onchange = e=> { mod.rewardOp = e.target.value; renderModifiersList(entity); };
+      const ra = fieldsEl.querySelector('.mod-reward-amount'); if(ra) ra.oninput = e=> mod.rewardAmount = parseFloat(e.target.value)||0;
     };
     if(hook.shape === 'deferred'){
       fieldsEl.innerHTML = `<div class="hint-small not-real">[DEFERRED] ${escapeHtml(hook.reason)} Compiles to an honest stub (ForgeActions.Todo) that throws if actually reached — no shape-specific fields to set yet.</div>`;
@@ -13735,6 +13756,25 @@ function renderModifiersList(entity){
         </select>
         <select class="mod-keyword">${CARD_KEYWORD_VALUES.map(k=>`<option value="${k}" ${k===mod.keyword?'selected':''}>${k}</option>`).join('')}</select>
         <span class="cond-word">keyword.</span>`;
+      wireFields();
+    } else if(hook.shape === 'restSiteOption'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
+        <select class="mod-option-op">
+          <option value="Add" ${mod.optionOp!=='Remove'?'selected':''}>Add</option>
+          <option value="Remove" ${mod.optionOp==='Remove'?'selected':''}>Remove</option>
+        </select>
+        <select class="mod-option-type">${REST_SITE_OPTION_VALUES.map(o=>`<option value="${o}" ${o===mod.optionType?'selected':''}>${o}</option>`).join('')}</select>
+        <span class="cond-word">rest site option.</span>
+        <div class="hint-small">One of the 9 real built-in rest site options — confirmed via direct sts2.dll read, each with a real public constructor. No custom rest site options yet, only these 9 base-game ones.</div>`;
+      wireFields();
+    } else if(hook.shape === 'restSiteReward'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>
+        <select class="mod-reward-op">
+          <option value="Add" ${mod.rewardOp!=='Remove'?'selected':''}>Add a Gold reward of</option>
+          <option value="Remove" ${mod.rewardOp==='Remove'?'selected':''}>Remove any existing Gold rewards</option>
+        </select>
+        ${mod.rewardOp!=='Remove' ? `<input class="mod-reward-amount" type="number" step="1" min="0" value="${mod.rewardAmount??25}"><span class="cond-word">gold.</span>` : ''}
+        <div class="hint-small">Compiles to a real <code>new GoldReward(amount, player, false)</code> — confirmed real public constructor via direct sts2.dll read. Only Gold is offered for now; other reward types (Card/Relic/Potion) aren't researched yet.</div>`;
       wireFields();
     }
     if(!isDeferred){

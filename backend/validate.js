@@ -223,7 +223,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -1295,14 +1295,16 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
 // shape actually reads: gate -> gateValue, numeric -> numericValue (+
 // numericMode, but only on a hook that doesn't lock its own op — see
 // MODIFIER_HOOKS' lockedOp), tryRefNumeric -> setValue, keywordSet ->
-// keywordOp + keyword. The 7 'deferred' hooks (CardLocation/RestSiteOption/
-// etc. construction not yet researched — see
-// claude/round20-groupb-findings.md) need nothing beyond a valid hook name:
-// compiler.js emits an honest ForgeActions.Todo(...) stub for those and
-// never reads mod.conditions or any shape-specific field at all (see
-// generateModifierOverrides' early `shape === 'deferred'` branch), so this
-// function doesn't require — or validate — any of that here either, same
-// "compiles but throws, not misleadingly" convention as every other
+// keywordOp + keyword, [2026-09-22] restSiteOption -> optionOp + optionType,
+// restSiteReward -> rewardOp + rewardAmount. The 5 remaining 'deferred'
+// hooks (CardLocation/LocString/etc. construction or authoring-UI design
+// not finished yet — see claude/round20-groupb-findings.md and
+// compiler.js:MODIFIER_HOOKS' 2026-09-22 note) need nothing beyond a valid
+// hook name: compiler.js emits an honest ForgeActions.Todo(...) stub for
+// those and never reads mod.conditions or any shape-specific field at all
+// (see generateModifierOverrides' early `shape === 'deferred'` branch), so
+// this function doesn't require — or validate — any of that here either,
+// same "compiles but throws, not misleadingly" convention as every other
 // [UNVERIFIED]/deferred surface in this project.
 function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse) {
   if (modifiers === undefined) return;
@@ -1373,6 +1375,20 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
       if (!CARD_KEYWORD_VALUES.includes(mod.keyword)) errors.push(`${p}.keyword "${mod.keyword}" is not one of: ${CARD_KEYWORD_VALUES.join(', ')}.`);
     } else if (hook.shape === 'hpLossDisplayFixed') {
       if (typeof mod.numericValue !== 'number') errors.push(`${p}.numericValue must be a number.`);
+    } else if (hook.shape === 'restSiteOption') {
+      // [2026-09-22] Same "closed real vocabulary" shape as keywordSet
+      // above, just a different real collection (RestSiteOption instead
+      // of CardKeyword) — see compiler.js:BUILTIN_REST_SITE_OPTION_CLASS_MAP.
+      if (mod.optionOp !== undefined && !['Add', 'Remove'].includes(mod.optionOp)) errors.push(`${p}.optionOp "${mod.optionOp}" is not one of: Add, Remove.`);
+      if (!REST_SITE_OPTION_TYPES.includes(mod.optionType)) errors.push(`${p}.optionType "${mod.optionType}" is not one of: ${REST_SITE_OPTION_TYPES.join(', ')}.`);
+    } else if (hook.shape === 'restSiteReward') {
+      // [2026-09-22] Only GoldReward is offered (see MODIFIER_HOOKS' own
+      // 2026-09-22 note on why) — rewardAmount is only meaningful on 'Add'
+      // but still validated as a number whenever present, same "reject
+      // clearly rather than silently accept something broken" convention
+      // as every other numeric field in this function.
+      if (mod.rewardOp !== undefined && !['Add', 'Remove'].includes(mod.rewardOp)) errors.push(`${p}.rewardOp "${mod.rewardOp}" is not one of: Add, Remove.`);
+      if (mod.rewardOp !== 'Remove' && typeof mod.rewardAmount !== 'number') errors.push(`${p}.rewardAmount must be a number when rewardOp is "Add" (or omitted, which defaults to Add).`);
     }
   });
 }
