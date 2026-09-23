@@ -8660,27 +8660,55 @@ const MODIFIER_HOOKS = {
   TryModifyRewards: { method:'TryModifyRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room' },
   TryModifyRewardsLate: { method:'TryModifyRewardsLate', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold reward from this room (late)' },
 };
-// Grouped for the hook <select>'s <optgroup>s — same 4-shape-plus-deferred
-// breakdown as compiler.js:MODIFIER_HOOKS' own comment header.
-const MODIFIER_HOOK_GROUPS = [
-  { label:'Boolean gates', shape:'gate' },
-  { label:'Boolean gates (room-type filterable)', shape:'gateRoomTypeFiltered' },
-  { label:'Numeric modifiers', shape:'numeric' },
-  { label:'Damage modifiers (auto-scoped to you)', shape:'damageNumeric' },
-  { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
-  { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
-  { label:'Try-modify power received (Buff/Debuff filter)', shape:'powerReceivedFilter' },
-  { label:'Deck-add card transform', shape:'cardTransformOnAdd' },
-  { label:'Keyword modifiers', shape:'keywordSet' },
-  { label:'Rest site options', shape:'restSiteOption' },
-  { label:'Rest site rewards', shape:'restSiteReward' },
-  { label:'Card play destination', shape:'cardLocation' },
-  { label:'Damage target redirect', shape:'creatureRedirect' },
-  { label:'Card reward pool additions', shape:'cardRewardPoolAppend' },
-  { label:'Card reward count', shape:'cardRewardCountDelta' },
-  { label:'Shop card auto-upgrade', shape:'cardListUpgradeVoid' },
-  { label:'Deferred — not yet buildable for real', shape:'deferred' },
+// [Round 220] Tyler: "lets categorize and color the passive hooks" — same
+// ask as round 19's trigger bubble picker (TRIGGER_CATEGORIES above), now
+// applied to the 62 MODIFIER_HOOKS a Passive block's Modifiers list picks
+// from. The OLD grouping (MODIFIER_HOOK_GROUPS, removed this round) bucketed
+// by UI *shape* (how a hook's own fields render — "Boolean gates", "Numeric
+// modifiers", etc.), not by game concept — its "Boolean gates" bucket alone
+// lumped 19 completely unrelated hooks together (ShouldDie next to
+// ShouldGainStars next to ShouldAllowFreeTravel) just because they all
+// happen to render as a single checkbox. That's not a navigable category,
+// it's an implementation detail. These 13 categories group by what the hook
+// actually DOES instead — same axis TRIGGER_CATEGORIES already uses for
+// triggers — and reuse that same id/label/color for every concept the two
+// lists share (Card Play, Damage/Attack, Defense/Block, HP/Death/Creatures,
+// Powers/Statuses, Energy/Stars/Gold, Draw/Hand/Shuffle, Turn/Combat
+// Lifecycle, Orb, Rest Site, Potions/Merchant, Misc), so a relic that uses
+// both a trigger AND a modifier from "the same" concept shows the same
+// color in both pickers. "Card Rewards" is the one genuinely new category
+// (card-reward-shop hooks have no trigger-side equivalent to match colors
+// with) — picked a color (warm bronze) distinct from every other hue here.
+// See the console.assert sweep right below for the same "can't silently
+// drift out of sync" guarantee TRIGGER_CATEGORIES' own sweep provides.
+const MODIFIER_HOOK_CATEGORIES = [
+  { id:'cardplay', label:'Card Play', color:'#8a5fd6', hooks:['ShouldPlay','ModifyCardPlayCount','ModifyXValue','ModifyCardPlayResultLocation','TryModifyCardBeingAddedToDeck','TryModifyCardBeingAddedToDeckLate','TryModifyKeywordsInCombat'] },
+  { id:'damage', label:'Damage / Attack', color:'#c65a48', hooks:['ModifyDamageAdditive','ModifyDamageMultiplicative','ModifyDamageCap','ModifyAttackHitCount','ModifyUnblockedDamageTarget','ReduceHpLossBeforeBlock','ModifyHpLostBeforeOsty','ShouldAllowHitting'] },
+  { id:'defense', label:'Defense / Block', color:'#4b93dd', hooks:['ModifyBlockAdditive','ModifyBlockMultiplicative','ShouldClearBlock'] },
+  { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', hooks:['ShouldDie','ShouldCreatureBeRemovedFromCombatAfterDeath','ModifySummonAmount'] },
+  { id:'powers', label:'Powers / Statuses', color:'#4a9c4a', hooks:['ModifyPowerAmountGivenAdditive','ModifyPowerAmountGivenMultiplicative','TryModifyPowerAmountReceived','ShouldAfflict'] },
+  { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', hooks:['ModifyMaxEnergy','ModifyEnergyGain','ShouldPlayerResetEnergy','TryModifyEnergyCostInCombat','TryModifyEnergyCostInCombatLate','ShouldPayExcessEnergyCostWithStars','TryModifyStarCost','ModifyGoldGained','ShouldGainStars'] },
+  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', hooks:['ShouldDraw','ModifyHandDraw','ModifyShuffleOrder'] },
+  { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', hooks:['ShouldTakeExtraTurn','ShouldFlush','ShouldEtherealTrigger'] },
+  { id:'orb', label:'Orb', color:'#3aa8a0', hooks:['ModifyOrbPassiveTriggerCounts','ModifyOrbValue'] },
+  { id:'restsite', label:'Rest Site', color:'#8fbf4a', hooks:['ModifyRestSiteHealAmount','TryModifyRestSiteHealRewards','TryModifyRestSiteOptions','ShouldDisableRemainingRestSiteOptions','ModifyExtraRestSiteHealText','TryModifyRewards','TryModifyRewardsLate'] },
+  { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', hooks:['ShouldProcurePotion','ShouldForcePotionReward','ShouldAllowMerchantCardRemoval','ShouldRefillMerchantEntry','ModifyMerchantPrice','ModifyMerchantCardCreationResults'] },
+  { id:'cardrewards', label:'Card Rewards', color:'#a8703a', hooks:['ModifyCardRewardUpgradeOdds','ModifyCardRewardCreationOptions','ModifyCardRewardCreationOptionsLate','TryModifyCardRewardOptions','TryModifyCardRewardOptionsLate'] },
+  { id:'misc', label:'Misc', color:'#7a8699', hooks:['ShouldGenerateTreasure','ShouldAllowFreeTravel'] },
 ];
+// Same "fail loudly at load time, not silently" sweep as TRIGGER_CATEGORIES'
+// own, just against MODIFIER_HOOKS' real key set instead of CARD_TRIGGERS+
+// HOOK_TRIGGERS — a future hook added to MODIFIER_HOOKS without a matching
+// category entry (or a typo inside one) shows up as a console.error instead
+// of just silently never appearing in the bubble picker.
+(function(){
+  const known = new Set(Object.keys(MODIFIER_HOOKS));
+  const categorized = new Set(MODIFIER_HOOK_CATEGORIES.flatMap(c=>c.hooks));
+  const missing = [...known].filter(h=>!categorized.has(h));
+  const extra = [...categorized].filter(h=>!known.has(h));
+  if(missing.length) console.error('MODIFIER_HOOK_CATEGORIES is missing:', missing);
+  if(extra.length) console.error('MODIFIER_HOOK_CATEGORIES has stale/unknown ids:', extra);
+})();
 
 // [2026-09-22] The 9 real built-in RestSiteOption types — confirmed via
 // direct sts2.dll read, each with a real public Player-only constructor.
@@ -14006,11 +14034,7 @@ function renderModifiersList(entity){
         <div class="eb-head-label">Hook:</div>
         <button class="ghost mod-remove">remove this modifier</button>
       </div>
-      <select class="mod-hook">${MODIFIER_HOOK_GROUPS.map(g=>{
-        const opts = Object.keys(MODIFIER_HOOKS).filter(h=>MODIFIER_HOOKS[h].shape===g.shape);
-        if(!opts.length) return '';
-        return `<optgroup label="${escapeAttr(g.label)}">${opts.map(h=>`<option value="${h}" ${h===mod.hook?'selected':''}>${escapeHtml(MODIFIER_HOOKS[h].label)}</option>`).join('')}</optgroup>`;
-      }).join('')}</select>
+      <div class="mod-hook-picker"></div>
       <div class="mod-fields"></div>
       ${isDeferred ? '' : `
       <div class="eb-conditions has-conditions">
@@ -14210,14 +14234,19 @@ function renderModifiersList(entity){
         renderConditionRows(condEff, condListEl, null);
       };
     }
-    block.querySelector('.mod-hook').onchange = (e)=>{
+    // [Round 220] Color-coded bubble picker (renderModifierHookPicker,
+    // MODIFIER_HOOK_CATEGORIES) replaces the old plain <select><optgroup>,
+    // grouped by shape — Tyler: "lets categorize and color the passive
+    // hooks," same treatment renderTriggerPicker/TRIGGER_CATEGORIES already
+    // gave the Effects trigger dropdown back in round 19.
+    renderModifierHookPicker(block.querySelector('.mod-hook-picker'), Object.keys(MODIFIER_HOOKS), mod.hook, (newHook)=>{
       // Switching hook can change the shape entirely (gate -> numeric etc)
       // — same "clear stale fields, start from a fresh blank shape"
       // convention wireConditionRowHandlers' c-kind handler already uses.
       Object.keys(mod).forEach(k=> delete mod[k]);
-      Object.assign(mod, blankModifier(e.target.value));
+      Object.assign(mod, blankModifier(newHook));
       renderModifiersList(entity);
-    };
+    });
     block.querySelector('.mod-remove').onclick = ()=>{
       entity.modifiers.splice(i, 1);
       renderModifiersList(entity);
@@ -16288,6 +16317,178 @@ function renderTriggerPicker(container, values, selected, onSelect){
 }
 // Same pattern as triggerOptList above, for the action TYPE dropdown's
 // ACTION_TYPE_LABELS (see its own definition for why).
+// [Round 220] Same picker as renderTriggerPicker above, generalized for
+// the modifier-hook categories/labels instead of the trigger ones -- kept
+// as its own function (rather than parameterizing renderTriggerPicker
+// itself) so a bug in one picker can't reach into the other, given
+// Tyler's own past complaints about this exact flyout positioning logic
+// ("hovering over triggers in relics make the menu freak out") -- reuses
+// the identical CSS classes (.trig-picker-btn/.trig-cat-row/.trig-sub-
+// list/etc.) since none of them are actually trigger-specific, just
+// named after the picker they were built for first.
+function renderModifierHookPicker(container, values, selected, onSelect){
+  const valueSet = new Set(values);
+  const rows = MODIFIER_HOOK_CATEGORIES
+    .map(cat => ({ ...cat, triggers: cat.hooks.filter(t => valueSet.has(t)) }))
+    .filter(cat => cat.hooks.length > 0);
+  // A value not covered by any MODIFIER_HOOK_CATEGORIES entry (should never
+  // happen; the console.assert sweep near that const's own definition
+  // already checks this at load time) gets a synthetic "Other" category
+  // rather than silently vanishing — same "never lose a real value"
+  // convention as actionTypeOptList's own leftover handling.
+  const categorized = new Set(rows.flatMap(c => c.triggers));
+  const leftover = values.filter(t => !categorized.has(t));
+  if(leftover.length) rows.push({ id:'other', label:'Other', color:'#7a8699', triggers:leftover });
+
+  const catColorFor = t => {
+    const cat = rows.find(c => c.hooks.includes(t));
+    return cat ? cat.color : '#7a8699';
+  };
+
+  function render(){
+    container.classList.remove('open');
+    container.innerHTML = `
+      <button type="button" class="trig-picker-btn" style="--cat-color:${catColorFor(selected)}" title="Click to change trigger">${escapeHtml((MODIFIER_HOOKS[selected] ? MODIFIER_HOOKS[selected].label : selected))}</button>
+      <div class="picker-list trig-picker-list">
+        ${rows.map(cat => `
+          <div class="picker-option trig-cat-row" style="--cat-color:${cat.color}" tabindex="0">
+            ${escapeHtml(cat.label)} <span class="trig-cat-row-arrow">›</span>
+            <div class="trig-sub-list">
+              ${cat.hooks.map(t => `<div class="picker-option${t===selected?' picker-option-current':''}" data-hook="${t}">${escapeHtml((MODIFIER_HOOKS[t] ? MODIFIER_HOOKS[t].label : t))}</div>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    container.querySelector('.trig-picker-btn').onclick = (e)=>{
+      e.stopPropagation();
+      const willOpen = !container.classList.contains('open');
+      // Close any other open picker first (deck quantities, a status
+      // search box, etc.) — same convention the deck-qty picker's own
+      // toggle button uses, since the shared document-level listener
+      // only closes pickers on an OUTSIDE click.
+      document.querySelectorAll('.picker-wrap.open').forEach(w=>w.classList.remove('open'));
+      if(willOpen) container.classList.add('open');
+    };
+    container.querySelectorAll('.picker-option[data-hook]').forEach(optEl=>{
+      optEl.onclick = (e)=>{
+        e.stopPropagation();
+        const newHook = optEl.dataset.hook;
+        const changed = newHook !== selected;
+        selected = newHook;
+        render();
+        if(changed) onSelect(newHook);
+      };
+    });
+    // [Tyler: "hovering over triggers in relics make the menu freak
+    // out... trying to extend the cascading window past the open
+    // window" -- and, after the first fix here only checked the browser
+    // VIEWPORT, still happening: the "open window" is the Edit
+    // Relic/Mechanic MODAL, not the browser window. .modal-body has its
+    // own overflow-x:auto and is narrower than the viewport, so it clips
+    // (and scrollbars) the flyout on its own boundary well before the
+    // flyout would ever reach the real edge of the browser window --
+    // window.innerWidth alone was the wrong boundary to check.] Flip
+    // .trig-sub-list to the LEFT of its row (see the .trig-flip-left CSS
+    // rule above) whenever opening it to the right wouldn't fit inside
+    // the TIGHTEST clipping boundary -- the nearest scrollable ancestor
+    // (.modal-body here, but this walks generically so it also covers
+    // any other scroll container this picker ever ends up inside) if
+    // one exists, otherwise the browser viewport itself. Measured on the
+    // ROW rather than the flyout, since the flyout is display:none (no
+    // layout box to measure) until :hover/:focus-within reveals it --
+    // 260 is a little slack over .trig-sub-list's own 240px min-width
+    // CSS already guarantees. Re-measured on every hover/focus (not just
+    // once at render time) since the panel can scroll or the window can
+    // resize between renders.
+    const clipBoundaryRight = (el)=>{
+      let boundary = window.innerWidth;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowX === 'auto' || cs.overflowX === 'hidden' || cs.overflowX === 'scroll'){
+          boundary = Math.min(boundary, anc.getBoundingClientRect().right);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
+    // [Tyler: "now the options appear further down the window, cutting
+    // them off. you cant scroll down because it will remove the mouse
+    // from the highlighted option"] Vertical counterpart of
+    // clipBoundaryRight above -- walks the same ancestor chain, but
+    // tracks each scrollable ancestor's TOP and BOTTOM edge instead of
+    // its right edge, so the flyout can be kept inside whichever
+    // direction (up or down) actually has room.
+    const clipBoundaryBottom = (el)=>{
+      let boundary = window.innerHeight;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowY === 'auto' || cs.overflowY === 'hidden' || cs.overflowY === 'scroll'){
+          boundary = Math.min(boundary, anc.getBoundingClientRect().bottom);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
+    const clipBoundaryTop = (el)=>{
+      let boundary = 0;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowY === 'auto' || cs.overflowY === 'hidden' || cs.overflowY === 'scroll'){
+          boundary = Math.max(boundary, anc.getBoundingClientRect().top);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
+    container.querySelectorAll('.trig-cat-row').forEach(rowEl=>{
+      const subList = rowEl.querySelector('.trig-sub-list');
+      const flip = ()=>{
+        const needed = 260;
+        const rightEdge = rowEl.getBoundingClientRect().right;
+        rowEl.classList.toggle('trig-flip-left', rightEdge + needed > clipBoundaryRight(rowEl));
+
+        // Vertical: prefer opening downward (the default) whenever the
+        // full flyout fits below the row; otherwise open upward if
+        // that side has more room, and either way clamp max-height via
+        // inline style to whatever room genuinely exists so the whole
+        // box -- and its own overflow-y:auto scrollbar -- stays inside
+        // the visible clip area rather than getting cut off with no
+        // way to reach the hidden part.
+        const rowRect = rowEl.getBoundingClientRect();
+        const clipBottom = clipBoundaryBottom(rowEl);
+        const clipTop = clipBoundaryTop(rowEl);
+        const spaceBelow = clipBottom - (rowRect.top - 5);
+        const spaceAbove = (rowRect.bottom + 5) - clipTop;
+        // subList is display:none until :hover/:focus-within reveals
+        // it, so scrollHeight reads 0 the very first time flip() runs
+        // before the browser applies that style -- || 320 falls back
+        // to .trig-sub-list's own CSS max-height in that case.
+        const naturalHeight = Math.min(320, subList.scrollHeight || 320);
+        const minUsable = 120;
+        if(spaceBelow >= naturalHeight){
+          rowEl.classList.remove('trig-flip-up');
+          subList.style.maxHeight = '';
+        } else if(spaceAbove > spaceBelow){
+          rowEl.classList.add('trig-flip-up');
+          subList.style.maxHeight = Math.max(minUsable, Math.min(320, spaceAbove - 8)) + 'px';
+        } else {
+          rowEl.classList.remove('trig-flip-up');
+          subList.style.maxHeight = Math.max(minUsable, spaceBelow - 8) + 'px';
+        }
+      };
+      rowEl.addEventListener('mouseenter', flip);
+      rowEl.addEventListener('focusin', flip);
+    });
+  }
+
+  container.classList.add('picker-wrap', 'collapsed');
+  render();
+}
+
 function actionTypeOptList(selected, trigger, returnToHandEligible){
   // hiddenActionTypesForTrigger's exclusions never apply to the CURRENTLY
   // selected type — an already-saved action (e.g. a real GainEnergy on
