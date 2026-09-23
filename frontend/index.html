@@ -4166,6 +4166,15 @@ const SELF_ONLY_ACTIONS = ["GainBlock"];
 // looking for these specific classes). Backs CreateCard's "vanilla" token
 // picker — Tyler: "as well as the vanilla status cards if possible."
 const VANILLA_TOKEN_CARDS = ["Wound","Dazed","Slimed","Burn","Void","Regret","Shame","Doubt","Decay","Clumsy","Parasite"];
+
+// [Round 212] MegaCrit.Sts2.Core.Rooms.RoomType's real members, confirmed
+// via a direct Field/Constant metadata read of the real, installed
+// sts2.dll's own RoomType TypeDef this round: Unassigned=0, Monster=1,
+// Elite=2, Boss=3, Treasure=4, Shop=5, Event=6, RestSite=7, Map=8.
+// Unassigned is omitted here -- it is not a meaningful selectable filter
+// target (internal/uninitialized state), same reasoning PROTECTED_CTOR_BUILTIN_POWERS
+// already uses to exclude unselectable entries from a real enum's picker list.
+const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","RestSite","Map"];
 function validTargetsForAction(actionType){
   return (PLAYER_ONLY_ACTIONS.includes(actionType) || SELF_ONLY_ACTIONS.includes(actionType)) ? ["Self"] : ["SingleEnemy","AllEnemies","Self","RandomEnemy"];
 }
@@ -8625,7 +8634,7 @@ const MODIFIER_HOOKS = {
   ShouldGainStars: { method:'ShouldGainStars', ret:'bool', shape:'gate', targetExpr:null, label:'Should Stars be allowed to be gained (gate)' },
   ShouldAllowFreeTravel: { method:'ShouldAllowFreeTravel', ret:'bool', shape:'gate', targetExpr:null, label:'Should free travel to unconnected map rooms be allowed (gate, no conditions bound to "you" — see reason)', reason:'Real signature takes no parameters at all (confirmed — ShouldAllowFreeTravel() takes nothing), so conditions here cannot reference "you"/fgPlayer. Author a plain unconditional gate (no conditions) for a straightforward "always allow free travel" relic.' },
   ShouldRefillMerchantEntry: { method:'ShouldRefillMerchantEntry', ret:'bool', shape:'gate', targetExpr:null, label:'Should this shop entry restock after being purchased (gate)' },
-  ShouldForcePotionReward: { method:'ShouldForcePotionReward', ret:'bool', shape:'gate', targetExpr:null, label:'Should this room force a potion reward (gate) [not room-type-filtered — see reason]', reason:'Real params include a RoomType this hook fires per-room, but Forge has no RoomType condition kind yet, so this gate is NOT room-type-filtered — it applies to every room this hook fires for unless you add your own conditions.' },
+  ShouldForcePotionReward: { method:'ShouldForcePotionReward', ret:'bool', shape:'gateRoomTypeFiltered', targetExpr:null, label:'Should this room force a potion reward (optionally room-type-filtered)' },
 
   ModifyEnergyGain: { method:'ModifyEnergyGain', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify energy gained' },
   ModifyPowerAmountGivenMultiplicative: { method:'ModifyPowerAmountGivenMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'target', label:'Modify a power\'s amount given (multiplicative, locked to Multiply)' },
@@ -8645,6 +8654,7 @@ const MODIFIER_HOOKS = {
 // breakdown as compiler.js:MODIFIER_HOOKS' own comment header.
 const MODIFIER_HOOK_GROUPS = [
   { label:'Boolean gates', shape:'gate' },
+  { label:'Boolean gates (room-type filterable)', shape:'gateRoomTypeFiltered' },
   { label:'Numeric modifiers', shape:'numeric' },
   { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
   { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
@@ -13806,6 +13816,7 @@ function blankModifier(hookId){
   const hook = MODIFIER_HOOKS[known];
   const m = { hook: known, conditions: [] };
   if(hook.shape === 'gate') m.gateValue = true;
+  else if(hook.shape === 'gateRoomTypeFiltered'){ m.gateValue = true; m.roomTypes = []; }
   else if(hook.shape === 'numeric'){ m.numericValue = 0; if(!hook.lockedOp) m.numericMode = 'Add'; }
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
@@ -13855,6 +13866,13 @@ function renderModifiersList(entity){
     const fieldsEl = block.querySelector('.mod-fields');
     const wireFields = ()=>{
       const gv = fieldsEl.querySelector('.mod-gate-value'); if(gv) gv.onchange = e=> mod.gateValue = (e.target.value === 'true');
+      const gv2 = fieldsEl.querySelector('.mod-gate-value-2'); if(gv2) gv2.onchange = e=> mod.gateValue = (e.target.value === 'true');
+      fieldsEl.querySelectorAll('.mod-room-type').forEach(cb=>{
+        cb.onchange = ()=>{
+          const checked = Array.from(fieldsEl.querySelectorAll('.mod-room-type:checked')).map(x=>x.value);
+          mod.roomTypes = checked;
+        };
+      });
       const nm = fieldsEl.querySelector('.mod-numeric-mode'); if(nm) nm.onchange = e=> mod.numericMode = e.target.value;
       const nv = fieldsEl.querySelector('.mod-numeric-value'); if(nv) nv.oninput = e=> mod.numericValue = parseFloat(e.target.value)||0;
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
@@ -13879,6 +13897,19 @@ function renderModifiersList(entity){
           <option value="false" ${mod.gateValue===false?'selected':''}>false</option>
         </select>
         <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>`;
+      wireFields();
+    } else if(hook.shape === 'gateRoomTypeFiltered'){
+      if(!Array.isArray(mod.roomTypes)) mod.roomTypes = [];
+      const roomBoxes = ROOM_TYPE_VALUES.map(rt=>`<label class="chk-inline"><input type="checkbox" class="mod-room-type" value="${rt}" ${mod.roomTypes.includes(rt)?'checked':''}> ${rt}</label>`).join(' ');
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, return</span>
+        <select class="mod-gate-value-2">
+          <option value="true" ${mod.gateValue!==false?'selected':''}>true</option>
+          <option value="false" ${mod.gateValue===false?'selected':''}>false</option>
+        </select>
+        <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>
+        <div class="cond-word" style="margin-top:6px;">Only in these room types (leave all unchecked for every room type — matches this hook's old, unfiltered behavior):</div>
+        <div>${roomBoxes}</div>
+        <div class="hint-small">Compiles to a real check against <code>roomType == MegaCrit.Sts2.Core.Rooms.RoomType.X</code> — the real RoomType enum (Unassigned/Monster/Elite/Boss/Treasure/Shop/Event/RestSite/Map) confirmed via direct sts2.dll Field/Constant metadata read.</div>`;
       wireFields();
     } else if(hook.shape === 'numeric'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>

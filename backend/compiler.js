@@ -4174,7 +4174,7 @@ const MODIFIER_HOOKS = {
   // so this gate is NOT room-type-filtered here — an author's "force a
   // potion reward" gate applies to every room this hook fires for unless
   // they add their own conditions. Flagged, not silently narrowed.
-  ShouldForcePotionReward: { method: 'ShouldForcePotionReward', ret: 'bool', params: 'Player player, RoomType roomType', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldForcePotionReward: { method: 'ShouldForcePotionReward', ret: 'bool', params: 'Player player, RoomType roomType', shape: 'gateRoomTypeFiltered', playerExpr: 'player.Creature', targetExpr: null },
 
   ModifyEnergyGain: { method: 'ModifyEnergyGain', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
   // Real sibling of ModifyPowerAmountGivenAdditive above — SAME real
@@ -4319,6 +4319,22 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
     if (hook.shape === 'gate') {
       const gateValue = mod.gateValue === true ? 'true' : 'false';
       body = `${bind}        if (${condExpr})\n        {\n            return ${gateValue};\n        }\n        return base.${hook.method}(${paramNames});`;
+    } else if (hook.shape === 'gateRoomTypeFiltered') {
+      // [Round 212] ShouldForcePotionReward-specific shape -- closes Flag A
+      // from the round207-208 punchlist (this hook wasn't room-type-
+      // filtered before). MegaCrit.Sts2.Core.Rooms.RoomType's real members
+      // (Unassigned=0, Monster=1, Elite=2, Boss=3, Treasure=4, Shop=5,
+      // Event=6, RestSite=7, Map=8) were confirmed this round via a direct
+      // Field/Constant metadata read of the real, installed sts2.dll's own
+      // RoomType TypeDef. mod.roomTypes defaults to an empty array, which
+      // reproduces this shape's old 'gate' behavior EXACTLY (no room-type
+      // clause at all) for any character JSON saved before this round.
+      const gateValue2 = mod.gateValue === true ? 'true' : 'false';
+      const rooms = Array.isArray(mod.roomTypes) ? mod.roomTypes.filter(Boolean) : [];
+      const roomCheck = rooms.length
+        ? '(' + rooms.map(rt => `roomType == MegaCrit.Sts2.Core.Rooms.RoomType.${rt}`).join(' || ') + ')'
+        : 'true';
+      body = `${bind}        if ((${condExpr}) && ${roomCheck})\n        {\n            return ${gateValue2};\n        }\n        return base.${hook.method}(${paramNames});`;
     } else if (hook.shape === 'numeric') {
       const op = hook.lockedOp || (mod.numericMode === 'Multiply' ? 'Multiply' : (mod.numericMode === 'Set' ? 'Set' : 'Add'));
       const litSuffix = hook.ret === 'int' ? '' : 'm';
