@@ -896,6 +896,29 @@
   .trig-cat-row.trig-flip-left .trig-sub-list{
     left:auto; right:100%;
   }
+  /* [Tyler: "now the options appear further down the window, cutting
+     them off. you cant scroll down because it will remove the mouse
+     from the highlighted option"] Same underlying issue as the
+     trig-flip-left fix above, just the vertical axis: .trig-sub-list
+     always opens downward (top:-5px, anchored to its row) with no
+     regard for how close to the BOTTOM of the nearest scrollable
+     ancestor (.modal-body, or the viewport) that row already is. A
+     category row near the bottom of the list pushes the flyout's real
+     height past that boundary, clipping the lower options -- and since
+     they're clipped, there's no visible scrollbar for them either, and
+     reaching for a scrollbar/wheel target outside the row+flyout box
+     would move the mouse off both hoverable elements, closing the menu
+     before the scroll could happen. Fixed in renderTriggerPicker's
+     flip() (see clipBoundaryBottom/clipBoundaryTop below) by anchoring
+     the flyout upward instead (bottom:-5px) when there's more room
+     above the row than below, and by clamping .trig-sub-list's
+     max-height via JS to whatever room genuinely exists in the chosen
+     direction -- so the WHOLE flyout box, including its own existing
+     overflow-y:auto scrollbar, always stays inside the visible clip
+     area and can be scrolled with the mouse still over it. */
+  .trig-cat-row.trig-flip-up .trig-sub-list{
+    top:auto; bottom:-5px;
+  }
   .trig-sub-list .picker-option{color:var(--parchment); font-weight:normal;}
   /* Conditions render BEFORE "Then:"/actions again (natural "If... Then..."
      reading order — a round putting Then first read as though the action
@@ -15847,11 +15870,72 @@ function renderTriggerPicker(container, values, selected, onSelect){
       }
       return boundary;
     };
+    // [Tyler: "now the options appear further down the window, cutting
+    // them off. you cant scroll down because it will remove the mouse
+    // from the highlighted option"] Vertical counterpart of
+    // clipBoundaryRight above -- walks the same ancestor chain, but
+    // tracks each scrollable ancestor's TOP and BOTTOM edge instead of
+    // its right edge, so the flyout can be kept inside whichever
+    // direction (up or down) actually has room.
+    const clipBoundaryBottom = (el)=>{
+      let boundary = window.innerHeight;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowY === 'auto' || cs.overflowY === 'hidden' || cs.overflowY === 'scroll'){
+          boundary = Math.min(boundary, anc.getBoundingClientRect().bottom);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
+    const clipBoundaryTop = (el)=>{
+      let boundary = 0;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowY === 'auto' || cs.overflowY === 'hidden' || cs.overflowY === 'scroll'){
+          boundary = Math.max(boundary, anc.getBoundingClientRect().top);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
     container.querySelectorAll('.trig-cat-row').forEach(rowEl=>{
+      const subList = rowEl.querySelector('.trig-sub-list');
       const flip = ()=>{
         const needed = 260;
         const rightEdge = rowEl.getBoundingClientRect().right;
         rowEl.classList.toggle('trig-flip-left', rightEdge + needed > clipBoundaryRight(rowEl));
+
+        // Vertical: prefer opening downward (the default) whenever the
+        // full flyout fits below the row; otherwise open upward if
+        // that side has more room, and either way clamp max-height via
+        // inline style to whatever room genuinely exists so the whole
+        // box -- and its own overflow-y:auto scrollbar -- stays inside
+        // the visible clip area rather than getting cut off with no
+        // way to reach the hidden part.
+        const rowRect = rowEl.getBoundingClientRect();
+        const clipBottom = clipBoundaryBottom(rowEl);
+        const clipTop = clipBoundaryTop(rowEl);
+        const spaceBelow = clipBottom - (rowRect.top - 5);
+        const spaceAbove = (rowRect.bottom + 5) - clipTop;
+        // subList is display:none until :hover/:focus-within reveals
+        // it, so scrollHeight reads 0 the very first time flip() runs
+        // before the browser applies that style -- || 320 falls back
+        // to .trig-sub-list's own CSS max-height in that case.
+        const naturalHeight = Math.min(320, subList.scrollHeight || 320);
+        const minUsable = 120;
+        if(spaceBelow >= naturalHeight){
+          rowEl.classList.remove('trig-flip-up');
+          subList.style.maxHeight = '';
+        } else if(spaceAbove > spaceBelow){
+          rowEl.classList.add('trig-flip-up');
+          subList.style.maxHeight = Math.max(minUsable, Math.min(320, spaceAbove - 8)) + 'px';
+        } else {
+          rowEl.classList.remove('trig-flip-up');
+          subList.style.maxHeight = Math.max(minUsable, spaceBelow - 8) + 'px';
+        }
       };
       rowEl.addEventListener('mouseenter', flip);
       rowEl.addEventListener('focusin', flip);
