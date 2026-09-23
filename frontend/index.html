@@ -8589,7 +8589,7 @@ const MODIFIER_HOOKS = {
 
   TryModifyEnergyCostInCombat: { method:'TryModifyEnergyCostInCombat', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify energy cost in combat' },
   TryModifyEnergyCostInCombatLate: { method:'TryModifyEnergyCostInCombatLate', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify energy cost in combat (late)' },
-  TryModifyPowerAmountReceived: { method:'TryModifyPowerAmountReceived', ret:'bool', shape:'tryRefNumeric', targetExpr:'applier', label:'Try to modify a power amount received' },
+  TryModifyPowerAmountReceived: { method:'TryModifyPowerAmountReceived', ret:'bool', shape:'powerReceivedFilter', targetExpr:'applier', label:'Try to modify a power amount received (optionally scoped to Buff-type or Debuff-type only)' },
   TryModifyStarCost: { method:'TryModifyStarCost', ret:'bool', shape:'tryRefNumeric', targetExpr:null, label:'Try to modify star cost' },
 
   TryModifyKeywordsInCombat: { method:'TryModifyKeywordsInCombat', ret:'bool', shape:'keywordSet', targetExpr:null, label:'Try to add/remove a keyword in combat' },
@@ -8648,6 +8648,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Numeric modifiers', shape:'numeric' },
   { label:'Display-safe modifiers', shape:'hpLossDisplayFixed' },
   { label:'Try-modify (ref) hooks', shape:'tryRefNumeric' },
+  { label:'Try-modify power received (Buff/Debuff filter)', shape:'powerReceivedFilter' },
   { label:'Keyword modifiers', shape:'keywordSet' },
   { label:'Rest site options', shape:'restSiteOption' },
   { label:'Rest site rewards', shape:'restSiteReward' },
@@ -13807,6 +13808,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'numeric'){ m.numericValue = 0; if(!hook.lockedOp) m.numericMode = 'Add'; }
   else if(hook.shape === 'hpLossDisplayFixed') m.numericValue = 0;
   else if(hook.shape === 'tryRefNumeric') m.setValue = 0;
+  else if(hook.shape === 'powerReceivedFilter'){ m.setValue = 0; m.powerTypeFilter = 'Any'; }
   else if(hook.shape === 'keywordSet'){ m.keywordOp = 'Add'; m.keyword = CARD_KEYWORD_VALUES[0]; }
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
@@ -13854,6 +13856,7 @@ function renderModifiersList(entity){
       const nm = fieldsEl.querySelector('.mod-numeric-mode'); if(nm) nm.onchange = e=> mod.numericMode = e.target.value;
       const nv = fieldsEl.querySelector('.mod-numeric-value'); if(nv) nv.oninput = e=> mod.numericValue = parseFloat(e.target.value)||0;
       const sv = fieldsEl.querySelector('.mod-set-value'); if(sv) sv.oninput = e=> mod.setValue = parseFloat(e.target.value)||0;
+      const ptf = fieldsEl.querySelector('.mod-power-type-filter'); if(ptf) ptf.onchange = e=> mod.powerTypeFilter = e.target.value;
       const ko = fieldsEl.querySelector('.mod-keyword-op'); if(ko) ko.onchange = e=> mod.keywordOp = e.target.value;
       const kw = fieldsEl.querySelector('.mod-keyword'); if(kw) kw.onchange = e=> mod.keyword = e.target.value;
       const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
@@ -13892,6 +13895,18 @@ function renderModifiersList(entity){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, set the result to</span>
         <input class="mod-set-value" type="number" step="any" value="${mod.setValue??0}">
         <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>`;
+      wireFields();
+    } else if(hook.shape === 'powerReceivedFilter'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, and the incoming power/status is</span>
+        <select class="mod-power-type-filter">
+          <option value="Any" ${(mod.powerTypeFilter||'Any')==='Any'?'selected':''}>any type</option>
+          <option value="Debuff" ${mod.powerTypeFilter==='Debuff'?'selected':''}>a debuff</option>
+          <option value="Buff" ${mod.powerTypeFilter==='Buff'?'selected':''}>a buff</option>
+        </select>
+        <span class="cond-word">, set the result to</span>
+        <input class="mod-set-value" type="number" step="any" value="${mod.setValue??0}">
+        <span class="cond-word">(0 = fully negate it) — otherwise, fall through to the base game's own real behavior.</span>
+        <div class="hint-small">Compiles to a real check against <code>PowerModel.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff/Buff</code> — real enum members (None/Buff/Debuff) confirmed via reflect-baselib. Use 'a debuff' + result 0 for "negate incoming debuffs"; 'a buff' + result 0 for "negate incoming buffs".</div>`;
       wireFields();
     } else if(hook.shape === 'keywordSet'){
       fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match,</span>

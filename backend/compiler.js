@@ -4121,7 +4121,7 @@ const MODIFIER_HOOKS = {
   // ---- Combined gate+modifier: bool + ref decimal (4) ----
   TryModifyEnergyCostInCombat: { method: 'TryModifyEnergyCostInCombat', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
   TryModifyEnergyCostInCombatLate: { method: 'TryModifyEnergyCostInCombatLate', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
-  TryModifyPowerAmountReceived: { method: 'TryModifyPowerAmountReceived', ret: 'bool', params: 'PowerModel canonicalPower, Creature target, decimal amount, Creature applier, ref decimal modifiedAmount', shape: 'tryRefNumeric', refParam: 'modifiedAmount', playerExpr: 'target', targetExpr: 'applier' },
+  TryModifyPowerAmountReceived: { method: 'TryModifyPowerAmountReceived', ret: 'bool', params: 'PowerModel canonicalPower, Creature target, decimal amount, Creature applier, ref decimal modifiedAmount', shape: 'powerReceivedFilter', refParam: 'modifiedAmount', playerExpr: 'target', targetExpr: 'applier' },
   TryModifyStarCost: { method: 'TryModifyStarCost', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
 
   // ---- Collection mutation (1) — the only one of the 6 real "TryModify +
@@ -4330,6 +4330,25 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       const rawVal = typeof mod.setValue === 'number' ? mod.setValue : 0;
       const val = `${rawVal}m`;
       body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${hook.refParam} = ${val};\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'powerReceivedFilter') {
+      // [Round 210] TryModifyPowerAmountReceived-specific shape -- closes
+      // #76 'Negate incoming debuffs' and #77 'Negate incoming buffs'
+      // (setValue=0 plus powerTypeFilter='Debuff'/'Buff'), and generalizes
+      // to overriding the amount of ANY incoming power of a given real
+      // PowerType. MegaCrit.Sts2.Core.Entities.Powers.PowerType's real
+      // members are None/Buff/Debuff -- [VERIFIED via reflect-baselib
+      // round 2], and PowerModel.Type is already used the same way
+      // elsewhere in this file's DebuffStacksTotal condition codegen
+      // ([VERIFIED via sts2.dll -- Creature.Powers, PowerModel.Type]), so
+      // this reuses existing evidence rather than adding new evidence.
+      // powerTypeFilter defaults to 'Any' (no type clause at all), which
+      // reproduces the shape's old 'tryRefNumeric' behavior exactly.
+      const rawVal2 = typeof mod.setValue === 'number' ? mod.setValue : 0;
+      const val2 = `${rawVal2}m`;
+      const typeFilter = mod.powerTypeFilter === 'Debuff' ? ' && canonicalPower.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff'
+        : mod.powerTypeFilter === 'Buff' ? ' && canonicalPower.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Buff'
+        : '';
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if ((${condExpr})${typeFilter})\n        {\n            ${hook.refParam} = ${val2};\n            return true;\n        }\n        return baseResult;`;
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';
       // [Round 139] mod.keyword may now also be a custom keyword word (see
