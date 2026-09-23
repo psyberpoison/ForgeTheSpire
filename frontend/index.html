@@ -835,11 +835,23 @@
      .eb-trigger-picker keeps the .collapsed treatment permanently (no
      heavy bordered panel) since the button + flyout menu never need it
      either. */
-  .eb-trigger-picker{
+  /* [Round 220 fix] Tyler: "adding a modifier only displays the
+     categories, no further options" -- .mod-hook-picker (the Modifiers
+     hook bubble picker added this round) reused renderTriggerPicker's
+     exact markup/classes, but these 3 rules were still scoped to
+     .eb-trigger-picker by name alone, so .mod-hook-picker fell through to
+     the base .picker-list{max-height:210px; overflow-y:auto;} rule
+     instead (see that rule's own comment further down) -- which clips
+     (rather than floats as an overlay) any .trig-sub-list flyout trying
+     to escape via left:100%, since a non-visible overflow-y forces
+     overflow-x non-visible too. The category bubbles rendered fine (this
+     rule isn't what shows/hides those), but hovering one to reveal its
+     hooks had nothing visible to show. */
+  .eb-trigger-picker, .mod-hook-picker{
     display:flex; flex-direction:column; gap:10px; margin-bottom:10px;
     padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--stone-2);
   }
-  .eb-trigger-picker.collapsed{
+  .eb-trigger-picker.collapsed, .mod-hook-picker.collapsed{
     padding:0; border:none; background:transparent; margin-bottom:8px;
   }
   .trig-picker-btn{
@@ -861,7 +873,7 @@
      .eb-trigger-picker for higher specificity than the bare .picker-list
      class, so this reliably wins regardless of the two rules' order in
      the file. */
-  .eb-trigger-picker .trig-picker-list{
+  .eb-trigger-picker .trig-picker-list, .mod-hook-picker .trig-picker-list{
     position:absolute; z-index:30; top:100%; left:0; margin-top:4px;
     /* [Tyler: "reduce the width...so the user doesn't have to worry
        about dragging the mouse over another option"] Fixed 300px left
