@@ -4186,6 +4186,21 @@ const MODIFIER_HOOKS = {
   ModifyPowerAmountGivenMultiplicative: { method: 'ModifyPowerAmountGivenMultiplicative', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'giver', targetExpr: 'target' },
   ModifyMerchantPrice: { method: 'ModifyMerchantPrice', ret: 'decimal', params: 'Player player, MerchantEntry entry, decimal cost', shape: 'numeric', valueParam: 'cost', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
   ModifyCardRewardUpgradeOdds: { method: 'ModifyCardRewardUpgradeOdds', ret: 'decimal', params: 'Player player, CardModel card, decimal odds', shape: 'numeric', valueParam: 'odds', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+
+  // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, closes
+  // #93 "Its attacks hit its own allies instead" (attacksHitOwnAllies).
+  // ModifyUnblockedDamageTarget(Creature target, decimal amount, ValueProp
+  // props, Creature dealer): Creature -- confirmed real via a full dump of
+  // the real, installed sts2.dll's own AbstractModel (round207's evidence
+  // pass). `dealer.CombatState` (real, public ICombatState-typed property
+  // on Creature) exposes GetTeammatesOf(Creature)/GetOpponentsOf(Creature):
+  // IReadOnlyList<Creature> -- both confirmed real, public, ABSTRACT
+  // members of the ICombatState INTERFACE itself (not just the concrete
+  // CombatState class), via direct sts2.dll read of both types this round
+  // (ecma_dump_ext.py against MegaCrit.Sts2.Core.Combat.CombatState AND
+  // MegaCrit.Sts2.Core.Combat.ICombatState separately) -- so calling them
+  // off dealer.CombatState (interface-typed) compiles for real.
+  ModifyUnblockedDamageTarget: { method: 'ModifyUnblockedDamageTarget', ret: 'Creature', params: 'Creature target, decimal amount, ValueProp props, Creature dealer', shape: 'creatureRedirect', playerExpr: 'dealer', targetExpr: 'target' },
 };
 
 // "ref decimal modifiedCost" -> "modifiedCost" (declaration -> a plain
@@ -4325,6 +4340,15 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       const destPileExpr = pileTypeExpr(mod.destPile);
       const destPositionValue = ['Top', 'Bottom', 'Random'].includes(mod.destPosition) ? mod.destPosition : 'Top';
       body = `${bind}        MegaCrit.Sts2.Core.Entities.Cards.CardLocation baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            return new MegaCrit.Sts2.Core.Entities.Cards.CardLocation(card.Owner, ${destPileExpr}, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.${destPositionValue});\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'creatureRedirect') {
+      // [Round 208] Redirects this hit to a random ally or enemy OF THE
+      // ATTACKER (dealer), excluding the dealer itself and the original
+      // target from the candidate pool so a redirect never silently
+      // no-ops back onto the same creature it already would have hit;
+      // falls back to the real base result when the pool is empty (e.g.
+      // "redirect to an ally" in a solo fight with no allies present).
+      const call = mod.redirectMode === 'Enemy' ? 'GetOpponentsOf' : 'GetTeammatesOf';
+      body = `${bind}        MegaCrit.Sts2.Core.Entities.Creatures.Creature baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            var fgCandidates = dealer.CombatState.${call}(dealer).Where(c => c != dealer && c != target).ToList();\n            if (fgCandidates.Count > 0)\n            {\n                return fgCandidates[0];\n            }\n        }\n        return baseResult;`;
     } else if (hook.shape === 'restSiteOption') {
       // [VERIFIED via direct sts2.dll read, 2026-09-22 — see
       // BUILTIN_REST_SITE_OPTION_CLASS_MAP's own comment] All 9 real

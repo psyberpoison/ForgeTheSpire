@@ -8631,6 +8631,10 @@ const MODIFIER_HOOKS = {
   ModifyPowerAmountGivenMultiplicative: { method:'ModifyPowerAmountGivenMultiplicative', ret:'decimal', shape:'numeric', lockedOp:'Multiply', targetExpr:'target', label:'Modify a power\'s amount given (multiplicative, locked to Multiply)' },
   ModifyMerchantPrice: { method:'ModifyMerchantPrice', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a shop item\'s price' },
   ModifyCardRewardUpgradeOdds: { method:'ModifyCardRewardUpgradeOdds', ret:'decimal', shape:'numeric', lockedOp:null, targetExpr:null, label:'Modify a card reward\'s upgrade odds' },
+
+  // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, mirrors
+  // backend/compiler.js:MODIFIER_HOOKS' own round-208 comment.
+  ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect this hit to an ally or enemy of the attacker instead of its original target' },
 };
 // Grouped for the hook <select>'s <optgroup>s — same 4-shape-plus-deferred
 // breakdown as compiler.js:MODIFIER_HOOKS' own comment header.
@@ -8643,6 +8647,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Rest site options', shape:'restSiteOption' },
   { label:'Rest site rewards', shape:'restSiteReward' },
   { label:'Card play destination', shape:'cardLocation' },
+  { label:'Damage target redirect', shape:'creatureRedirect' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
 
@@ -13801,6 +13806,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
   else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
+  else if(hook.shape === 'creatureRedirect'){ m.redirectMode = 'Ally'; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13851,6 +13857,7 @@ function renderModifiersList(entity){
       const ra = fieldsEl.querySelector('.mod-reward-amount'); if(ra) ra.oninput = e=> mod.rewardAmount = parseFloat(e.target.value)||0;
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
+      const rm = fieldsEl.querySelector('.mod-redirect-mode'); if(rm) rm.onchange = e=> mod.redirectMode = e.target.value;
     };
     if(hook.shape === 'deferred'){
       fieldsEl.innerHTML = `<div class="hint-small not-real">[DEFERRED] ${escapeHtml(hook.reason)} Compiles to an honest stub (ForgeActions.Todo) that throws if actually reached — no shape-specific fields to set yet.</div>`;
@@ -13919,6 +13926,15 @@ function renderModifiersList(entity){
         </select>
         <span class="cond-word">instead — otherwise, fall through to the base game's own real result.</span>
         <div class="hint-small">Compiles to a real <code>new CardLocation(card.Owner, PileType, CardPilePosition)</code> — confirmed real public constructor via direct sts2.dll IL read.</div>`;
+      wireFields();
+    } else if(hook.shape === 'creatureRedirect'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, redirect this hit to a random</span>
+        <select class="mod-redirect-mode">
+          <option value="Ally" ${(mod.redirectMode||'Ally')==='Ally'?'selected':''}>ally of the attacker</option>
+          <option value="Enemy" ${mod.redirectMode==='Enemy'?'selected':''}>enemy of the attacker</option>
+        </select>
+        <span class="cond-word">instead of its original target (falls back to the original target if none exist) — otherwise, fall through to the base game's own real result.</span>
+        <div class="hint-small">Compiles to a real <code>Creature.CombatState.GetTeammatesOf/GetOpponentsOf(Creature): IReadOnlyList&lt;Creature&gt;</code> — both confirmed real, public, abstract members of the ICombatState interface itself via direct sts2.dll read.</div>`;
       wireFields();
     }
     if(!isDeferred){

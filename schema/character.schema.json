@@ -1270,7 +1270,8 @@
             "ShouldProcurePotion", "ShouldAfflict", "ShouldGenerateTreasure", "ShouldAllowMerchantCardRemoval",
             "ShouldDisableRemainingRestSiteOptions", "ShouldTakeExtraTurn", "ShouldFlush", "ShouldEtherealTrigger",
             "ShouldGainStars", "ShouldAllowFreeTravel", "ShouldRefillMerchantEntry", "ShouldForcePotionReward",
-            "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds"
+            "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds",
+            "ModifyUnblockedDamageTarget"
           ]
         },
         "conditions": {
@@ -1326,6 +1327,10 @@
         }
       }
     },
+        "redirectMode": {
+          "enum": ["Ally", "Enemy"],
+          "description": "[Round 208] Used only by ModifyUnblockedDamageTarget — redirects a hit to a random ally or enemy OF THE ATTACKER (dealer) instead of its original target, when conditions match. Compiles to a real Creature.CombatState.GetTeammatesOf/GetOpponentsOf(Creature) call (both confirmed real, public, abstract ICombatState interface members via direct sts2.dll read); falls back to the original target when the candidate pool is empty (e.g. no allies in a solo fight)."
+        },
     "conditionsArray": {
       "type": "array",
       "items": {
