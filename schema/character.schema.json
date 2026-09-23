@@ -1266,7 +1266,11 @@
             "TryModifyKeywordsInCombat",
             "TryModifyCardBeingAddedToDeck", "TryModifyCardBeingAddedToDeckLate",
             "TryModifyRestSiteHealRewards", "TryModifyRestSiteOptions",
-            "ModifyCardPlayResultLocation", "ModifyExtraRestSiteHealText", "ModifyShuffleOrder"
+            "ModifyCardPlayResultLocation", "ModifyExtraRestSiteHealText", "ModifyShuffleOrder",
+            "ShouldProcurePotion", "ShouldAfflict", "ShouldGenerateTreasure", "ShouldAllowMerchantCardRemoval",
+            "ShouldDisableRemainingRestSiteOptions", "ShouldTakeExtraTurn", "ShouldFlush", "ShouldEtherealTrigger",
+            "ShouldGainStars", "ShouldAllowFreeTravel", "ShouldRefillMerchantEntry", "ShouldForcePotionReward",
+            "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds"
           ]
         },
         "conditions": {
