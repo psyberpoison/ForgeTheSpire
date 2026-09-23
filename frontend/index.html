@@ -15816,20 +15816,42 @@ function renderTriggerPicker(container, values, selected, onSelect){
     });
     // [Tyler: "hovering over triggers in relics make the menu freak
     // out... trying to extend the cascading window past the open
-    // window"] Flip .trig-sub-list to the LEFT of its row (see the
-    // .trig-flip-left CSS rule above) whenever opening it to the right
-    // wouldn't fit in the viewport. Measured on the ROW rather than the
-    // flyout itself, since the flyout is display:none (no layout box to
-    // measure) until :hover/:focus-within reveals it -- 260 is a little
-    // slack over .trig-sub-list's own 240px min-width CSS already
-    // guarantees. Re-measured on every hover/focus (not just once at
-    // render time) since the panel can scroll or the window can resize
-    // between renders.
+    // window" -- and, after the first fix here only checked the browser
+    // VIEWPORT, still happening: the "open window" is the Edit
+    // Relic/Mechanic MODAL, not the browser window. .modal-body has its
+    // own overflow-x:auto and is narrower than the viewport, so it clips
+    // (and scrollbars) the flyout on its own boundary well before the
+    // flyout would ever reach the real edge of the browser window --
+    // window.innerWidth alone was the wrong boundary to check.] Flip
+    // .trig-sub-list to the LEFT of its row (see the .trig-flip-left CSS
+    // rule above) whenever opening it to the right wouldn't fit inside
+    // the TIGHTEST clipping boundary -- the nearest scrollable ancestor
+    // (.modal-body here, but this walks generically so it also covers
+    // any other scroll container this picker ever ends up inside) if
+    // one exists, otherwise the browser viewport itself. Measured on the
+    // ROW rather than the flyout, since the flyout is display:none (no
+    // layout box to measure) until :hover/:focus-within reveals it --
+    // 260 is a little slack over .trig-sub-list's own 240px min-width
+    // CSS already guarantees. Re-measured on every hover/focus (not just
+    // once at render time) since the panel can scroll or the window can
+    // resize between renders.
+    const clipBoundaryRight = (el)=>{
+      let boundary = window.innerWidth;
+      let anc = el.parentElement;
+      while(anc && anc !== document.body){
+        const cs = getComputedStyle(anc);
+        if(cs.overflowX === 'auto' || cs.overflowX === 'hidden' || cs.overflowX === 'scroll'){
+          boundary = Math.min(boundary, anc.getBoundingClientRect().right);
+        }
+        anc = anc.parentElement;
+      }
+      return boundary;
+    };
     container.querySelectorAll('.trig-cat-row').forEach(rowEl=>{
       const flip = ()=>{
         const needed = 260;
         const rightEdge = rowEl.getBoundingClientRect().right;
-        rowEl.classList.toggle('trig-flip-left', rightEdge + needed > window.innerWidth);
+        rowEl.classList.toggle('trig-flip-left', rightEdge + needed > clipBoundaryRight(rowEl));
       };
       rowEl.addEventListener('mouseenter', flip);
       rowEl.addEventListener('focusin', flip);
