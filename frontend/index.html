@@ -3660,7 +3660,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -3757,7 +3757,7 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile'] },
+  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -3790,6 +3790,8 @@ const ACTION_TYPE_SEARCH_TEXT = {
   EnchantCard: 'enchant apply enchantment this card',
   RemoveEnchantment: 'remove clear enchantment this card',
   ClearAfflictionFromPile: 'clear remove affliction from pile hand draw discard exhaust other cards',
+  SwapDrawDiscard: 'swap draw discard pile',
+  TransformDeckCards: 'transform deck cards into',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -4091,7 +4093,7 @@ const STATUS_DESCRIPTIONS = {
 // compiler.js:validTargetsForAction (imported into validate.js) rejects
 // outright at generate/download time -- caught by round 199's own
 // pipeline test.
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -8473,11 +8475,11 @@ document.addEventListener('click', (e)=>{
 // "no require() in the browser" reasoning HOOK_TRIGGERS/HOOK_TRIGGER_BINDING
 // above already use, kept as a literal copy rather than a fetch. `label` is
 // new here (a plain-English dropdown label, same spirit as HOOK_TRIGGER_LABELS
-// but shape-aware instead of trigger-aware). 32 real (gate/numeric/
-// tryRefNumeric/keywordSet/restSiteOption/restSiteReward) + 5 deferred
-// (CardLocation/LocString/etc. construction or authoring-UI design not
-// finished yet — see claude/round20-groupb-findings.md, a Claude Project
-// doc, and compiler.js:MODIFIER_HOOKS' 2026-09-22 note) = all 37 of Tyler's
+// but shape-aware instead of trigger-aware). 33 real (gate/numeric/
+// tryRefNumeric/keywordSet/restSiteOption/restSiteReward/cardLocation) + 4
+// deferred (LocString construction or authoring-UI design not finished yet —
+// see claude/round20-groupb-findings.md, a Claude Project doc, and
+// compiler.js:MODIFIER_HOOKS' 2026-09-22/2026-09-23 notes) = all 37 of Tyler's
 // reconstructed Group B list. (AfterForge, the 38th entry on that list,
 // moved to HOOK_TRIGGERS above — it's really Task-returning, a Group A
 // hook, not Group B at all.)
@@ -8485,6 +8487,10 @@ document.addEventListener('click', (e)=>{
 // [2026-09-22] TryModifyRestSiteHealRewards/TryModifyRestSiteOptions moved
 // from 'deferred' to real shapes — see REST_SITE_OPTION_VALUES below and
 // compiler.js:BUILTIN_REST_SITE_OPTION_CLASS_MAP for the evidence.
+//
+// [2026-09-23] ModifyCardPlayResultLocation moved from 'deferred' to a
+// real 'cardLocation' shape -- see that hook's own entry below for the
+// evidence.
 const MODIFIER_HOOKS = {
   ShouldPlay: { method:'ShouldPlay', ret:'bool', shape:'gate', targetExpr:null, label:'Should this card be allowed to play (gate)' },
   ShouldDie: { method:'ShouldDie', ret:'bool', shape:'gate', targetExpr:null, label:'Should this creature die (gate)' },
@@ -8536,7 +8542,14 @@ const MODIFIER_HOOKS = {
   TryModifyCardBeingAddedToDeckLate: { method:'TryModifyCardBeingAddedToDeckLate', ret:'bool', shape:'deferred', targetExpr:null, label:'Try to modify a card being added to deck (late) [deferred]', reason:'Same as above — no mechanism yet to author a replacement CardModel.' },
   TryModifyRestSiteHealRewards: { method:'TryModifyRestSiteHealRewards', ret:'bool', shape:'restSiteReward', targetExpr:null, label:'Add/remove a Gold rest site reward' },
   TryModifyRestSiteOptions: { method:'TryModifyRestSiteOptions', ret:'bool', shape:'restSiteOption', targetExpr:null, label:'Add/remove a rest site option' },
-  ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'deferred', targetExpr:null, label:'Modify where a played card ends up [deferred]', reason:'CardLocation is a real struct {Player player, PileType pileType, CardPilePosition position} — constructing one for real needs more research than this round scoped.' },
+  // [2026-09-23] "fill in the gaps" round -- moved from 'deferred' to a
+  // real shape. CardLocation is a real struct with a real public 3-arg
+  // ctor (Player player, PileType pileType, CardPilePosition position) --
+  // confirmed via direct sts2.dll IL read (search.py/disasm.py). Compiles
+  // to a real override that falls through to base.ModifyCardPlayResultLocation(...)
+  // when the conditions below don't match -- see compiler.js:generateModifierOverrides'
+  // 'cardLocation' branch.
+  ModifyCardPlayResultLocation: { method:'ModifyCardPlayResultLocation', ret:'CardLocation', shape:'cardLocation', targetExpr:null, label:'Modify where a played card ends up' },
   ModifyExtraRestSiteHealText: { method:'ModifyExtraRestSiteHealText', ret:'IReadOnlyList<LocString>', shape:'deferred', targetExpr:null, label:'Modify extra rest site heal text [deferred]', reason:'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method:'ModifyShuffleOrder', ret:'void', shape:'deferred', targetExpr:null, label:'Modify shuffle order [deferred]', reason:'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
 };
@@ -8550,6 +8563,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Keyword modifiers', shape:'keywordSet' },
   { label:'Rest site options', shape:'restSiteOption' },
   { label:'Rest site rewards', shape:'restSiteReward' },
+  { label:'Card play destination', shape:'cardLocation' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
 
@@ -9736,6 +9750,18 @@ function describeAction(act){
       return `Enchant this card with ${n} stack${n===1?'':'s'} of ${name}`;
     }
     case 'RemoveEnchantment': return `Remove this card's current enchantment (if any)`;
+    // [2026-09-23] "fill in the gaps" round -- both real, evidence-closed
+    // via direct sts2.dll IL reads (PileTypeExtensions.GetPile/CardPileCmd.Add
+    // for the swap; CardModel.IsTransformable/CardCmd.Transform for the
+    // deck-wide transform). Same plain-sentence convention as every case
+    // above -- see compiler.js's actionToCSharp SwapDrawDiscard/
+    // TransformDeckCards cases for the full evidence trail.
+    case 'SwapDrawDiscard': return `Swap your Draw and Discard piles`;
+    case 'TransformDeckCards': {
+      const srcName = (state.cards.find(c=>c.id===act.sourceCardRef) || {}).name || 'a card';
+      const dstName = (state.cards.find(c=>c.id===act.becomesCardId) || {}).name || 'another card';
+      return `Transform every ${srcName} in your deck into ${dstName}`;
+    }
     default: return '';
   }
 }
@@ -13250,6 +13276,25 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Clear</span> ${cafpOptions} <span class="cond-word">from every other card in your</span> ${cafpPileHtml}<span class="cond-word">.</span>`;
       break;
     }
+    // [2026-09-23] "fill in the gaps" round -- SwapDrawDiscard is fully
+    // static (no fields), same shape as ShuffleCardIntoDraw above.
+    // TransformDeckCards needs two card pickers (source + target), same
+    // "no entities yet" hint-text fallback AfflictCard/EnchantCard's own
+    // pickers use above, modeled on the card editor's own transformOnUpgrade
+    // target select (see refreshTransformPanel).
+    case 'SwapDrawDiscard':
+      sentenceHtml = `<span class="cond-word">Swap your Draw and Discard piles.</span>`;
+      break;
+    case 'TransformDeckCards': {
+      const tdcSourceOptions = state.cards.length
+        ? `<select class="a-source-card-ref">${state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${act.sourceCardRef===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a Card first)</span>`;
+      const tdcTargetOptions = state.cards.length
+        ? `<select class="a-becomes-card-id">${state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${act.becomesCardId===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a Card first)</span>`;
+      sentenceHtml = `<span class="cond-word">Transform every</span> ${tdcSourceOptions} <span class="cond-word">in your deck into</span> ${tdcTargetOptions}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -13431,6 +13476,12 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // needed, same as destinationSelect/costScopeSelect above.
   const pileSelect = row.querySelector('.a-pile');
   if(pileSelect) pileSelect.onchange = e=> act.pile = e.target.value;
+  // [2026-09-23] TransformDeckCards's own two card-picker selects -- no
+  // re-render needed, same as afflictionRefSelect/enchantmentRefSelect above.
+  const sourceCardRefSelect = row.querySelector('.a-source-card-ref');
+  if(sourceCardRefSelect) sourceCardRefSelect.onchange = e=> act.sourceCardRef = e.target.value;
+  const becomesCardIdSelect = row.querySelector('.a-becomes-card-id');
+  if(becomesCardIdSelect) becomesCardIdSelect.onchange = e=> act.becomesCardId = e.target.value;
   // [Round 199] DealDamage's "Unblockable" checkbox -- no re-render
   // needed, same as randomCheck/retainThisTurn above.
   const unblockableCheck = row.querySelector('.a-unblockable');
@@ -13670,6 +13721,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'keywordSet'){ m.keywordOp = 'Add'; m.keyword = CARD_KEYWORD_VALUES[0]; }
   else if(hook.shape === 'restSiteOption'){ m.optionOp = 'Add'; m.optionType = REST_SITE_OPTION_VALUES[0]; }
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
+  else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13718,6 +13770,8 @@ function renderModifiersList(entity){
       const ot = fieldsEl.querySelector('.mod-option-type'); if(ot) ot.onchange = e=> mod.optionType = e.target.value;
       const ro = fieldsEl.querySelector('.mod-reward-op'); if(ro) ro.onchange = e=> { mod.rewardOp = e.target.value; renderModifiersList(entity); };
       const ra = fieldsEl.querySelector('.mod-reward-amount'); if(ra) ra.oninput = e=> mod.rewardAmount = parseFloat(e.target.value)||0;
+      const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
+      const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
     };
     if(hook.shape === 'deferred'){
       fieldsEl.innerHTML = `<div class="hint-small not-real">[DEFERRED] ${escapeHtml(hook.reason)} Compiles to an honest stub (ForgeActions.Todo) that throws if actually reached — no shape-specific fields to set yet.</div>`;
@@ -13775,6 +13829,17 @@ function renderModifiersList(entity){
         </select>
         ${mod.rewardOp!=='Remove' ? `<input class="mod-reward-amount" type="number" step="1" min="0" value="${mod.rewardAmount??25}"><span class="cond-word">gold.</span>` : ''}
         <div class="hint-small">Compiles to a real <code>new GoldReward(amount, player, false)</code> — confirmed real public constructor via direct sts2.dll read. Only Gold is offered for now; other reward types (Card/Relic/Potion) aren't researched yet.</div>`;
+      wireFields();
+    } else if(hook.shape === 'cardLocation'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, send the just-played card to your</span>
+        <select class="mod-dest-pile">${pileOptList(mod.destPile)}</select>
+        <select class="mod-dest-position">
+          <option value="Top" ${(mod.destPosition||'Top')==='Top'?'selected':''}>Top</option>
+          <option value="Bottom" ${mod.destPosition==='Bottom'?'selected':''}>Bottom</option>
+          <option value="Random" ${mod.destPosition==='Random'?'selected':''}>Random position</option>
+        </select>
+        <span class="cond-word">instead — otherwise, fall through to the base game's own real result.</span>
+        <div class="hint-small">Compiles to a real <code>new CardLocation(card.Owner, PileType, CardPilePosition)</code> — confirmed real public constructor via direct sts2.dll IL read.</div>`;
       wireFields();
     }
     if(!isDeferred){

@@ -939,6 +939,26 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else if (act.enchantmentRef !== undefined) {
       errors.push(`${p}: enchantmentRef is only meaningful on "EnchantCard" — action type is "${act.type}".`);
     }
+    // [2026-09-23] TransformDeckCards -- sourceCardRef/becomesCardId, same
+    // "must be a non-empty string that resolves against this character's
+    // own cardIds" shape card.transformOnUpgrade.targetCardId already uses
+    // (see validateCharacterPackage's own transformOnUpgrade check) --
+    // shared vocabulary, not a new convention.
+    if (act.type === 'TransformDeckCards') {
+      if (act.sourceCardRef === '' || act.sourceCardRef === undefined) {
+        errors.push(`${p}: action "TransformDeckCards" needs a source card selected — pick one from the dropdown.`);
+      } else if (!cardIds.has(act.sourceCardRef)) {
+        errors.push(`${p}.sourceCardRef "${act.sourceCardRef}" doesn't match any defined card id.`);
+      }
+      if (act.becomesCardId === '' || act.becomesCardId === undefined) {
+        errors.push(`${p}: action "TransformDeckCards" needs a target card selected — pick one from the dropdown.`);
+      } else if (!cardIds.has(act.becomesCardId)) {
+        errors.push(`${p}.becomesCardId "${act.becomesCardId}" doesn't match any defined card id.`);
+      }
+    } else {
+      if (act.sourceCardRef !== undefined) errors.push(`${p}: sourceCardRef is only meaningful on "TransformDeckCards" — action type is "${act.type}".`);
+      if (act.becomesCardId !== undefined) errors.push(`${p}: becomesCardId is only meaningful on "TransformDeckCards" — action type is "${act.type}".`);
+    }
     // [Round 199] unblockable -- DealDamage only, boolean. See
     // compiler.js's actionToCSharp DealDamage case for the real
     // ValueProp.Unblockable evidence and the sourceCard-bound branch's
@@ -1389,6 +1409,15 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
       // as every other numeric field in this function.
       if (mod.rewardOp !== undefined && !['Add', 'Remove'].includes(mod.rewardOp)) errors.push(`${p}.rewardOp "${mod.rewardOp}" is not one of: Add, Remove.`);
       if (mod.rewardOp !== 'Remove' && typeof mod.rewardAmount !== 'number') errors.push(`${p}.rewardAmount must be a number when rewardOp is "Add" (or omitted, which defaults to Add).`);
+    } else if (hook.shape === 'cardLocation') {
+      // [2026-09-23] ModifyCardPlayResultLocation -- destPile/destPosition,
+      // both closed-vocabulary like every other pile/position field in this
+      // file (PILE_TYPES for destPile, the real CardPilePosition subset for
+      // destPosition). Both optional -- compiler.js:generateModifierOverrides
+      // defaults destPosition to "Top" when omitted, and destPile has no
+      // default because it's the one meaningful choice the modifier makes.
+      if (mod.destPile !== undefined && !PILE_TYPES.includes(mod.destPile)) errors.push(`${p}.destPile "${mod.destPile}" is not one of: ${PILE_TYPES.join(', ')}.`);
+      if (mod.destPosition !== undefined && !['Top', 'Bottom', 'Random'].includes(mod.destPosition)) errors.push(`${p}.destPosition "${mod.destPosition}" is not one of: Top, Bottom, Random.`);
     }
   });
 }

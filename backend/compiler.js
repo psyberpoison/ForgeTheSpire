@@ -612,6 +612,13 @@ const PLAYER_ONLY_ACTIONS = [
   // AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment right
   // above for that same underlying reason.
   'ClearAfflictionFromPile',
+  // [2026-09-23] Tyler pointed at a relic from a different, unrelated
+  // STS2 character-creator tool ("Test Relic") doing two things Forge
+  // couldn't yet: swapping the Draw/Discard piles, and transforming deck
+  // cards into a different card. Both act on a whole pile, same
+  // "no real Creature-target concept" bucket as ClearAfflictionFromPile
+  // right above -- see actionToCSharp's own cases for the full evidence.
+  'SwapDrawDiscard', 'TransformDeckCards',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -2185,6 +2192,59 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       return `        foreach (CardModel fgAflC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(${cafpPileExpr}, ${cafpOwnerExpr}).Cards.Where(_c => _c.Affliction is ${cafpAfflCls}).ToList()) // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 199 -- Afflictions/Reckless.cs's real, working PileType.Hand.GetPile(...).Cards.Where(_c => _c.Affliction is ...).ToList() pattern]
         {
             MegaCrit.Sts2.Core.Commands.CardCmd.ClearAffliction(fgAflC);
+        }`;
+    }
+    // [2026-09-23] Tyler pointed at a relic from a different, unrelated
+    // STS2 character-creator tool ("Test Relic") that swaps a player's
+    // Draw and Discard piles. No dedicated "swap" API exists in sts2.dll
+    // -- composited from two independently-[VERIFIED] real primitives
+    // already used elsewhere in this file: PileTypeExtensions.GetPile(
+    // PileType, Player).Cards (real, public -- see ClearAfflictionFromPile's
+    // own case above) and CardPileCmd.Add(CardModel, PileType,
+    // CardPilePosition, AbstractModel, bool) (real, public, static -- the
+    // same call ShuffleCardIntoDraw/ReturnToHand already use). Both piles
+    // are snapshotted into a .ToList() first (same defensive-copy
+    // reasoning ClearAfflictionFromPile uses) before either loop starts
+    // mutating them, so moving Draw's cards into Discard doesn't also
+    // sweep up the cards Discard just received. [BEST EFFORT] -- no single
+    // decompiled example of a "swap both piles" relic exists to confirm
+    // this exact composition end-to-end, but every individual call in it
+    // is independently real.
+    case 'SwapDrawDiscard': {
+      const sddPlayerExpr = resolvePlayerExpr(ctx);
+      return `        var fgSwapDraw = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${sddPlayerExpr}).Cards.ToList();
+        var fgSwapDiscard = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, ${sddPlayerExpr}).Cards.ToList();
+        foreach (CardModel fgSwapC in fgSwapDraw) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); }
+        foreach (CardModel fgSwapC in fgSwapDiscard) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [BEST EFFORT] see compiler.js's own comment on this case`;
+    }
+    // [2026-09-23] Same "Test Relic" reference -- its deckCardsBecome
+    // passive modifier transforms deck cards into a different specific
+    // card. Reuses MegaCrit.Sts2.Core.Commands.CardCmd.Transform(CardModel
+    // original, CardModel replacement, CardPreviewStyle style) --
+    // ALREADY [VERIFIED]/real (Task<CardPileAddResult?>, confirmed via
+    // direct sts2.dll read this round), the exact same call
+    // generateTransformUpgradeMethod above uses for transformOnUpgrade --
+    // extended here to a relic/mechanic-triggered loop over every
+    // matching card sitting in the player's real Deck pile, instead of a
+    // card transforming only itself. CardModel.IsTransformable --
+    // disassembled directly this round (`IsRemovable || (Pile != null &&
+    // Pile.Type == PileType.Deck)`) -- confirms Transform is safe on ANY
+    // card sitting in Deck, unconditionally, not just during a rest-site
+    // upgrade flow, closing the one open question transformOnUpgrade's
+    // own comment had left open. Unlike that synchronous OnUpgrade
+    // context, this action lives inside an async hook/effect body, so
+    // (unlike transformOnUpgrade's fire-and-forget `_ = ...`) the real
+    // Task IS awaited here. [BEST EFFORT] -- no decompiled example of a
+    // RELIC (as opposed to a card upgrading itself) calling Transform
+    // exists yet, but every individual piece is independently real.
+    case 'TransformDeckCards': {
+      const tdcSourceCls = ctx.cardClassById && ctx.cardClassById.get(action.sourceCardRef);
+      const tdcTargetCls = ctx.cardClassById && ctx.cardClassById.get(action.becomesCardId);
+      if (!tdcSourceCls || !tdcTargetCls) return `        ForgeActions.Todo("TransformDeckCards -- pick both a source and a target card"); // pick both cards in this action's own dropdowns`;
+      const tdcPlayerExpr = resolvePlayerExpr(ctx);
+      return `        foreach (CardModel fgTransC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Deck, ${tdcPlayerExpr}).Cards.Where(_c => _c is ${tdcSourceCls}).ToList()) // [BEST EFFORT] see compiler.js's own comment on this case
+        {
+            await MegaCrit.Sts2.Core.Commands.CardCmd.Transform(fgTransC, new ${tdcTargetCls}(), MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None);
         }`;
     }
     default:
@@ -3934,7 +3994,7 @@ const BUILTIN_REST_SITE_OPTION_CLASS_MAP = {
 // sts2tools/ecma_dump.py that reproduced every existing TRIGGER_HOOKS
 // entry byte-identical.
 //
-// 32 of the 37 get real, working codegen now. 5 are real, verified hooks
+// 33 of the 37 get real, working codegen now. 4 are real, verified hooks
 // that Tyler approved but which still need more research/design before
 // they can compile to anything but an honest stub (see `shape: 'deferred'`
 // below, and each entry's own `reason`) — two need a real "construct a new
@@ -3942,11 +4002,20 @@ const BUILTIN_REST_SITE_OPTION_CLASS_MAP = {
 // existing CreateCardInHand/CreateCardInDrawPile backlog item), one needs
 // a confirmed ad-hoc LocString authoring path (its real ctor signature —
 // LocString(string locTable, string locEntryKey) — is now confirmed, but
-// not the mod-authoring convention for a fresh custom entry), and two
-// (ModifyCardPlayResultLocation, ModifyShuffleOrder) have fully-confirmed
-// real APIs but need their own authoring-UI design pass, not just a
-// value-editor field — deliberately left deferred, not attempted this
-// round (Tyler's own call, scope check via AskUserQuestion).
+// not the mod-authoring convention for a fresh custom entry), and one
+// (ModifyShuffleOrder) has a fully-confirmed real API but needs its own
+// authoring-UI design pass, not just a value-editor field — deliberately
+// left deferred, not attempted this round (Tyler's own call, scope check
+// via AskUserQuestion).
+//
+// [2026-09-23] ModifyCardPlayResultLocation moved from 'deferred' to a
+// real 'cardLocation' shape this round — Tyler pointed at a relic from a
+// different, unrelated STS2 character-creator tool ("Test Relic") whose
+// playedCardDestination modifier is exactly this hook. Its evidence was
+// already fully closed last round; this round just adds the missing
+// destPile/destPosition authoring fields — see MODIFIER_HOOKS'
+// ModifyCardPlayResultLocation entry and generateModifierOverrides'
+// 'cardLocation' branch below.
 //
 // [2026-09-22] TryModifyRestSiteHealRewards and TryModifyRestSiteOptions
 // moved from 'deferred' to real, closed-vocabulary shapes this round —
@@ -4066,7 +4135,7 @@ const MODIFIER_HOOKS = {
   TryModifyCardBeingAddedToDeckLate: { method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'deferred', reason: 'Same as TryModifyCardBeingAddedToDeck — no mechanism yet to author a replacement CardModel.' },
   TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
   TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
-  ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'deferred', reason: 'CardLocation is a real record with a public constructor CardLocation(Player player, PileType pileType, CardPilePosition position) — all 3 confirmed real via direct sts2.dll reads (round 20\'s field dump, round 24\'s PileType/CardPilePosition Field/Constant dump). Constructing a real replacement CardLocation is no longer the blocker; there\'s just no authoring UI/schema field yet for WHICH pile/position a modifier should force (unlike gate/numeric/tryRefNumeric/keywordSet, which all have an existing mod.* field the frontend already collects) — stays deferred pending that schema/UI work, not pending more evidence.' },
+  ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
   ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'deferred', reason: 'Needs a confirmed LocString construction path — not researched this round.' },
   ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'deferred', reason: 'Real in-place reordering of a live CardModel list needs its own design pass (e.g. canned "move type X to top/bottom" options), not a plain value-editor field.' },
 };
@@ -4191,6 +4260,23 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
       const kw = (CARD_KEYWORD_VALUES.includes(mod.keyword) || currentCustomKeywordWords.has(mod.keyword)) ? mod.keyword : 'Exhaust';
       const call = op === 'Remove' ? `keywords.Remove(${keywordExpr(kw)});` : `keywords.Add(${keywordExpr(kw)});`;
       body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            ${call}\n            return true;\n        }\n        return baseResult;`;
+    } else if (hook.shape === 'cardLocation') {
+      // [2026-09-23] ModifyCardPlayResultLocation's evidence was already
+      // fully closed last round (CardLocation(Player, PileType,
+      // CardPilePosition) is a real record ctor, confirmed via direct
+      // sts2.dll read) -- this round adds the missing authoring UI/schema
+      // fields (destPile/destPosition) that were the one open gap. `card`
+      // (the hook's own real CardModel param, the card that was just
+      // played) is the correct real player source here -- card.Owner
+      // (Player-typed on CardModel, per round25's own finding) -- NOT
+      // fgPlayer/hook.playerExpr, which only binds a Creature for
+      // condition evaluation (see `bind` above); using card.Owner instead
+      // keeps this correct even in a hypothetical multiplayer context
+      // where the played card's owner might not be whichever creature
+      // this specific firing bound.
+      const destPileExpr = pileTypeExpr(mod.destPile);
+      const destPositionValue = ['Top', 'Bottom', 'Random'].includes(mod.destPosition) ? mod.destPosition : 'Top';
+      body = `${bind}        MegaCrit.Sts2.Core.Entities.Cards.CardLocation baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            return new MegaCrit.Sts2.Core.Entities.Cards.CardLocation(card.Owner, ${destPileExpr}, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.${destPositionValue});\n        }\n        return baseResult;`;
     } else if (hook.shape === 'restSiteOption') {
       // [VERIFIED via direct sts2.dll read, 2026-09-22 — see
       // BUILTIN_REST_SITE_OPTION_CLASS_MAP's own comment] All 9 real
