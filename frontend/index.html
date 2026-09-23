@@ -11294,6 +11294,15 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       </div>
       </div>
     `;
+    // [Round 219 fix] Attach immediately, before any wiring below runs --
+    // refreshPassiveMode()/wirePassiveConfig() (and the renderModifiersList()
+    // it calls) look up their own fields via document.getElementById, which
+    // only finds nodes already attached to the live document. This used to
+    // be the LAST line of this forEach (see the old location, now removed
+    // below) -- fine for every handler that only ever used block.querySelector
+    // (scoped, works detached too), but not for these document-global
+    // lookups. Reported by Tyler: "selecting passive throws an error."
+    list.appendChild(block);
     // xEligibleNow — whether "Use X" is offered on this block's action
     // rows right now. Mirrors backend/validate.js's own xEligible check
     // exactly (entityKind==='card' -> triggerOptions===CARD_TRIGGERS here,
@@ -11560,7 +11569,6 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
     block.querySelector('.eb-add-else-action').onclick = ()=>{ eff.elseActions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow()); };
     renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
     onConditionsChanged();
-    list.appendChild(block);
   });
   if(showPile) updateAdvancedOptionsSummary(costsXCard);
 }
