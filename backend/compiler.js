@@ -707,6 +707,32 @@ const VANILLA_TOKEN_CARD_CLASS_MAP = {
   Clumsy: 'MegaCrit.Sts2.Core.Models.Cards.Clumsy',
 };
 
+// [Round 213] Real MegaCrit.Sts2.Core.Models.CardPools.* subclasses of the
+// real, abstract CardPoolModel -- confirmed via a direct TypeDef listing of
+// the real, installed sts2.dll's own CardPools namespace this round. Closes
+// #13 expandCardRewardPools. Reached at runtime via the same generic
+// ModelDb.CardPool<T>() factory pattern ModelDb.Card<T>()/RelicPool<T>()
+// already use elsewhere in this file (confirmed real, same shape, via
+// direct ecma_dump_ext.py read of MegaCrit.Sts2.Core.Models.ModelDb this
+// round: `public static !!0 CardPool()`). Four real subclasses found but
+// deliberately EXCLUDED from this map as not sensible reward-pool-expansion
+// targets: EventCardPool/QuestCardPool (narrative/event-choice pools, not
+// combat card rewards), DeprecatedCardPool (its own real name says not to
+// use it), MockCardPool (internal test fixture, same reasoning
+// TestCharCardPool-style scratch classes are never exposed to authors).
+const CARD_POOL_CLASS_MAP = {
+  Colorless: 'MegaCrit.Sts2.Core.Models.CardPools.ColorlessCardPool',
+  Curse: 'MegaCrit.Sts2.Core.Models.CardPools.CurseCardPool',
+  Status: 'MegaCrit.Sts2.Core.Models.CardPools.StatusCardPool',
+  Token: 'MegaCrit.Sts2.Core.Models.CardPools.TokenCardPool',
+  Ironclad: 'MegaCrit.Sts2.Core.Models.CardPools.IroncladCardPool',
+  Silent: 'MegaCrit.Sts2.Core.Models.CardPools.SilentCardPool',
+  Defect: 'MegaCrit.Sts2.Core.Models.CardPools.DefectCardPool',
+  Necrobinder: 'MegaCrit.Sts2.Core.Models.CardPools.NecrobinderCardPool',
+  Regent: 'MegaCrit.Sts2.Core.Models.CardPools.RegentCardPool',
+  Deprived: 'MegaCrit.Sts2.Core.Models.CardPools.DeprivedCardPool',
+};
+
 // Some real STS2 cards upgrade more than once (Card+, Card++, ...) — Tyler:
 // "This should allow for up to 4 upgrades unless we later find out that the
 // limit is different." 4 is STILL a guess after reflect-baselib round 13:
@@ -4202,6 +4228,19 @@ const MODIFIER_HOOKS = {
   // off dealer.CombatState (interface-typed) compiles for real.
   ModifyUnblockedDamageTarget: { method: 'ModifyUnblockedDamageTarget', ret: 'Creature', params: 'Creature target, decimal amount, ValueProp props, Creature dealer', shape: 'creatureRedirect', playerExpr: 'dealer', targetExpr: 'target' },
 
+  // ---- Round 213 (2026-09-23) -- closes #13 expandCardRewardPools. Real
+  // signatures confirmed via the full authoritative AbstractModel dump
+  // (round207's evidence pass):
+  //   ModifyCardRewardCreationOptions(Player, CardCreationOptions): CardCreationOptions
+  //   ModifyCardRewardCreationOptionsLate(Player, CardCreationOptions): CardCreationOptions
+  // CardCreationOptions.WithCardPools(IEnumerable<CardPoolModel>) is a real
+  // public instance method (confirmed via direct ecma_dump_ext.py read of
+  // MegaCrit.Sts2.Core.Runs.CardCreationOptions this round) -- a genuine
+  // fluent 'with' method, not a guess at a mutation API. See
+  // CARD_POOL_CLASS_MAP above for the real CardPoolModel subclass list.
+  ModifyCardRewardCreationOptions: { method: 'ModifyCardRewardCreationOptions', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardRewardCreationOptionsLate: { method: 'ModifyCardRewardCreationOptionsLate', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
+
   // ---- Round 209 (2026-09-23) — closes #21 (modifyRoomRewards): real
   // signature TryModifyRewards(Player player, List<Reward> rewards,
   // AbstractRoom room) -- SAME param names ('player'/'rewards') as
@@ -4394,6 +4433,20 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
         body = `${bind}        return base.${hook.method}(${paramNames}); // [UNVERIFIED] pick a target card in this modifier's own dropdown -- none selected yet`;
       } else {
         body = `${bind}        newCard = null;\n        if (card.Owner != this.Owner || card is ${fgCls} || !(${condExpr}))\n        {\n            return base.${hook.method}(${paramNames});\n        }\n        newCard = card.Owner.RunState.CreateCard<${fgCls}>(card.Owner);\n        return true;`;
+      }
+    } else if (hook.shape === 'cardRewardPoolAppend') {
+      // [Round 213] closes #13 expandCardRewardPools -- appends the
+      // author-picked real CardPoolModel(s) (see CARD_POOL_CLASS_MAP) to
+      // this reward's existing pool list via the real, confirmed
+      // CardCreationOptions.WithCardPools(IEnumerable<CardPoolModel>)
+      // fluent method. Falls through to the real, unmodified base result
+      // when no pools are picked yet, or when condExpr doesn't match.
+      const fgPools = (Array.isArray(mod.addPools) ? mod.addPools : []).filter(p => CARD_POOL_CLASS_MAP[p]);
+      if (!fgPools.length) {
+        body = `${bind}        return base.${hook.method}(${paramNames}); // [UNVERIFIED] pick at least one card pool to add in this modifier's own checkboxes -- none selected yet`;
+      } else {
+        const poolExprs = fgPools.map(p => `MegaCrit.Sts2.Core.Models.ModelDb.CardPool<${CARD_POOL_CLASS_MAP[p]}>()`).join(', ');
+        body = `${bind}        CardCreationOptions baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            return baseResult.WithCardPools(baseResult.CardPools.Concat(new MegaCrit.Sts2.Core.Models.CardPoolModel[] { ${poolExprs} }));\n        }\n        return baseResult;`;
       }
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';

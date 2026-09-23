@@ -4175,6 +4175,11 @@ const VANILLA_TOKEN_CARDS = ["Wound","Dazed","Slimed","Burn","Void","Regret","Sh
 // target (internal/uninitialized state), same reasoning PROTECTED_CTOR_BUILTIN_POWERS
 // already uses to exclude unselectable entries from a real enum's picker list.
 const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","RestSite","Map"];
+
+// [Round 213] Mirrors compiler.js:CARD_POOL_CLASS_MAP's keys -- real
+// MegaCrit.Sts2.Core.Models.CardPools.* subclasses, confirmed via direct
+// TypeDef listing of the real, installed sts2.dll.
+const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent","Deprived"];
 function validTargetsForAction(actionType){
   return (PLAYER_ONLY_ACTIONS.includes(actionType) || SELF_ONLY_ACTIONS.includes(actionType)) ? ["Self"] : ["SingleEnemy","AllEnemies","Self","RandomEnemy"];
 }
@@ -8644,6 +8649,8 @@ const MODIFIER_HOOKS = {
   // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, mirrors
   // backend/compiler.js:MODIFIER_HOOKS' own round-208 comment.
   ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect this hit to an ally or enemy of the attacker instead of its original target' },
+  ModifyCardRewardCreationOptions: { method:'ModifyCardRewardCreationOptions', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards' },
+  ModifyCardRewardCreationOptionsLate: { method:'ModifyCardRewardCreationOptionsLate', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards (late)' },
 
   // ---- Round 209 (2026-09-23) — mirrors backend/compiler.js round-209
   // comment. Reuses the existing 'restSiteReward' shape/UI verbatim.
@@ -8665,6 +8672,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Rest site rewards', shape:'restSiteReward' },
   { label:'Card play destination', shape:'cardLocation' },
   { label:'Damage target redirect', shape:'creatureRedirect' },
+  { label:'Card reward pool additions', shape:'cardRewardPoolAppend' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
 
@@ -13827,6 +13835,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'restSiteReward'){ m.rewardOp = 'Add'; m.rewardAmount = 25; }
   else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
   else if(hook.shape === 'creatureRedirect'){ m.redirectMode = 'Ally'; }
+  else if(hook.shape === 'cardRewardPoolAppend'){ m.addPools = []; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13887,6 +13896,12 @@ function renderModifiersList(entity){
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
       const rm = fieldsEl.querySelector('.mod-redirect-mode'); if(rm) rm.onchange = e=> mod.redirectMode = e.target.value;
+      fieldsEl.querySelectorAll('.mod-add-pool').forEach(cb=>{
+        cb.onchange = ()=>{
+          const checked = Array.from(fieldsEl.querySelectorAll('.mod-add-pool:checked')).map(x=>x.value);
+          mod.addPools = checked;
+        };
+      });
     };
     if(hook.shape === 'deferred'){
       fieldsEl.innerHTML = `<div class="hint-small not-real">[DEFERRED] ${escapeHtml(hook.reason)} Compiles to an honest stub (ForgeActions.Todo) that throws if actually reached — no shape-specific fields to set yet.</div>`;
@@ -13996,6 +14011,14 @@ function renderModifiersList(entity){
         </select>
         <span class="cond-word">instead of its original target (falls back to the original target if none exist) — otherwise, fall through to the base game's own real result.</span>
         <div class="hint-small">Compiles to a real <code>Creature.CombatState.GetTeammatesOf/GetOpponentsOf(Creature): IReadOnlyList&lt;Creature&gt;</code> — both confirmed real, public, abstract members of the ICombatState interface itself via direct sts2.dll read.</div>`;
+      wireFields();
+    } else if(hook.shape === 'cardRewardPoolAppend'){
+      if(!Array.isArray(mod.addPools)) mod.addPools = [];
+      const poolBoxes = CARD_POOL_VALUES.map(p=>`<label class="chk-inline"><input type="checkbox" class="mod-add-pool" value="${p}" ${mod.addPools.includes(p)?'checked':''}> ${p}</label>`).join(' ');
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, add these card pools to this reward's options:</span>
+        <div>${poolBoxes}</div>
+        <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>
+        <div class="hint-small">Compiles to a real <code>CardCreationOptions.WithCardPools(options.CardPools.Concat(...))</code> call, appending real <code>ModelDb.CardPool&lt;T&gt;()</code> instances — confirmed real via direct sts2.dll reads of CardCreationOptions and the CardPools namespace.</div>`;
       wireFields();
     }
     if(!isDeferred){

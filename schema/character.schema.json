@@ -1272,7 +1272,8 @@
             "ShouldGainStars", "ShouldAllowFreeTravel", "ShouldRefillMerchantEntry", "ShouldForcePotionReward",
             "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds",
             "ModifyUnblockedDamageTarget",
-            "TryModifyRewards", "TryModifyRewardsLate"
+            "TryModifyRewards", "TryModifyRewardsLate",
+            "ModifyCardRewardCreationOptions", "ModifyCardRewardCreationOptionsLate"
           ]
         },
         "conditions": {
