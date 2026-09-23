@@ -8651,6 +8651,8 @@ const MODIFIER_HOOKS = {
   ModifyUnblockedDamageTarget: { method:'ModifyUnblockedDamageTarget', ret:'Creature', shape:'creatureRedirect', targetExpr:'target', label:'Redirect this hit to an ally or enemy of the attacker instead of its original target' },
   ModifyCardRewardCreationOptions: { method:'ModifyCardRewardCreationOptions', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards' },
   ModifyCardRewardCreationOptionsLate: { method:'ModifyCardRewardCreationOptionsLate', ret:'CardCreationOptions', shape:'cardRewardPoolAppend', targetExpr:null, label:'Add card pools to your card rewards (late)' },
+  TryModifyCardRewardOptions: { method:'TryModifyCardRewardOptions', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices' },
+  TryModifyCardRewardOptionsLate: { method:'TryModifyCardRewardOptionsLate', ret:'bool', shape:'cardRewardCountDelta', targetExpr:null, label:'Add extra card reward choices (late)' },
 
   // ---- Round 209 (2026-09-23) — mirrors backend/compiler.js round-209
   // comment. Reuses the existing 'restSiteReward' shape/UI verbatim.
@@ -8673,6 +8675,7 @@ const MODIFIER_HOOK_GROUPS = [
   { label:'Card play destination', shape:'cardLocation' },
   { label:'Damage target redirect', shape:'creatureRedirect' },
   { label:'Card reward pool additions', shape:'cardRewardPoolAppend' },
+  { label:'Card reward count', shape:'cardRewardCountDelta' },
   { label:'Deferred — not yet buildable for real', shape:'deferred' },
 ];
 
@@ -13836,6 +13839,7 @@ function blankModifier(hookId){
   else if(hook.shape === 'cardLocation'){ m.destPile = 'Discard'; m.destPosition = 'Top'; }
   else if(hook.shape === 'creatureRedirect'){ m.redirectMode = 'Ally'; }
   else if(hook.shape === 'cardRewardPoolAppend'){ m.addPools = []; }
+  else if(hook.shape === 'cardRewardCountDelta'){ m.rewardCountDelta = 1; }
   // deferred — no extra fields; compiler.js never reads any for this shape.
   return m;
 }
@@ -13896,6 +13900,7 @@ function renderModifiersList(entity){
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
       const dpos = fieldsEl.querySelector('.mod-dest-position'); if(dpos) dpos.onchange = e=> mod.destPosition = e.target.value;
       const rm = fieldsEl.querySelector('.mod-redirect-mode'); if(rm) rm.onchange = e=> mod.redirectMode = e.target.value;
+      const rcd = fieldsEl.querySelector('.mod-reward-count-delta'); if(rcd) rcd.oninput = e=> mod.rewardCountDelta = Math.max(1, parseInt(e.target.value)||1);
       fieldsEl.querySelectorAll('.mod-add-pool').forEach(cb=>{
         cb.onchange = ()=>{
           const checked = Array.from(fieldsEl.querySelectorAll('.mod-add-pool:checked')).map(x=>x.value);
@@ -14019,6 +14024,12 @@ function renderModifiersList(entity){
         <div>${poolBoxes}</div>
         <span class="cond-word">— otherwise, fall through to the base game's own real behavior.</span>
         <div class="hint-small">Compiles to a real <code>CardCreationOptions.WithCardPools(options.CardPools.Concat(...))</code> call, appending real <code>ModelDb.CardPool&lt;T&gt;()</code> instances — confirmed real via direct sts2.dll reads of CardCreationOptions and the CardPools namespace.</div>`;
+      wireFields();
+    } else if(hook.shape === 'cardRewardCountDelta'){
+      fieldsEl.innerHTML = `<span class="cond-word">When the condition(s) below match, add</span>
+        <input class="mod-reward-count-delta" type="number" step="1" min="1" value="${mod.rewardCountDelta??1}">
+        <span class="cond-word">extra card reward choice(s) — otherwise, fall through to the base game's own real behavior.</span>
+        <div class="hint-small">Compiles to a real <code>CardFactory.CreateForReward(player, N, creationOptions)</code> call (a real public static factory, confirmed via direct sts2.dll read), appended to the existing reward option list. Only adding is supported — there's no real-evidenced mechanism yet for which specific option to remove.</div>`;
       wireFields();
     }
     if(!isDeferred){

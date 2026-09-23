@@ -1273,7 +1273,8 @@
             "ModifyEnergyGain", "ModifyPowerAmountGivenMultiplicative", "ModifyMerchantPrice", "ModifyCardRewardUpgradeOdds",
             "ModifyUnblockedDamageTarget",
             "TryModifyRewards", "TryModifyRewardsLate",
-            "ModifyCardRewardCreationOptions", "ModifyCardRewardCreationOptionsLate"
+            "ModifyCardRewardCreationOptions", "ModifyCardRewardCreationOptionsLate",
+            "TryModifyCardRewardOptions", "TryModifyCardRewardOptionsLate"
           ]
         },
         "conditions": {

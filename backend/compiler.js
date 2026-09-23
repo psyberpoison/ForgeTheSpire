@@ -4241,6 +4241,22 @@ const MODIFIER_HOOKS = {
   ModifyCardRewardCreationOptions: { method: 'ModifyCardRewardCreationOptions', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
   ModifyCardRewardCreationOptionsLate: { method: 'ModifyCardRewardCreationOptionsLate', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
 
+  // ---- Round 214 (2026-09-23) -- closes #88 cardRewardCountDelta. Real
+  // signatures confirmed via the full authoritative AbstractModel dump
+  // (round207's evidence pass):
+  //   TryModifyCardRewardOptions(Player, List<CardCreationResult>, CardCreationOptions): bool
+  //   TryModifyCardRewardOptionsLate(Player, List<CardCreationResult>, CardCreationOptions): bool
+  // MegaCrit.Sts2.Core.Factories.CardFactory.CreateForReward(Player player,
+  // int cardCount, CardCreationOptions options): IEnumerable<CardCreationResult>
+  // is a real PUBLIC static overload (confirmed via direct ecma_dump_ext.py
+  // read of CardFactory this round) -- cleaner evidence than the compiled
+  // third-party example round206b found, which called a different, PRIVATE
+  // overload. Only the ADD direction is implemented (rewardCountDelta > 0);
+  // there's no real-evidenced mechanism for which specific option to
+  // remove, so 'remove N' is intentionally not offered rather than guessed.
+  TryModifyCardRewardOptions: { method: 'TryModifyCardRewardOptions', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyCardRewardOptionsLate: { method: 'TryModifyCardRewardOptionsLate', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
+
   // ---- Round 209 (2026-09-23) — closes #21 (modifyRoomRewards): real
   // signature TryModifyRewards(Player player, List<Reward> rewards,
   // AbstractRoom room) -- SAME param names ('player'/'rewards') as
@@ -4448,6 +4464,13 @@ ${bind}        decimal result = base.${hook.companionMethod}(${companionParamNam
         const poolExprs = fgPools.map(p => `MegaCrit.Sts2.Core.Models.ModelDb.CardPool<${CARD_POOL_CLASS_MAP[p]}>()`).join(', ');
         body = `${bind}        CardCreationOptions baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            return baseResult.WithCardPools(baseResult.CardPools.Concat(new MegaCrit.Sts2.Core.Models.CardPoolModel[] { ${poolExprs} }));\n        }\n        return baseResult;`;
       }
+    } else if (hook.shape === 'cardRewardCountDelta') {
+      // [Round 214] closes #88 cardRewardCountDelta -- adds N extra reward
+      // card options via the real, public
+      // CardFactory.CreateForReward(Player, int, CardCreationOptions):
+      // IEnumerable<CardCreationResult> static factory.
+      const fgN = (typeof mod.rewardCountDelta === 'number' && mod.rewardCountDelta > 0) ? Math.floor(mod.rewardCountDelta) : 1;
+      body = `${bind}        bool baseResult = base.${hook.method}(${paramNames});\n        if (${condExpr})\n        {\n            cardRewardOptions.AddRange(MegaCrit.Sts2.Core.Factories.CardFactory.CreateForReward(player, ${fgN}, creationOptions));\n            return true;\n        }\n        return baseResult;`;
     } else if (hook.shape === 'keywordSet') {
       const op = mod.keywordOp === 'Remove' ? 'Remove' : 'Add';
       // [Round 139] mod.keyword may now also be a custom keyword word (see
