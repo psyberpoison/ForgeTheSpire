@@ -465,6 +465,8 @@
               "orbBackdrop",
               "cardArt",
               "relicIcon",
+              "mechanicIcon",
+              "enchantmentIcon",
               "star",
               "handArt",
               "bodySprite",
@@ -906,7 +908,8 @@
           "type": "boolean"
         },
         "iconAssetRef": {
-          "type": "string"
+          "type": "string",
+          "description": "[Round 229] Optional 256\u00d7256px mechanic/status icon. UNLIKE relics (RelicModel.PackedIconPath is a direct virtual override point) this needed fresh IL evidence: MegaCrit.Sts2.Core.Models.PowerModel.PackedIconPath is NOT virtual (confirmed via il_dump.py against the real installed sts2.dll -- its get_Icon/get_IconPath/get_PackedIconPath chain all use plain `call`, never `callvirt`). The real consumption path is a Harmony Prefix patch instead, structurally identical to the already-proven CustomEnchantmentModel.CustomIconPath mechanism (round 198): BaseLib.Abstracts.PackedIconPath::Custom (real installed BaseLib.dll) does `isinst BaseLib.Abstracts.ICustomPower` and, if it matches, calls ICustomPower.CustomPackedIconPath and substitutes that as the result. CustomPowerModel (the base class every generated mechanic extends) really does implement ICustomPower -- confirmed directly off BaseLib.dll's InterfaceImpl metadata table, not assumed from naming. See backend/compiler.js's generateMechanicSource/writeMechanicIcon for the full trail and the real override generated (`public override string CustomPackedIconPath => \"res://...\";`)."
         },
         "isBuff": {
           "type": "boolean",
@@ -916,6 +919,21 @@
           "type": "boolean",
           "default": false,
           "description": "Round 94 \u2014 [VERIFIED against a real generated FatiguePower.cs from a different character creator tool] compiles to `protected override bool IsVisibleInternal => false;` on the generated CustomPowerModel subclass. Hides this status's icon entirely: no vanilla icon in the status row, no apply flash, and Artifact can't consume a charge from it (all three read this one flag). Independent of resourceBars below \u2014 a status can be hidden with no bar at all (pure bookkeeping), shown as a bar with the icon also visible, or hidden AND shown only as a bar. See claude/round94-hidden-status-tooltip-fix.md."
+        },
+        "allowNegative": {
+          "type": "boolean",
+          "default": false,
+          "description": "[Round 231] [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] Compiles to `public override bool AllowNegative => true;`. `PowerModel.AllowNegative` is a real virtual member whose base implementation hardcodes `false`; `PowerModel.ShouldRemoveDueToAmount()` (called by `PowerCmd.ModifyAmount` every time this status's stacks change, right before deciding whether to remove it) reads it directly: with AllowNegative false (default) the status is removed whenever Amount<=0; with it true, the status is instead removed only when Amount==0 exactly, so it can go negative and stay applied (e.g. a signed counter/meter that crosses zero) rather than being deleted the instant it would dip below 0."
+        },
+        "hideFlash": {
+          "type": "boolean",
+          "default": false,
+          "description": "[Round 231] [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll] Compiles to `public override bool ShouldPlayVfx => false;`. `PowerModel.ShouldPlayVfx` is a real virtual member (base default checks Owner/IsAlive/CombatManager.IsInProgress/IsVisible); confirmed via IL that `NPowerFlashVfx.Create` (the small particle pulse on the status icon), `NPowerAppliedVfx.Create` (the bigger power-applied banner/amount popup), and the buff/debuff sound effect in `NCreature.OnPowerIncreased` are ALL gated on this exact flag \u2014 each returns/skips immediately if `power.ShouldPlayVfx` is false. Overriding it suppresses all three at once: no icon flash, no applied VFX, no sound, whenever this status's stacks change. Independent of hideIcon above \u2014 the status icon itself can stay visible with only its flash/VFX/sound suppressed."
+        },
+        "stayVisibleAtZero": {
+          "type": "boolean",
+          "default": false,
+          "description": "[Round 232] [VERIFIED by decompiling Tyler's own real, compiled \"The Burdened\" reference mod \u2014 source/Patches/ModStatusRowPatch.cs, a Harmony postfix patch present in that project for FatiguePower/TitanMightPower/MoveTo0Power/DecayPower] NOT a virtual override on the generated Power class \u2014 `PowerModel.ShouldRemoveDueToAmount()` was confirmed round 231 via direct sts2.dll IL read to be a plain (non-virtual) method, so it cannot be overridden there the way AllowNegative/ShouldPlayVfx above are. Instead compiles to a single character-wide Harmony `[HarmonyPostfix]` patch on `PowerModel.ShouldRemoveDueToAmount` (see generateStayVisibleAtZeroSupportFile in compiler.js and Generated/ForgeStayVisibleAtZeroSupport.cs) that forces the result back to false \u2014 skipping removal \u2014 whenever the instance is one of the mechanics with this flag set AND its Amount is exactly 0. `PowerModel.IsVisible` does not check Amount, so the status keeps drawing at 0 instead of vanishing the instant its last stack is spent. Only applies exactly at 0; a status driven negative (see allowNegative above) is removed as normal, matching Tyler's own reference patch's identical carve-out."
         },
         "effects": {
           "type": "array",
@@ -941,7 +959,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "description": { "type": "string", "description": "Flavor text." },
-        "icon": { "type": "object", "description": "Compiles to CustomEnchantmentModel.CustomIconPath — [VERIFIED via decompiling a real, working \"STS2 Character Creator\"-generated mod on Tyler's own machine] real override point." },
+        "icon": { "type": ["string", "null"], "description": "[Round 230 — schema type corrected; was mistagged \"object\", but this is actually a plain asset-id string, same shape as relic.iconAssetRef/mechanic.iconAssetRef, confirmed against frontend/index.html's commitAsset (always returns a plain asset id or null) and backend/compiler.js's findAssetDataUrl(characterPackage, assetRef, 'enchantmentIcon') (looks that id up against characterPackage.assets).] Optional enchantment icon, referencing an entry in the top-level `assets` array (kind: \"enchantmentIcon\"). UNLIKE relic.iconAssetRef/mechanic.iconAssetRef (both confirmed 256\u00d7256px), no real pixel-dimension requirement has ever been confirmed for this field — round 198's reference-project evidence confirmed the CustomIconPath override mechanism and the real images/enchantments/{modid}_{name}.png path convention, but said nothing about a required size, and the upload UI (frontend/index.html's wireIcon) has never enforced one. Compiles to CustomEnchantmentModel.CustomIconPath — [VERIFIED via decompiling a real, working \"STS2 Character Creator\"-generated mod on Tyler's own machine] real override point." },
         "cardFrames": { "type": "object", "description": "Per-rarity card-frame art overrides applied to any card this enchantment is attached to." },
         "modifiers": {
           "type": "object",

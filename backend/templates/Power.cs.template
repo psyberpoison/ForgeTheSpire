@@ -84,6 +84,9 @@ public sealed class {{className}} : CustomPowerModel
     public override PowerStackType StackType => PowerStackType.{{powerStackTypeGuess}}; // [VERIFIED member; mapping guessed]
     public override bool ShouldReceiveCombatHooks => true; // [VERIFIED to be required; value guessed]
 {{visibilityOverride}}
+{{allowNegativeOverride}}
+{{hideFlashOverride}}
+{{iconOverride}}
 
 {{hookMethods}}
 }

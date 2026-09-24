@@ -1084,6 +1084,7 @@
   .a-followup-slot{margin-top:2px;}
   .a-followup-toggle-label{display:flex; align-items:center; gap:5px; font-size:12px; color:var(--parchment-dim); white-space:nowrap; cursor:pointer;}
   .a-followup-toggle-label input[type=checkbox]{width:auto; min-width:0; padding:0; margin:0; flex:0 0 auto;}
+  .mech-check-row input[type=checkbox]{width:auto; min-width:0; padding:0; margin:0; flex:0 0 auto;}
   .a-followup-block{margin-top:6px; padding:8px 0 2px 12px; border-left:2px solid var(--border); display:flex; flex-direction:column; gap:6px;}
   .a-followup-block .action-row-sentence{margin-top:0;}
   .a-followup-actions .action-row{padding-bottom:6px; margin-bottom:6px;}
@@ -1194,7 +1195,27 @@
      Two side-by-side zones, each a row of fixed slots (3 for energy, 1 for
      health) so empty vs. filled slots are visually obvious at a glance,
      mirroring the real per-anchor caps enforced in backend/compiler.js. */
-  .rb-preview{display:flex; gap:20px; flex-wrap:wrap; margin-top:10px;}
+  .rb-preview{display:flex; flex-direction:column; gap:12px; margin-top:10px;}
+  /* [Round 223] Tyler: "modify the bar gui to show a real-time mock up of
+     what the creator is adding" — a single slider that scrubs every bar/
+     diamond shape below to the same fill level at once. Purely a preview
+     convenience (not saved with the character): a bar's real fill in-game
+     is its current status stack count out of Max, which doesn't exist
+     while you're still editing, so this just lets you eyeball what a
+     given fill level looks like. Defaults to 100% (full) on first render. */
+  .rb-preview-demo-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  /* [Round 225] Tyler: "the bar physically moves depending on if the
+     percentage...is 1, 2, or 3 digits...lets make the bar independent of
+     the text." The label used to be flex:0 0 auto, so its box (and
+     everything after it in the row) shifted with the digit count. Fixed
+     width + nowrap pins the label's box size regardless of content, and
+     the percent number itself also gets a fixed, right-aligned width as a
+     second line of defense — between the two, the slider's start position
+     can no longer move no matter what number is showing. */
+  .rb-preview-demo-label{font-size:11px; color:var(--parchment-dim); flex:0 0 128px; width:128px; white-space:nowrap; text-transform:none; letter-spacing:0; margin:0;}
+  .rb-preview-demo-pct{display:inline-block; min-width:26px; text-align:right;}
+  .rb-preview-demo-slider{flex:1 1 160px; max-width:260px;}
+  .rb-preview-zones{display:flex; gap:20px; flex-wrap:wrap;}
   .rb-preview-zone{flex:1 1 220px; min-width:200px;}
   .rb-preview-zone-title{font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim); margin-bottom:6px;}
   .rb-preview-slots{display:flex; flex-direction:column; gap:6px;}
@@ -1203,12 +1224,30 @@
     font-size:11px; color:var(--parchment-dim); font-style:italic;
   }
   .rb-preview-chip{
-    display:flex; align-items:center; gap:8px; border:1px solid var(--border-soft); border-radius:var(--radius);
-    padding:6px 10px; background:var(--ink); font-size:12px;
+    display:flex; flex-direction:column; gap:5px; border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:6px 8px 6px 10px; background:var(--ink); font-size:12px;
   }
-  .rb-preview-chip-swatch{width:14px; height:14px; border-radius:3px; flex:0 0 auto; box-shadow:0 0 0 1px rgba(0,0,0,.35);}
-  .rb-preview-chip-diamond .rb-preview-chip-swatch{border-radius:50%;}
-  .rb-preview-chip-diamond .rb-preview-chip-swatch + .rb-preview-chip-swatch{margin-left:-4px;}
+  .rb-preview-chip-top{display:flex; align-items:center; gap:6px;}
+  /* The actual bar/diamond shape, drawn to reflect the demo-fill slider —
+     a standalone bar is a plain filled track; a diamond group is a small
+     bar on each side of a rotated-square diamond whose fill is shown as
+     opacity instead of width, matching how the real diamond widget fills
+     (it can't linearly fill the way a rectangular bar does). */
+  .rb-preview-bar-track{
+    position:relative; flex:1 1 auto; height:14px; min-width:40px; border-radius:3px;
+    background:rgba(0,0,0,.35); border:1px solid var(--border-soft); overflow:hidden;
+  }
+  .rb-preview-bar-track-sm{flex:0 0 30px; height:11px;}
+  .rb-preview-bar-fill{position:absolute; top:0; left:0; height:100%;}
+  /* [Round 224] One per stack boundary (1/max, 2/max, ... (max-1)/max) —
+     statuses are integer stacks, so a bar's real fill always lands
+     exactly on one of these lines, never in between. */
+  .rb-preview-bar-tick{position:absolute; top:0; bottom:0; width:1px; background:rgba(0,0,0,.45); pointer-events:none;}
+  .rb-preview-diamond-widget{display:flex; align-items:center; gap:4px; flex:1 1 auto;}
+  .rb-preview-diamond-shape{
+    flex:0 0 auto; width:11px; height:11px; transform:rotate(45deg);
+    border:1px solid var(--border-soft); box-shadow:0 0 0 1px rgba(0,0,0,.2) inset;
+  }
   .rb-preview-chip-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
   /* [Round 120] Tyler: "lets add an X onto each bar so the user can
      remove them from the bars there" — lets a dangling/unwanted bar be
@@ -3105,6 +3144,7 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">Custom buffs/debuffs (like Vulnerable or Strength, but yours). Define these before referencing them in card or relic effects.</div>
+      <div class="grid-cards" id="mechanics-grid"></div>
       <!-- [Round 103] Tyler: "now that we have moved the bar creator/mover
            to the status section, we no longer need this in the character
            section. Lets instead create some kind of preview in the status
@@ -3115,8 +3155,9 @@
            openMechEditor) + the small built-in-status picker Tyler asked
            to keep ("Keep a small picker for built-in statuses too") since
            a vanilla status has no mechanic editor of its own to add a bar
-           from. -->
-      <div style="margin-bottom:18px; padding:12px 14px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--stone-2)">
+           from. [Round 223] Moved below the mechanics grid (was above it)
+           per Tyler's ask. -->
+      <div style="margin-top:18px; padding:12px 14px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--stone-2)">
         <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. Custom (mechanic-linked) bars are toggled on/off and moved between these two from that mechanic's own editor below; built-in-status bars are added here and always stay below the health bar.">Resource bars</label>
         <div class="rb-preview-mount"></div>
         <div class="row" style="margin-top:12px; align-items:flex-end; gap:8px; flex-wrap:wrap;">
@@ -3127,7 +3168,6 @@
         </div>
         <div id="vanilla-bars-list" style="margin-top:8px"></div>
       </div>
-      <div class="grid-cards" id="mechanics-grid"></div>
     </div>
   </section>
 
@@ -5445,32 +5485,114 @@ function resourceBarWidgetsForAnchor(anchorName){
   const diamonds = Array.from(groupsById.entries()).map(([gid, entries]) => ({ type:'diamond', gid, entries }));
   return [...standalone, ...diamonds];
 }
+// [Round 223] Live-preview-only demo fill level (0-100), NOT saved with the
+// character — a bar's real fill in-game is its current status stack count
+// out of Max, which doesn't exist while you're still editing. Scrubbing the
+// slider updates every bar/diamond shape on the page directly (see
+// applyResourceBarPreviewFill below) rather than re-rendering, so dragging
+// stays smooth instead of losing the slider mid-drag on every tick.
+let rbPreviewDemoFill = 100;
+// [Round 224] Tyler: "the bar doesn't gate each section of it. If the max
+// is 1 stack, then the bar should either be empty or full. If it is 2
+// stacks, then the bar should be at 0, 50%, or 100%... the bar should have
+// a hard stopping point every 1/x segments where x is the max length.
+// Statuses cant be partially applied since they are integer values."
+// Matches the real widget exactly: ForgeResourceBarSupport's UpdateBars/
+// UpdateDiamondGroups compute pct as an integer stack count divided by an
+// integer Max, so the real fill is always k/max for some whole k — never
+// a smooth in-between value. maxRaw falls back to 1 (never 0, which would
+// divide by zero) if unset/invalid.
+function quantizedBarFillPct(fillPct, maxRaw){
+  const max = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.round(maxRaw) : 1;
+  const stacks = Math.max(0, Math.min(max, Math.round((fillPct/100) * max)));
+  return (stacks/max) * 100;
+}
+// Thin divider lines at each segment boundary (every 1/max of the track)
+// so the discrete stops are visible even when the fill itself is sitting
+// exactly on one — skipped above 24 segments, where they'd just be visual
+// noise on a track this small.
+function barTickMarksHtml(max){
+  if(!(max > 1) || max > 24) return '';
+  let html = '';
+  for(let i = 1; i < max; i++){
+    html += `<div class="rb-preview-bar-tick" style="left:${(i/max*100).toFixed(3)}%"></div>`;
+  }
+  return html;
+}
+function applyResourceBarPreviewFill(pct){
+  rbPreviewDemoFill = Math.max(0, Math.min(100, pct));
+  document.querySelectorAll('.rb-preview-mount').forEach(mount => {
+    const slider = mount.querySelector('.rb-preview-demo-slider');
+    if(slider && Number(slider.value) !== rbPreviewDemoFill) slider.value = rbPreviewDemoFill;
+    const pctEl = mount.querySelector('.rb-preview-demo-pct');
+    if(pctEl) pctEl.textContent = rbPreviewDemoFill;
+    mount.querySelectorAll('.rb-preview-bar-fill').forEach(el => {
+      el.style.width = quantizedBarFillPct(rbPreviewDemoFill, parseInt(el.dataset.rbMax, 10) || 1) + '%';
+    });
+    mount.querySelectorAll('.rb-preview-diamond-shape').forEach(el => {
+      const q = quantizedBarFillPct(rbPreviewDemoFill, parseInt(el.dataset.rbMax, 10) || 1);
+      el.style.opacity = (0.25 + 0.75 * (q/100)).toFixed(2);
+    });
+  });
+}
 // [Round 120] `removeTitle` names what the X actually removes — plain
 // English for a normal bar, a callout for a dangling one (status/mechanic
 // no longer exists, e.g. Tyler's "created a custom status, gave it a bar,
 // deleted the status" case) so it reads as cleanup, not data loss.
+//
+// [Round 223/224] Tyler: "modify the bar gui to show a real-time mock up
+// of what the creator is adding," then "the bar doesn't gate each section
+// of it" (see quantizedBarFillPct above). Replaced the old color-swatch +
+// label chip with an actual bar/diamond shape, its fill snapped to that
+// bar's own Max: a standalone bar is a filled track (width%, ticked at
+// each stack boundary); a diamond group is a small bar on each side of a
+// rotated-square diamond whose fill shows as opacity instead of width —
+// matching how the real diamond widget actually fills (Forge
+// ResourceBarSupport's DiamondSpec alpha-lerps between 0.25 and 1.0 rather
+// than resizing, since a diamond can't linearly "fill" the way a
+// rectangle can) — and, matching the real widget, the diamond shape only
+// renders at all when a "center" entry exists (left+right with no center
+// is genuinely just two bars with nothing between them in the real game).
 function resourceBarWidgetChipHtml(widget, anchorName, slot){
+  const fillPct = rbPreviewDemoFill;
   if(widget.type === 'standalone'){
     const b = widget.bar;
+    const max = Number.isFinite(b.max) && b.max > 0 ? Math.round(b.max) : 5;
     const orphaned = b.statusKind === 'custom' && !state.mechanics.some(m => m.id === b.status);
     const label = resourceBarWidgetLabel(b) || '(unknown status)';
     const removeTitle = orphaned ? `Remove this bar (its status "${label}" no longer exists)` : `Remove this bar`;
-    return `<div class="rb-preview-chip${orphaned ? ' rb-preview-chip-orphaned' : ''}" title="${escapeAttr(label)} (max ${Number.isFinite(b.max)?b.max:5})">
-      <span class="rb-preview-chip-swatch" style="background:${escapeAttr(b.color||'#3399ff')}"></span>
+    const barPct = quantizedBarFillPct(fillPct, max);
+    return `<div class="rb-preview-chip${orphaned ? ' rb-preview-chip-orphaned' : ''}" title="${escapeAttr(label)} (max ${max})">
+      <div class="rb-preview-chip-top">
+        <div class="rb-preview-bar-track"><div class="rb-preview-bar-fill" data-rb-max="${max}" style="width:${barPct}%; background:${escapeAttr(b.color||'#3399ff')}"></div>${barTickMarksHtml(max)}</div>
+        <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="${escapeAttr(removeTitle)}">&times;</button>
+      </div>
       <span class="rb-preview-chip-label">${escapeHtml(label)}${orphaned ? ' <em>(deleted status)</em>' : ''}</span>
-      <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="${escapeAttr(removeTitle)}">&times;</button>
     </div>`;
   }
   const left = widget.entries.find(e=>e.diamondRole==='left');
   const right = widget.entries.find(e=>e.diamondRole==='right');
   const center = widget.entries.find(e=>e.diamondRole==='center');
-  const parts = [left, center, right].filter(Boolean).map(e =>
-    `<span class="rb-preview-chip-swatch" style="background:${escapeAttr(e.color||'#3399ff')}"></span>`
-  ).join('');
+  const leftMax = Number.isFinite(left && left.max) && left.max > 0 ? Math.round(left.max) : 1;
+  const rightMax = Number.isFinite(right && right.max) && right.max > 0 ? Math.round(right.max) : 1;
+  const leftPct = quantizedBarFillPct(fillPct, leftMax);
+  const rightPct = quantizedBarFillPct(fillPct, rightMax);
+  const leftBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill" data-rb-max="${leftMax}" style="width:${leftPct}%; background:${escapeAttr((left&&left.color)||'#3399ff')}"></div>${barTickMarksHtml(leftMax)}</div>`;
+  const rightBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill" data-rb-max="${rightMax}" style="width:${rightPct}%; background:${escapeAttr((right&&right.color)||'#3399ff')}"></div>${barTickMarksHtml(rightMax)}</div>`;
+  let diamond = '';
+  if(center){
+    const centerMax = Number.isFinite(center.max) && center.max > 0 ? Math.round(center.max) : 1;
+    const centerPct = quantizedBarFillPct(fillPct, centerMax);
+    const centerAlpha = (0.25 + 0.75 * (centerPct/100)).toFixed(2);
+    diamond = `<div class="rb-preview-diamond-shape" data-rb-max="${centerMax}" style="background:${escapeAttr(center.color||'#3399ff')}; opacity:${centerAlpha}"></div>`;
+  }
   const names = [left, right].filter(Boolean).map(resourceBarWidgetLabel).join(' / ') || '(unknown status)';
   return `<div class="rb-preview-chip rb-preview-chip-diamond" title="${escapeAttr(names)} (diamond group)">
-    ${parts}<span class="rb-preview-chip-label">${escapeHtml(names)}</span>
-    <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="Remove this diamond group">&times;</button>
+    <div class="rb-preview-chip-top">
+      <div class="rb-preview-diamond-widget">${leftBar}${diamond}${rightBar}</div>
+      <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="Remove this diamond group">&times;</button>
+    </div>
+    <span class="rb-preview-chip-label">${escapeHtml(names)}</span>
   </div>`;
 }
 function resourceBarPreviewZoneHtml(title, anchorName, slotCount){
@@ -5486,16 +5608,29 @@ function resourceBarPreviewZoneHtml(title, anchorName, slotCount){
 }
 function resourceBarPreviewHtml(){
   return `<div class="rb-preview">
-    ${resourceBarPreviewZoneHtml('Above the energy counter', 'EnergyCounter', MAX_RESOURCE_BARS_UI)}
-    ${resourceBarPreviewZoneHtml('Below the health bar', 'HealthBar', 1)}
+    <div class="rb-preview-demo-row">
+      <label class="rb-preview-demo-label" title="Scrubs every bar/diamond shape below to this fill level, just to preview how they'll look — a bar's real fill in-game is its current status stack count out of Max, so this isn't saved with your character.">Preview fill: <span class="rb-preview-demo-pct">${rbPreviewDemoFill}</span>%</label>
+      <input type="range" min="0" max="100" value="${rbPreviewDemoFill}" class="rb-preview-demo-slider">
+    </div>
+    <div class="rb-preview-zones">
+      ${resourceBarPreviewZoneHtml('Above the energy counter', 'EnergyCounter', MAX_RESOURCE_BARS_UI)}
+      ${resourceBarPreviewZoneHtml('Below the health bar', 'HealthBar', 1)}
+    </div>
   </div>`;
 }
 // Re-renders into every preview container currently on the page (the
 // always-visible one at the top of the Mechanics section, and the one
 // inside whichever mechanic's own "Represent as a bar" editor happens to
 // be open) — call this after ANY resourceBars mutation, from anywhere.
+// Also re-wires each mount's own demo-fill slider (its own oninput calls
+// applyResourceBarPreviewFill directly rather than refreshResourceBarPreview,
+// so dragging it doesn't tear down and rebuild the slider on every tick).
 function refreshResourceBarPreview(){
-  document.querySelectorAll('.rb-preview-mount').forEach(el => { el.innerHTML = resourceBarPreviewHtml(); });
+  document.querySelectorAll('.rb-preview-mount').forEach(el => {
+    el.innerHTML = resourceBarPreviewHtml();
+    const slider = el.querySelector('.rb-preview-demo-slider');
+    if(slider) slider.oninput = e => applyResourceBarPreviewFill(parseInt(e.target.value, 10) || 0);
+  });
 }
 
 // ---- "Track a built-in status" — the small vanilla-status picker kept
@@ -5522,22 +5657,43 @@ function renderVanillaBars(){
   if(addBtn) addBtn.disabled = atHealthLimit;
   if(addBtn) addBtn.title = atHealthLimit ? 'The "below health bar" anchor supports only 1 bar/diamond group total — remove or move the existing one first.' : '';
   const bars = vanillaResourceBars();
-  listEl.innerHTML = bars.map((bar) => `
+  // [Round 227] A vanilla status's own bar can now also be picked as the
+  // "Paired status"/"Center status" of a custom mechanic's Dual bar (see
+  // renderMechBarFields) — previously vanilla bars could only ever be
+  // standalone, so this row never had to say anything about layout/anchor
+  // beyond the fixed "Below the health bar" text. Now it reflects the
+  // real anchor (a paired vanilla status inherits its group's anchor,
+  // which can be above the energy counter) and its role, and the ✕
+  // un-pairs (reverts to a standalone bar) instead of deleting the entry
+  // outright when it's serving as someone's Dual-bar partner — deleting
+  // it here would otherwise silently orphan that other group's required
+  // left/right and break its export.
+  const ROLE_LABELS = { left:'Dual bar — left', right:'Dual bar — right', center:'Dual bar — center (diamond)' };
+  listEl.innerHTML = bars.map((bar) => {
+    const isDiamond = bar.layout === 'diamond';
+    const anchorLabel = resolveBarAnchor(bar) === 'EnergyCounter' ? 'Above the energy counter' : 'Below the health bar';
+    const roleLabel = isDiamond ? (ROLE_LABELS[bar.diamondRole] || 'Dual bar') : 'Single bar';
+    return `
     <div class="row vb-row" data-id="${escapeAttr(bar.builtinStatus)}" style="align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
       <div class="hint-small" style="flex:0 0 160px; font-weight:600">${escapeHtml(bar.builtinStatus)}</div>
       <div style="flex:0 0 80px"><label style="font-size:11px">Max</label><input type="number" class="vb-max" min="1" value="${Number.isFinite(bar.max) ? bar.max : 5}"></div>
       <div style="flex:0 0 50px"><label style="font-size:11px">Color</label><input type="color" class="vb-color" value="${escapeAttr(bar.color || '#3399ff')}"></div>
-      <div class="hint-small" style="flex:0 0 auto">Below the health bar</div>
-      <button type="button" class="vb-remove" title="Remove this bar">✕</button>
+      <div class="hint-small" style="flex:0 0 auto">${escapeHtml(anchorLabel)} · ${escapeHtml(roleLabel)}</div>
+      <button type="button" class="vb-remove" title="${isDiamond ? 'Unpair (reverts this back to its own single bar)' : 'Remove this bar'}">✕</button>
     </div>
-  `).join('') || `<div class="hint-small">No built-in-status bars yet.</div>`;
+  `;
+  }).join('') || `<div class="hint-small">No built-in-status bars yet.</div>`;
   listEl.querySelectorAll('.vb-row').forEach(rowEl=>{
     const id = rowEl.dataset.id;
     const bar = bars.find(b => b.builtinStatus === id);
     rowEl.querySelector('.vb-max').addEventListener('input', e=>{ bar.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
     rowEl.querySelector('.vb-color').addEventListener('input', e=>{ bar.color = e.target.value; save(); refreshResourceBarPreview(); });
     rowEl.querySelector('.vb-remove').addEventListener('click', ()=>{
-      state.character.resourceBars = state.character.resourceBars.filter(b => b !== bar);
+      if(bar.layout === 'diamond'){
+        revertBarToStandalone(bar);
+      } else {
+        state.character.resourceBars = state.character.resourceBars.filter(b => b !== bar);
+      }
       save();
       renderVanillaBars();
       refreshResourceBarPreview();
@@ -7799,6 +7955,11 @@ const EPOCH_UNLOCK_REQUIREMENT_OPTIONS = [
 ];
 const EPOCH_PORTRAIT_WIDTH = 810, EPOCH_PORTRAIT_HEIGHT = 500;
 const RELIC_ICON_WIDTH = 256, RELIC_ICON_HEIGHT = 256;
+// [Round 229] Mechanic/status icon — same 256x256 as relic icons; see
+// schema/character.schema.json's mechanic.iconAssetRef description and
+// backend/compiler.js's generateMechanicSource/writeMechanicIcon for the
+// real CustomPackedIconPath/ICustomPower evidence trail this feeds.
+const MECHANIC_ICON_WIDTH = 256, MECHANIC_ICON_HEIGHT = 256;
 
 const chronicleGrid = document.getElementById('chronicles-grid');
 
@@ -7909,6 +8070,7 @@ function openChronicleEditor(chronicleId){
 // for card art (see openCardEditor's own save handler).
 let pendingEpochPortraitDataUrl = undefined;
 let pendingRelicIconDataUrl = undefined;
+let pendingMechIconDataUrl = undefined;
 
 function openEpochEditor(chronicleId, epochId){
   const c = state.character.chronicles.find(x=>x.id===chronicleId);
@@ -12529,18 +12691,19 @@ function mechanicOptionsData(){
 // vs. act.amountScalesWithStatusKind/amountScalesWithBuiltinStatus/
 // amountScalesWithStatus), everything else about the widget's markup and
 // behavior is identical between the two.
-function mergedStatusPickerHtml(carrier, fields, extraClass){
+function mergedStatusPickerHtml(carrier, fields, extraClass, excludeFn){
   const isVanilla = carrier[fields.kind] === 'vanilla';
-  const mechanicOpts = mechanicOptionsData();
+  const vanillaOpts = statusOptionsData().filter(o => !excludeFn || !excludeFn('vanilla', o.value));
+  const mechanicOpts = mechanicOptionsData().filter(o => !excludeFn || !excludeFn('custom', o.value));
   const currentLabel = isVanilla
     ? (carrier[fields.builtin] || '')
     : ((mechanicOpts.find(o=>o.value===carrier[fields.ref]) || {}).label || '');
   return `<div class="picker-wrap c-status-picker${extraClass ? ' ' + extraClass : ''}">
-    <input type="text" class="picker-filter c-status-filter" autocomplete="off" value="${escapeAttr(currentLabel)}" placeholder="Search ${BUILTIN_STATUSES.length + mechanicOpts.length} statuses…" title="Vanilla (built-in) status or one of your own custom mechanics. Type to search, or click to browse.">
+    <input type="text" class="picker-filter c-status-filter" autocomplete="off" value="${escapeAttr(currentLabel)}" placeholder="Search ${vanillaOpts.length + mechanicOpts.length} statuses…" title="Vanilla (built-in) status or one of your own custom mechanics. Type to search, or click to browse.">
     <div class="picker-list c-status-list">
       <div class="picker-group" data-group="vanilla">
         <div class="picker-group-label">Vanilla statuses</div>
-        ${statusOptionsData().map(o=>`<div class="picker-option${isVanilla && o.value===carrier[fields.builtin] ? ' picker-option-current' : ''}" data-value="vanilla:${escapeAttr(o.value)}" title="${escapeAttr(o.tooltip)}">${escapeHtml(o.label)}</div>`).join('')}
+        ${vanillaOpts.map(o=>`<div class="picker-option${isVanilla && o.value===carrier[fields.builtin] ? ' picker-option-current' : ''}" data-value="vanilla:${escapeAttr(o.value)}" title="${escapeAttr(o.tooltip)}">${escapeHtml(o.label)}</div>`).join('')}
       </div>
       <div class="picker-group" data-group="custom">
         <div class="picker-group-label">Your mechanics</div>
@@ -12561,7 +12724,7 @@ function mergedStatusPickerHtml(carrier, fields, extraClass){
 // `carrier` in place via `fields` — same "nothing else needs to know"
 // convention the rest of this editor uses, no return value/callback
 // needed since the carrier IS the live state object in both call sites.
-function wireMergedStatusPicker(pickerEl, carrier, fields){
+function wireMergedStatusPicker(pickerEl, carrier, fields, onSelect){
   if(!pickerEl) return;
   const filterEl = pickerEl.querySelector('.c-status-filter');
   const listEl = pickerEl.querySelector('.c-status-list');
@@ -12596,6 +12759,7 @@ function wireMergedStatusPicker(pickerEl, carrier, fields){
     pickerEl.classList.remove('open');
     filterList('');
     filterEl.select();
+    if(typeof onSelect === 'function') onSelect(kind, value);
   };
   // Live-filters as the user types (substring match on each option's own
   // text). A group (Vanilla statuses / Your mechanics) hides itself
@@ -14664,30 +14828,132 @@ function mechResourceBar(m){
   const bars = state.character.resourceBars || [];
   return bars.find(b => b.statusKind === 'custom' && b.status === m.id) || null;
 }
+// [Round 227] Shared field-name map for the two "pick a status to pair
+// this bar with" pickers below — same 3-field shape mergedStatusPickerHtml
+// already expects (see COND_STATUS_FIELDS/ACTION_SCALE_FIELDS above); its
+// own constant since this carrier is transient (rebuilt fresh from the
+// real resourceBars entry on every render, never a persistent object).
+const BAR_PAIR_FIELDS = { kind:'statusKind', builtin:'builtinStatus', ref:'statusRef' };
+// Every status (one vanilla built-in name, or one custom mechanic id) can
+// have at most one resourceBars entry — renderVanillaBars' own "already
+// has a bar" alert already assumed this for vanilla statuses; this is the
+// shared lookup both that flow and the new dual-bar pairing flow go
+// through now.
+function findResourceBarForStatus(kind, value){
+  const bars = state.character.resourceBars || [];
+  if(kind === 'vanilla') return bars.find(b => b && b.statusKind === 'vanilla' && b.builtinStatus === value);
+  return bars.find(b => b && b.statusKind === 'custom' && b.status === value);
+}
+function barEntryIdentity(b){
+  if(!b) return null;
+  return b.statusKind === 'vanilla' ? { kind:'vanilla', value: b.builtinStatus } : { kind:'custom', value: b.status };
+}
+// Builds the transient carrier object mergedStatusPickerHtml/
+// wireMergedStatusPicker expect, from a real (or absent) resourceBars
+// entry — always rebuilt from state at render time, never persisted.
+function carrierFromBarEntry(b){
+  const id = barEntryIdentity(b);
+  return {
+    statusKind: id ? id.kind : undefined,
+    builtinStatus: id && id.kind === 'vanilla' ? id.value : undefined,
+    statusRef: id && id.kind === 'custom' ? id.value : undefined,
+  };
+}
+// Un-pairs a bar entry — drops it back to a plain standalone bar rather
+// than deleting it outright, so un-pairing (or swapping a paired status
+// for a different one) never destroys data the user didn't explicitly
+// remove via that status's own remove control.
+function revertBarToStandalone(bar){
+  if(!bar) return;
+  bar.layout = 'standalone';
+  delete bar.diamondGroup;
+  delete bar.diamondRole;
+}
+function findGroupMember(groupId, role, excludeBar){
+  return (state.character.resourceBars || []).find(b => b && b !== excludeBar && b.layout === 'diamond' && b.diamondGroup === groupId && b.diamondRole === role);
+}
+// A status is off-limits as a paired/center pick here if it's already
+// locked into a DIFFERENT diamond group elsewhere — repurposing it blind
+// would silently orphan that OTHER group's own left/right (compiler.js
+// throws at export time if a diamond group is ever missing either one;
+// see backend/compiler.js's diamondSpecEntries build).
+function statusLockedElsewhere(kind, value, thisGroupId){
+  const entry = findResourceBarForStatus(kind, value);
+  return !!(entry && entry.layout === 'diamond' && entry.diamondGroup && entry.diamondGroup !== thisGroupId);
+}
+// Applies a paired/center status pick: releases whoever previously held
+// that role in the group (unless it's the same status being re-picked),
+// finds-or-creates that status's own resourceBars entry, and folds it
+// into the group at the given role + this group's shared anchor (every
+// entry in a diamond group must share one anchor — validate.js/compiler.js
+// both enforce this).
+function applyDiamondPairPick(m, bar, groupId, role, kind, value){
+  if(kind === 'custom' && value === m.id) return; // can't pair with self — also excluded from the picker's own option list
+  const prevHolder = findGroupMember(groupId, role, bar);
+  const prevId = barEntryIdentity(prevHolder);
+  if(prevHolder && !(prevId && prevId.kind === kind && prevId.value === value)){
+    revertBarToStandalone(prevHolder);
+  }
+  let target = findResourceBarForStatus(kind, value);
+  if(!target){
+    target = kind === 'vanilla'
+      ? { enabled:true, statusKind:'vanilla', builtinStatus:value, max:5, color:'#3399ff' }
+      : { enabled:true, statusKind:'custom', status:value, max:5, color:'#3399ff', label:(state.mechanics.find(x=>x.id===value)||{}).name || '' };
+    if(!Array.isArray(state.character.resourceBars)) state.character.resourceBars = [];
+    state.character.resourceBars.push(target);
+  }
+  target.layout = 'diamond';
+  target.diamondGroup = groupId;
+  target.diamondRole = role;
+  target.anchor = bar.anchor;
+  save();
+}
 function renderMechBarFields(m){
   const bar = mechResourceBar(m);
   const fieldsEl = document.getElementById('m-bar-fields');
   if(!bar){ fieldsEl.innerHTML = ''; refreshResourceBarPreview(); return; }
   const isDiamond = bar.layout === 'diamond';
+  // [Round 227] Tyler: "change the layout options to 'Single' and 'Dual'
+  // bars. If dual bars is selected, it should prompt the user to select
+  // another status to track as well." This mechanic's own bar is always
+  // the group's "left" entry once Dual is picked (there's no real data
+  // anywhere with a custom mechanic's OWN bar saved as right/center — this
+  // whole diamond-group UI has only ever existed here, never produced any
+  // real saved pairs, confirmed by checking every real character_project.json
+  // on Tyler's machine — so this normalize-on-render is safe). The group
+  // id is preserved if one already exists (never silently renamed), and
+  // only minted fresh the first time this bar transitions into Dual.
+  if(isDiamond && !bar.diamondGroup) bar.diamondGroup = `pair-${m.id}`;
+  if(isDiamond) bar.diamondRole = 'left';
+  const groupId = isDiamond ? bar.diamondGroup : `pair-${m.id}`;
+  const partner = isDiamond ? findGroupMember(groupId, 'right', bar) : null;
+  const center = isDiamond ? findGroupMember(groupId, 'center', bar) : null;
+  const partnerId = barEntryIdentity(partner);
+  const centerId = barEntryIdentity(center);
+  const sameIdentity = (kind, value, id) => !!id && id.kind === kind && id.value === value;
+  const partnerExclude = (kind, value) => (kind === 'custom' && value === m.id) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, centerId);
+  const centerExclude = (kind, value) => (kind === 'custom' && value === m.id) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, partnerId);
   fieldsEl.innerHTML = `
     <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
       <div style="flex:0 0 90px"><label style="font-size:11px">Max</label><input type="number" id="m-bar-max" min="1" value="${Number.isFinite(bar.max) ? bar.max : 5}"></div>
       <div style="flex:0 0 50px"><label style="font-size:11px">Color</label><input type="color" id="m-bar-color" value="${escapeAttr(bar.color || '#3399ff')}"></div>
       <div style="flex:0 0 160px"><label style="font-size:11px">Layout</label><select id="m-bar-layout">
-        <option value="standalone" ${!isDiamond ? 'selected' : ''}>Standalone bar</option>
-        <option value="diamond" ${isDiamond ? 'selected' : ''}>Dual-bar + diamond (paired)</option>
+        <option value="standalone" ${!isDiamond ? 'selected' : ''}>Single bar</option>
+        <option value="diamond" ${isDiamond ? 'selected' : ''}>Dual bar</option>
       </select></div>
       <div style="flex:0 0 180px"><label style="font-size:11px" title="Which HUD element this status's bar anchors to. Set per status.">Anchor</label><select id="m-bar-anchor">${resourceBarAnchorOptionsHtml(resolveBarAnchor(bar))}</select></div>
     </div>
-    <div id="m-bar-diamond-fields" class="row" style="gap:8px; align-items:center; margin-top:6px; display:${isDiamond ? '' : 'none'}">
-      <div style="flex:0 0 160px"><label style="font-size:11px" title="Arbitrary id shared by the 2-3 bars that make up one dual-bar+diamond widget — pair this status with another one using the same group name.">Diamond group</label><input type="text" id="m-bar-diamond-group" value="${escapeAttr(bar.diamondGroup || '')}" placeholder="e.g. stance"></div>
-      <div style="flex:0 0 120px"><label style="font-size:11px">Position</label><select id="m-bar-diamond-role">
-        <option value="left" ${bar.diamondRole==='left'?'selected':''}>Left</option>
-        <option value="right" ${bar.diamondRole==='right'?'selected':''}>Right</option>
-        <option value="center" ${bar.diamondRole==='center'?'selected':''}>Center (diamond)</option>
-      </select></div>
+    <div id="m-bar-diamond-fields" style="margin-top:10px; display:${isDiamond ? '' : 'none'}">
+      <label style="font-size:11px">Paired status</label>
+      ${mergedStatusPickerHtml(carrierFromBarEntry(partner), BAR_PAIR_FIELDS, 'm-bar-partner-picker', partnerExclude)}
+      <div style="margin-top:10px; display:flex; align-items:flex-end; gap:8px">
+        <div style="flex:1 1 auto">
+          <label style="font-size:11px">Center status (optional)</label>
+          ${mergedStatusPickerHtml(carrierFromBarEntry(center), BAR_PAIR_FIELDS, 'm-bar-center-picker', centerExclude)}
+        </div>
+        <button type="button" id="m-bar-center-clear" class="secondary" style="flex:0 0 auto; display:${center ? '' : 'none'}" title="Remove the center status">✕</button>
+      </div>
     </div>
-    <div class="hint-small" style="margin-top:4px">Exactly one Left and one Right are required per diamond group (all sharing the same Anchor); Center is optional.</div>
     <!-- [Round 103] Live preview, right where the bar is actually being
          created/moved — Tyler: "so that the user can see their bars as
          they create them." refreshResourceBarPreview() (called at the end
@@ -14698,21 +14964,63 @@ function renderMechBarFields(m){
   document.getElementById('m-bar-max').addEventListener('input', e=>{ bar.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
   document.getElementById('m-bar-color').addEventListener('input', e=>{ bar.color = e.target.value; save(); refreshResourceBarPreview(); });
   document.getElementById('m-bar-layout').addEventListener('change', e=>{
-    bar.layout = e.target.value;
-    if(bar.layout !== 'diamond'){ delete bar.diamondGroup; delete bar.diamondRole; }
-    else if(!bar.diamondRole) bar.diamondRole = 'left';
+    const goingDiamond = e.target.value === 'diamond';
+    if(!goingDiamond && bar.layout === 'diamond'){
+      // Leaving Dual — release whoever was paired as right/center so the
+      // group is never left half-formed (compiler.js requires every
+      // diamond group to keep a left+right; an orphaned right/center with
+      // no left would fail export).
+      const oldGroupId = bar.diamondGroup;
+      if(oldGroupId){
+        revertBarToStandalone(findGroupMember(oldGroupId, 'right', bar));
+        revertBarToStandalone(findGroupMember(oldGroupId, 'center', bar));
+      }
+      revertBarToStandalone(bar);
+    } else if(goingDiamond && bar.layout !== 'diamond'){
+      bar.layout = 'diamond';
+      bar.diamondGroup = groupId;
+      bar.diamondRole = 'left';
+    }
     save();
     renderMechBarFields(m);
   });
   document.getElementById('m-bar-anchor').addEventListener('change', e=>{
-    tryChangeBarAnchor(bar, e.target.value, state.character.resourceBars || []);
-    save();
+    const ok = tryChangeBarAnchor(bar, e.target.value, state.character.resourceBars || []);
+    if(ok && bar.layout === 'diamond' && bar.diamondGroup){
+      // [Round 227 fix] A diamond group's entries must all share one
+      // anchor (validate.js/compiler.js both enforce this) — found while
+      // wiring up the new pairing flow: this dropdown previously only
+      // ever touched THIS bar's own anchor, so a manually-paired group
+      // (matching diamondGroup text across 2 separate statuses, the old
+      // UI's only way to form one) could already silently drift out of
+      // sync before this fix. Now the left bar's anchor change propagates
+      // to its paired right/center automatically.
+      const partnerBar = findGroupMember(bar.diamondGroup, 'right', bar);
+      const centerBar = findGroupMember(bar.diamondGroup, 'center', bar);
+      if(partnerBar) partnerBar.anchor = bar.anchor;
+      if(centerBar) centerBar.anchor = bar.anchor;
+      save();
+    }
     renderMechBarFields(m); // re-render either way: reverts a blocked change back to its real value
   });
-  const groupEl = document.getElementById('m-bar-diamond-group');
-  const roleEl = document.getElementById('m-bar-diamond-role');
-  if(groupEl) groupEl.addEventListener('input', e=>{ bar.diamondGroup = e.target.value; save(); refreshResourceBarPreview(); });
-  if(roleEl) roleEl.addEventListener('change', e=>{ bar.diamondRole = e.target.value; save(); refreshResourceBarPreview(); });
+  if(isDiamond){
+    const partnerPickerEl = fieldsEl.querySelector('.m-bar-partner-picker');
+    wireMergedStatusPicker(partnerPickerEl, carrierFromBarEntry(partner), BAR_PAIR_FIELDS, (kind, value)=>{
+      applyDiamondPairPick(m, bar, groupId, 'right', kind, value);
+      renderMechBarFields(m);
+    });
+    const centerPickerEl = fieldsEl.querySelector('.m-bar-center-picker');
+    wireMergedStatusPicker(centerPickerEl, carrierFromBarEntry(center), BAR_PAIR_FIELDS, (kind, value)=>{
+      applyDiamondPairPick(m, bar, groupId, 'center', kind, value);
+      renderMechBarFields(m);
+    });
+    const clearCenterBtn = document.getElementById('m-bar-center-clear');
+    if(clearCenterBtn) clearCenterBtn.addEventListener('click', ()=>{
+      revertBarToStandalone(findGroupMember(groupId, 'center', bar));
+      save();
+      renderMechBarFields(m);
+    });
+  }
   refreshResourceBarPreview();
 }
 function openMechEditor(mechId){
@@ -14726,27 +15034,57 @@ function openMechEditor(mechId){
   if(m.modifiers.length > 0 && !m.effects.some(e=>e.trigger==='Passive')){
     m.effects.unshift({trigger:'Passive', conditions:[], actions:[], elseActions:[]});
   }
+  pendingMechIconDataUrl = undefined;
   openModal(`
     <div class="modal-head"><h3>Edit Mechanic</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <label>Name</label><input type="text" id="m-name" value="${escapeAttr(m.name)}">
-      <label>Description</label><textarea id="m-desc">${escapeHtml(m.description||'')}</textarea>
+      <div style="display:flex; gap:24px; align-items:stretch;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <label>Name</label><input type="text" id="m-name" value="${escapeAttr(m.name)}">
+          <label style="margin-top:14px">Description</label><textarea id="m-desc" style="flex:1; min-height:60px;">${escapeHtml(m.description||'')}</textarea>
+        </div>
+        <div style="flex:0 0 160px;">
+          <label>Icon <span class="dim-hint">(optional, ${MECHANIC_ICON_WIDTH}&times;${MECHANIC_ICON_HEIGHT}px)</span></label>
+          <div class="art-preview-frame" id="mi-icon-frame" style="aspect-ratio:${MECHANIC_ICON_WIDTH}/${MECHANIC_ICON_HEIGHT}; max-width:160px; cursor:pointer;">
+            <img id="mi-icon-img" style="display:none">
+            <div class="art-placeholder" id="mi-icon-placeholder">Click to upload (optional)</div>
+            <div class="art-click-hint">Click to change</div>
+            <div class="art-icon-overlay">
+              <button class="ghost icon-btn icon-btn-danger" id="mi-icon-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              </button>
+            </div>
+          </div>
+          <input type="file" class="art-upload-input" id="mi-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <div class="art-field-error" id="mi-icon-error"></div>
+        </div>
+      </div>
       <div class="row">
         <div><label>Stackable</label><select id="m-stack">${optList(['true','false'], String(m.stackable))}</select></div>
         <div><label>Decays each turn</label><select id="m-decay">${optList(['true','false'], String(m.decaysPerTurn))}</select></div>
         <div><label>Type</label><select id="m-buff">${optList(['buff','debuff'], m.isBuff?'buff':'debuff')}</select></div>
       </div>
-      <div class="row" style="margin-top:12px; align-items:center; gap:8px">
+      <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
         <input type="checkbox" id="m-hide-icon" ${m.hideIcon ? 'checked' : ''}>
         <label for="m-hide-icon" style="margin:0" title="Compiles to protected override bool IsVisibleInternal => false; on this status's generated class: no vanilla icon in the status row, no apply flash, and Artifact can't consume a charge from it. Independent of the bar option below — you can hide the icon with no bar, show a bar with the icon still visible, or hide the icon and show only the bar.">Hide status icon (no icon in the status row)</label>
       </div>
-      <div style="margin-top:16px; padding:10px; border:1px solid var(--border); border-radius:6px">
-        <div class="row" style="align-items:center; gap:8px">
-          <input type="checkbox" id="m-bar-enabled" ${mechResourceBar(m) ? 'checked' : ''}>
-          <label for="m-bar-enabled" style="margin:0" title="Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below.">Represent as a bar</label>
-        </div>
-        <div id="m-bar-fields" style="margin-top:8px; display:${mechResourceBar(m) ? '' : 'none'}"></div>
+      <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
+        <input type="checkbox" id="m-allow-negative" ${m.allowNegative ? 'checked' : ''}>
+        <label for="m-allow-negative" style="margin:0" title="Compiles to public override bool AllowNegative => true; on this status's generated class. Real vanilla effect [VERIFIED via IL]: ShouldRemoveDueToAmount() only removes this status once its stacks are exactly 0, not whenever they're 0 or below — lets a signed counter go negative and stay applied instead of being deleted the moment it would dip below 0.">Allow negative stacks</label>
       </div>
+      <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
+        <input type="checkbox" id="m-hide-flash" ${m.hideFlash ? 'checked' : ''}>
+        <label for="m-hide-flash" style="margin:0" title="Compiles to public override bool ShouldPlayVfx => false; on this status's generated class. Real vanilla effect [VERIFIED via IL]: suppresses the icon flash particle, the bigger power-applied banner/amount popup, and the buff/debuff sound effect — all three real trigger points check this exact flag before playing.">Hide flash when effect triggers</label>
+      </div>
+      <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
+        <input type="checkbox" id="m-stay-visible-zero" ${m.stayVisibleAtZero ? 'checked' : ''}>
+        <label for="m-stay-visible-zero" style="margin:0" title="Compiles to a character-wide Harmony patch on PowerModel.ShouldRemoveDueToAmount (not a per-status override — that method isn't virtual). Real vanilla effect [VERIFIED by decompiling Tyler's own real, compiled 'The Burdened' reference mod's Patches/ModStatusRowPatch.cs]: this status stays on screen showing 0 instead of vanishing the instant its last stack is spent. Only applies exactly at 0 — driven negative still removes it as normal.">Stay visible at 0 stacks</label>
+      </div>
+      <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
+        <input type="checkbox" id="m-bar-enabled" ${mechResourceBar(m) ? 'checked' : ''}>
+        <label for="m-bar-enabled" style="margin:0" title="Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below.">Represent as a bar</label>
+      </div>
+      <div id="m-bar-fields" class="ench-field-box" style="display:${mechResourceBar(m) ? '' : 'none'}"></div>
       <label style="margin-top:20px">What this does</label>
       <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks. Set a block's trigger to "Passive" for a status that doesn't react to anything — that's where Modifiers now lives.</div>
       <div id="effects-list"></div>
@@ -14756,11 +15094,58 @@ function openMechEditor(mechId){
       <button class="danger" id="delete-mech">Delete</button>
       <button id="save-mech">Done</button>
     </div>
-  `);
+  `, {wide:true});
   renderEffectsList(m, HOOK_TRIGGERS);
   renderMechBarFields(m);
+
+  // Icon preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
+  // commitAsset pattern openRelicEditor's own icon field uses (round 229).
+  const mechIconFrame = document.getElementById('mi-icon-frame');
+  const mechIconImg = document.getElementById('mi-icon-img');
+  const mechIconPh = document.getElementById('mi-icon-placeholder');
+  const mechIconUpload = document.getElementById('mi-icon-upload');
+  const mechIconClear = document.getElementById('mi-icon-clear');
+  const mechIconError = document.getElementById('mi-icon-error');
+
+  function refreshMechIconPreview(){
+    const url = pendingMechIconDataUrl !== undefined
+      ? pendingMechIconDataUrl
+      : findAssetDataUrl(m.iconAssetRef, 'mechanicIcon');
+    if(url){ mechIconImg.src = url; mechIconImg.style.display = ''; mechIconPh.style.display = 'none'; mechIconClear.style.display = ''; }
+    else { mechIconImg.style.display = 'none'; mechIconImg.removeAttribute('src'); mechIconPh.style.display = ''; mechIconClear.style.display = 'none'; }
+  }
+  refreshMechIconPreview();
+  mechIconFrame.addEventListener('click', ()=> mechIconUpload.click());
+  mechIconUpload.addEventListener('change', ev=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    mechIconError.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, MECHANIC_ICON_WIDTH, MECHANIC_ICON_HEIGHT)).then(result=>{
+      if(result.resized){
+        mechIconError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${MECHANIC_ICON_WIDTH}×${MECHANIC_ICON_HEIGHT}px.`;
+        mechIconError.classList.add('art-field-note');
+        mechIconError.style.display = 'block';
+      } else {
+        mechIconError.classList.remove('art-field-note');
+      }
+      pendingMechIconDataUrl = result.dataUrl;
+      refreshMechIconPreview();
+    }).catch(err=>{
+      mechIconError.classList.remove('art-field-note');
+      mechIconError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+      mechIconError.style.display = 'block';
+      mechIconUpload.value = '';
+    });
+  });
+  mechIconClear.onclick = (ev)=>{
+    ev.stopPropagation();
+    pendingMechIconDataUrl = null;
+    refreshMechIconPreview();
+  };
+
   document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnTurnStart', conditions:[], actions:[]}); renderEffectsList(m, HOOK_TRIGGERS); };
   document.getElementById('delete-mech').onclick = ()=>{
+    if(m.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==m.iconAssetRef);
     state.mechanics = state.mechanics.filter(x=>x.id!==mechId);
     // [Round 120] Deleting a status left any resourceBars entry pointing
     // at it dangling (no real status left for the compiler to read
@@ -14802,6 +15187,12 @@ function openMechEditor(mechId){
     m.decaysPerTurn = document.getElementById('m-decay').value === 'true';
     m.isBuff = document.getElementById('m-buff').value === 'buff';
     m.hideIcon = document.getElementById('m-hide-icon').checked;
+    m.allowNegative = document.getElementById('m-allow-negative').checked;
+    m.hideFlash = document.getElementById('m-hide-flash').checked;
+    m.stayVisibleAtZero = document.getElementById('m-stay-visible-zero').checked;
+    if(pendingMechIconDataUrl !== undefined){
+      m.iconAssetRef = commitAsset(pendingMechIconDataUrl, m.iconAssetRef, 'mechanicIcon');
+    }
     const linkedBar = mechResourceBar(m);
     if(linkedBar) linkedBar.label = m.name; // keep the bar's label in sync with a renamed status
     save(); renderMechanics(); closeModal();
@@ -15690,6 +16081,7 @@ function makeRichEntitySection(opts){
     const img = document.getElementById(`${idPrefix}-icon-img`);
     const ph = document.getElementById(`${idPrefix}-icon-ph`);
     const clearBtn = document.getElementById(`${idPrefix}-icon-clear`);
+    const errEl = document.getElementById(`${idPrefix}-icon-error`);
     function refresh(){
       const url = findAssetDataUrl(e.icon, 'enchantmentIcon');
       if(url){ img.src = url; img.style.display=''; ph.style.display='none'; clearBtn.style.display=''; }
@@ -15699,15 +16091,23 @@ function makeRichEntitySection(opts){
     if(input) input.onchange = ()=>{
       const file = input.files[0];
       if(!file) return;
+      if(errEl) errEl.style.display = 'none';
       readFileAsDataUrl(file).then(dataUrl=>{
         e.icon = commitAsset(dataUrl, e.icon, 'enchantmentIcon');
         save(); refresh();
+      }).catch(err=>{
+        if(errEl){
+          errEl.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+          errEl.style.display = 'block';
+        }
+        input.value = '';
       });
     };
     if(clearBtn) clearBtn.onclick = (ev)=>{
       ev.stopPropagation();
       e.icon = commitAsset(null, e.icon, 'enchantmentIcon');
       if(input) input.value = '';
+      if(errEl) errEl.style.display = 'none';
       save(); refresh();
     };
     refresh();
@@ -15742,6 +16142,7 @@ function makeRichEntitySection(opts){
                 </div>
                 <input type="file" id="${idPrefix}-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
                 <button type="button" class="ghost" id="${idPrefix}-icon-clear" style="display:none; margin-top:8px; width:100%;">Remove</button>
+                <div class="art-field-error" id="${idPrefix}-icon-error" style="width:150px"></div>
               </div>
             </div>
           </div>
