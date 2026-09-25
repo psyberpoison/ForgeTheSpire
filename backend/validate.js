@@ -1149,7 +1149,7 @@ const RETIRED_AMBIGUOUS_TRIGGERS = {
   AfterBlockGained: '"After you gain block" or "After an enemy gains block"',
   AfterCurrentHpChanged: '"After your HP changes" or "After an enemy\'s HP changes"',
   BeforeDeath: '"Before you die" or "Before an enemy dies"',
-  AfterPowerAmountChanged: '"After you change a status\'s stacks" or "After an enemy changes a status\'s stacks"', // [Round 274] wording updated to match frontend/index.html's HOOK_TRIGGER_LABELS
+  AfterPowerAmountChanged: '"After you change ANY status\'s stacks" or "After an enemy changes ANY status\'s stacks"', // [Round 278] "ANY" added to match frontend/index.html's HOOK_TRIGGER_LABELS (was [Round 274] wording)
   AfterPreventingDeath: '"After your death is prevented" or "After an enemy\'s death is prevented"',
   OnTurnStart: '"At the start of your turn" or "At the start of an enemy\'s turn"',
   OnTurnEnd: '"At the end of your turn" or "At the end of an enemy\'s turn"',

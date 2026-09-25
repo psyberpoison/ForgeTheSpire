@@ -3466,9 +3466,14 @@ const HOOK_TRIGGER_LABELS = {
   // Forge never exposes that word to the user -- see e.g. "Edit
   // Mechanic"'s own "status" framing). "applier" (not the status's own
   // holder, which this real hook doesn't expose -- see TRIGGER_HINTS
-  // below for the caveat) is whoever changed the status's stacks.
-  AfterMyPowerAmountChanged: 'After you change a status’s stacks',
-  AfterEnemyPowerAmountChanged: 'After an enemy changes a status’s stacks',
+  // below for the caveat) is whoever changed the status's stacks. [Round
+  // 278] "ANY" added -- Tyler: "change ... to 'After you change ANY
+  // status's stacks' and the same for the enemy trigger" -- clarifies
+  // this fires for every status change on that side, not just THIS one
+  // (distinguishing it from round 276/277's self-scoped "this status"
+  // triggers, which didn't exist yet when this label was first written).
+  AfterMyPowerAmountChanged: 'After you change ANY status’s stacks',
+  AfterEnemyPowerAmountChanged: 'After an enemy changes ANY status’s stacks',
   // [Round 276] Self-scoped pair, built on the same real hook as the two
   // above -- see backend/compiler.js:TRIGGER_HOOKS.AfterThisPowerStacks
   // Added's own comment for the real FatiguePower/PowerCmd.ModifyAmount
@@ -3567,9 +3572,9 @@ const TRIGGER_HINTS = {
   // Changed) doesn't expose the status's own owner, only whoever applied
   // it (see backend/compiler.js:TRIGGER_HOOKS.AfterMyPowerAmountChanged's
   // own comment). E.g. an enemy applying Vulnerable to YOU still fires
-  // "After an enemy changes a status's stacks" [Round 274 -- wording
-  // updated from "power's stacks", see HOOK_TRIGGER_LABELS above], not
-  // the "your" variant.
+  // "After an enemy changes ANY status's stacks" [Round 274 -- wording
+  // updated from "power's stacks"; Round 278 -- "ANY" added, see
+  // HOOK_TRIGGER_LABELS above], not the "your" variant.
   AfterMyPowerAmountChanged: 'Triggers when YOU are the one CAUSING the change, not when the enemy causes the change to happen to you.',
   AfterEnemyPowerAmountChanged: 'Triggers when an ENEMY is the one CAUSING the change, not when you cause the change to happen to them.',
   // [Round 276] Unlike the pair above, these two don't care who applied
@@ -5384,7 +5389,7 @@ const RETIRED_TRIGGER_REPLACEMENTS = {
   AfterBlockGained: '"After you gain block" or "After an enemy gains block"',
   AfterCurrentHpChanged: '"After your HP changes" or "After an enemy\'s HP changes"',
   BeforeDeath: '"Before you die" or "Before an enemy dies"',
-  AfterPowerAmountChanged: '"After you change a status\'s stacks" or "After an enemy changes a status\'s stacks"', // [Round 274] wording updated to match HOOK_TRIGGER_LABELS
+  AfterPowerAmountChanged: '"After you change ANY status\'s stacks" or "After an enemy changes ANY status\'s stacks"', // [Round 278] "ANY" added to match HOOK_TRIGGER_LABELS (was [Round 274] wording)
   AfterPreventingDeath: '"After your death is prevented" or "After an enemy\'s death is prevented"',
   OnTurnStart: '"At the start of your turn" or "At the start of an enemy\'s turn"',
   OnTurnEnd: '"At the end of your turn" or "At the end of an enemy\'s turn"',
