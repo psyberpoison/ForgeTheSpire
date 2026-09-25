@@ -3477,6 +3477,15 @@ const HOOK_TRIGGER_LABELS = {
   // filtered to THIS status and the direction.
   AfterThisPowerStacksAdded: 'When this status’s stacks increase',
   AfterThisPowerStacksRemoved: 'When this status’s stacks decrease',
+  // [Round 277] Tyler: "lets do 2 more for 'when this status is applied'
+  // and 'when this status is removed'" -- a DIFFERENT real hook pair from
+  // the two above (AfterApplied/AfterRemoved, not AfterPowerAmountChanged
+  // -- see backend/compiler.js:TRIGGER_HOOKS.AfterThisPowerApplied's own
+  // comment). Fires once, when this status first attaches to / is fully
+  // taken off a creature -- not on every stack change (that's what the
+  // "increase"/"decrease" pair above is for).
+  AfterThisPowerApplied: 'When this status is applied',
+  AfterThisPowerRemoved: 'When this status is removed',
   OnMyTurnStart: 'At the start of your turn',
   OnEnemyTurnStart: 'At the start of an enemy’s turn',
   OnMyTurnEnd: 'At the end of your turn',
@@ -3568,6 +3577,12 @@ const TRIGGER_HINTS = {
   // (matches the real FatiguePower code Tyler found this pattern in).
   AfterThisPowerStacksAdded: 'Only fires for THIS status’s own stacks going up -- not any other status, and it doesn’t matter who caused it.',
   AfterThisPowerStacksRemoved: 'Only fires for THIS status’s own stacks going down -- not any other status, and it doesn’t matter who caused it.',
+  // [Round 277] Fires ONCE -- the moment this status is newly attached
+  // to (or fully taken off) a creature. Gaining MORE stacks of a status
+  // you already have does NOT fire AfterThisPowerApplied again (use
+  // "When this status’s stacks increase" for that).
+  AfterThisPowerApplied: 'Fires once, the first time this status attaches to a creature -- gaining more stacks afterward does NOT re-fire this.',
+  AfterThisPowerRemoved: 'Fires when this status is fully taken off its holder (stacks hit the point where it’s removed) -- not on every stack decrease.',
   OnDiscard: '',
   OnTurnEndInHand: '',
   OnAnyCardPlayed: '',
@@ -3611,6 +3626,7 @@ const HOOK_TRIGGER_BINDING = {
   BeforeMyDeath: 'player', BeforeEnemyDeath: 'player',
   AfterMyPowerAmountChanged: 'player', AfterEnemyPowerAmountChanged: 'player',
   AfterThisPowerStacksAdded: 'player', AfterThisPowerStacksRemoved: 'player', // [Round 276]
+  AfterThisPowerApplied: 'player', AfterThisPowerRemoved: 'player', // [Round 277]
   AfterPreventingMyDeath: 'player', AfterPreventingEnemyDeath: 'player',
   OnMyDamageTaken: 'both', OnEnemyDamageTaken: 'both',
   OnMyTurnStart: 'player', OnEnemyTurnStart: 'player',
@@ -3663,6 +3679,14 @@ const NO_CHOICE_CONTEXT_HOOK_TRIGGERS = new Set([
   'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath',
   'AfterRestSiteHeal', 'AfterRestSiteSmith', 'AfterStarsSpent',
   'AfterStarsGained', 'AfterForge',
+  // [Round 277] AfterApplied(Creature applier, CardModel cardSource) and
+  // AfterRemoved(Creature owner) -- neither real signature has a
+  // PlayerChoiceContext param (see backend/compiler.js:TRIGGER_HOOKS.
+  // AfterThisPowerApplied's own comment). Unlike round 276's
+  // AfterThisPowerStacksAdded/Removed pair (which share
+  // AfterPowerAmountChanged's real choiceContext-having signature and
+  // correctly stayed OUT of this set), these two genuinely belong here.
+  'AfterThisPowerApplied', 'AfterThisPowerRemoved',
 ]);
 // Tyler: "lets make it so that you can only select valid 'thens' for each
 // trigger" — unlike the target-dropdown pattern above (always-shown +
@@ -3859,7 +3883,7 @@ const TRIGGER_CATEGORIES = [
   // more saturated — 5.14:1 contrast, now the most legible of the three
   // reds/pinks in this list rather than the least.
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
-  { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged','AfterThisPowerStacksAdded','AfterThisPowerStacksRemoved'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels). [Round 276] two new self-scoped triggers added to this same category.
+  { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged','AfterThisPowerStacksAdded','AfterThisPowerStacksRemoved','AfterThisPowerApplied','AfterThisPowerRemoved'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels). [Round 276] two new self-scoped triggers added to this same category. [Round 277] two more (Applied/Removed) added here too.
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
   { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
@@ -3868,7 +3892,7 @@ const TRIGGER_CATEGORIES = [
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
 ];
-const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterThisPowerApplied","AfterThisPowerRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 // Sweep TRIGGER_CATEGORIES against the real union of CARD_TRIGGERS +
 // HOOK_TRIGGERS at load time, so a future trigger added to one list without
 // a matching category entry fails loudly in the console instead of just

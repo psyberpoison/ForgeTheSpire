@@ -3964,6 +3964,73 @@ const TRIGGER_HOOKS = {
     playerExpr: 'applier', targetExpr: null,
     guardExpr: 'power == this && amount < 0',
   },
+  // [Round 277] Tyler: "lets do 2 more for 'when this status is applied'
+  // and 'when this status is removed'". Direct sts2.dll evidence,
+  // disassembled from PowerCmd.Apply/PowerCmd.Remove's real async bodies:
+  //
+  // - PowerCmd.Apply(...) -- the real call ForgeActions.ApplyStatus<T>
+  //   uses -- first checks PowerCmd.FindExistingInstanceForStacking(...).
+  //   If an existing instance is found (this status is ALREADY on the
+  //   target), it just calls PowerCmd.ModifyAmount(...) instead -- the
+  //   exact same real method AfterThisPowerStacksAdded/Removed and
+  //   AfterMyPowerAmountChanged/AfterEnemyPowerAmountChanged above are
+  //   built on. Only when NO existing instance is found (genuinely new
+  //   to this target) does it go on to call, directly on the new power
+  //   instance (`power.BeforeApplied(...)` / `power.AfterApplied(...)`,
+  //   both real `callvirt`s on `power` itself -- NOT the static, global
+  //   `Hook.*` broadcast dispatcher AfterPowerAmountChanged/AfterApplied's
+  //   OWN cousins BeforePowerAmountChanged/etc. go through). That means
+  //   AfterApplied is inherently self-scoped already -- fires exactly
+  //   once, only on THIS instance, only the first time this status
+  //   attaches to a creature -- no `power == this` guard needed (there's
+  //   no `power` param at all; the method is called ON the instance).
+  //   Confirmed via PowerModel.ApplyInternal's own IL: it calls
+  //   `set_Owner(target)` BEFORE PowerCmd.Apply ever reaches the
+  //   AfterApplied call, so `Owner` (a real, public, Creature-typed
+  //   property already relied on elsewhere -- see resolvePlayerExpr's
+  //   round-26 comment) is safely readable by the time this hook runs.
+  //   Real signature: AfterApplied(Creature applier, CardModel
+  //   cardSource) -- no target/owner param at all, unlike AfterRemoved
+  //   below, which is why Owner (not one of this method's own params) is
+  //   what's bound here -- strictly better than the "applier" binding
+  //   the older hooks above are stuck with (their real params never
+  //   exposed the status's own holder at all -- this one's `this.Owner`
+  //   genuinely does).
+  //
+  // - PowerCmd.Remove(PowerModel power) calls `power.RemoveInternal()`
+  //   then, directly on that same instance, `power.AfterRemoved(power.
+  //   Owner)` -- also a real instance `callvirt`, not the static
+  //   dispatcher, so also inherently self-scoped with no guard needed.
+  //   PowerModel.RemoveInternal's own IL confirmed it never clears
+  //   Owner, so the value PowerCmd.Remove re-reads and passes as the
+  //   real `owner` parameter is genuinely the creature this status was
+  //   just removed from.
+  //
+  // Infinite-loop check (same discipline as TRIGGER_SELF_LOOP_ACTIONS):
+  // unlike AfterPowerAmountChanged (which the real ModifyAmount path
+  // fires UNCONDITIONALLY on every stack change, new or existing --
+  // proven genuinely unbounded when its own effect reapplies the same
+  // status to AllEnemies), AfterApplied only fires the FIRST time a
+  // given creature receives this status -- a same-status "Apply to All
+  // Enemies" action from inside this trigger's own effect would, for any
+  // enemy that already has an instance, route through ModifyAmount
+  // instead (per FindExistingInstanceForStacking above), which does NOT
+  // call AfterApplied again. So this is self-limiting (bounded by "how
+  // many creatures don't yet have this status"), not a proven
+  // unconditional loop -- deliberately NOT added to
+  // backend/validate.js's TRIGGER_SELF_LOOP_ACTIONS without real
+  // evidence of an actual unbounded cycle, same "don't guess a
+  // restriction" discipline as ModifyHp's LoseHp path.
+  AfterThisPowerApplied: {
+    method: 'AfterApplied',
+    params: 'Creature applier, CardModel cardSource',
+    playerExpr: 'Owner', targetExpr: null, // Owner, not one of this method's own params -- see the comment above.
+  },
+  AfterThisPowerRemoved: {
+    method: 'AfterRemoved',
+    params: 'Creature owner',
+    playerExpr: 'owner', targetExpr: null,
+  },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   AfterPreventingMyDeath: {
     method: 'AfterPreventingDeath',

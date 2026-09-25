@@ -1266,6 +1266,8 @@
             "AfterEnemyPowerAmountChanged",
             "AfterThisPowerStacksAdded",
             "AfterThisPowerStacksRemoved",
+            "AfterThisPowerApplied",
+            "AfterThisPowerRemoved",
             "AfterEnergyReset",
             "AfterEnergySpent",
             "AfterGoldGained",
