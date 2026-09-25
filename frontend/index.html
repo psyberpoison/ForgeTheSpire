@@ -16037,7 +16037,7 @@ function openMechEditor(mechId){
     refreshMechIconPreview();
   };
 
-  document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnTurnStart', conditions:[], actions:[]}); renderEffectsList(m, allowedHookTriggers(false)); };
+  document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnMyTurnStart', conditions:[], actions:[]}); renderEffectsList(m, allowedHookTriggers(false)); };
   document.getElementById('delete-mech').onclick = ()=>{
     if(m.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==m.iconAssetRef);
     state.mechanics = state.mechanics.filter(x=>x.id!==mechId);
