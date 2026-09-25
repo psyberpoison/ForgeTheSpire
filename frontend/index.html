@@ -3497,7 +3497,7 @@ const HOOK_TRIGGER_LABELS = {
   OnEnemyTurnEnd: 'At the end of an enemy’s turn',
   OnCombatStart: 'When combat starts',
   OnKillEnemy: 'When you kill an enemy',
-  OnExhaust: 'When exhausted',
+  OnExhaust: 'Whenever any card is exhausted',
   OnDrawCard: 'When a card is drawn',
   Passive: 'Passive (always active)',
   AfterCardGeneratedForCombat: 'When a card is generated for combat',
@@ -3872,7 +3872,7 @@ function hookBindingHint(id){
 // CARD_TRIGGERS + HOOK_TRIGGERS so this list can't silently drift out of
 // sync with either as future triggers get added.
 const TRIGGER_CATEGORIES = [
-  { id:'cardplay', label:'Card Play', color:'#8a5fd6', triggers:['OnPlay','OnAnyCardPlayed','AfterCardGeneratedForCombat','AfterCardDiscarded','OnDiscard','OnTurnEndInHand','OnRetained'] },
+  { id:'cardplay', label:'Card Play', color:'#8a5fd6', triggers:['OnPlay','OnAnyCardPlayed','AfterCardGeneratedForCombat','AfterCardDiscarded','OnDiscard','OnTurnEndInHand','OnRetained','OnExhaust'] },
   { id:'damage', label:'Damage / Attack', color:'#c65a48', triggers:['OnMyDamageTaken','OnEnemyDamageTaken','AfterAttack','AfterMyDamageGiven','AfterEnemyDamageGiven','BeforeMyDamageReceived','BeforeEnemyDamageReceived','OnKillEnemy'] },
   { id:'defense', label:'Defense / Block', color:'#4b93dd', triggers:['AfterMyBlockCleared','AfterEnemyBlockCleared','AfterMyBlockGained','AfterEnemyBlockGained','AfterMyBlockBroken','AfterEnemyBlockBroken'] },
   // [Round 154] Tyler: "the color is a bit dark, hard to read" — the old
@@ -3889,7 +3889,7 @@ const TRIGGER_CATEGORIES = [
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
   { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged','AfterThisPowerStacksAdded','AfterThisPowerStacksRemoved','AfterThisPowerApplied','AfterThisPowerRemoved'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels). [Round 276] two new self-scoped triggers added to this same category. [Round 277] two more (Applied/Removed) added here too.
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
-  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
+  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
   { id:'orb', label:'Orb', color:'#3aa8a0', triggers:['AfterOrbChanneled','AfterOrbEvoked'] },
   { id:'restsite', label:'Rest Site', color:'#8fbf4a', triggers:['AfterRestSiteHeal','AfterRestSiteSmith'] },
