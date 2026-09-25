@@ -3845,7 +3845,7 @@ const TRIGGER_CATEGORIES = [
   // more saturated — 5.14:1 contrast, now the most legible of the three
   // reds/pinks in this list rather than the least.
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
-  { id:'powers', label:'Powers / Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged'] },
+  { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels)
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
   { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
@@ -3995,7 +3995,8 @@ const ACTION_TYPE_LABELS = {
 // (trigger picker AND action-type picker) instead of a second invented
 // palette: damage/defense/misc are the exact same hex as those trigger
 // categories; "Status Effects" reuses TRIGGER_CATEGORIES.powers's green
-// (that category is literally "Powers / Statuses"); "Resources" reuses
+// (that category was "Powers / Statuses" at the time -- renamed to just
+// "Statuses" in round 275, see TRIGGER_CATEGORIES.powers); "Resources" reuses
 // TRIGGER_CATEGORIES.resources's gold (literally "Energy / Stars /
 // Gold"); "Card Effects" reuses TRIGGER_CATEGORIES.cardplay's purple.
 // Confirmed via a live repro (round 158) that Chromium's native <select>
@@ -9176,7 +9177,7 @@ const MODIFIER_HOOK_CATEGORIES = [
   { id:'damage', label:'Damage / Attack', color:'#c65a48', hooks:['ModifyDamageAdditive','ModifyDamageMultiplicative','ModifyDamageCap','ModifyAttackHitCount','ModifyUnblockedDamageTarget','ReduceHpLossBeforeBlock','ModifyHpLostBeforeOsty','ShouldAllowHitting'] },
   { id:'defense', label:'Defense / Block', color:'#4b93dd', hooks:['ModifyBlockAdditive','ModifyBlockMultiplicative','ShouldClearBlock'] },
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', hooks:['ShouldDie','ShouldCreatureBeRemovedFromCombatAfterDeath','ModifySummonAmount'] },
-  { id:'powers', label:'Powers / Statuses', color:'#4a9c4a', hooks:['ModifyPowerAmountGivenAdditive','ModifyPowerAmountGivenMultiplicative','TryModifyPowerAmountReceived','ShouldAfflict'] },
+  { id:'powers', label:'Statuses', color:'#4a9c4a', hooks:['ModifyPowerAmountGivenAdditive','ModifyPowerAmountGivenMultiplicative','TryModifyPowerAmountReceived','ShouldAfflict'] }, // [Round 275] label was 'Powers / Statuses' -- renamed to match TRIGGER_CATEGORIES.powers (Tyler: "change the category name too"), confirmed via AskUserQuestion since this is a different picker (Modifiers, not Triggers) than the one he screenshotted
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', hooks:['ModifyMaxEnergy','ModifyEnergyGain','ShouldPlayerResetEnergy','TryModifyEnergyCostInCombat','TryModifyEnergyCostInCombatLate','ShouldPayExcessEnergyCostWithStars','TryModifyStarCost','ModifyGoldGained','ShouldGainStars'] },
   { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', hooks:['ShouldDraw','ModifyHandDraw','ModifyShuffleOrder'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', hooks:['ShouldTakeExtraTurn','ShouldFlush','ShouldEtherealTrigger'] },
