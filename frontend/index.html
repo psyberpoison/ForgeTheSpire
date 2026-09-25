@@ -1717,11 +1717,17 @@
      tags (see the --bb-* vars above) as actual color inside the preview,
      via bbcodeToHtml() in JS. Bold ([b]) supported too since the game's
      own real examples always pair it with a color tag (e.g. [b][gold]). */
-  .cp-desc .bb-gold{color:var(--bb-gold);}
-  .cp-desc .bb-red{color:var(--bb-red);}
-  .cp-desc .bb-blue{color:var(--bb-blue);}
-  .cp-desc .bb-purple{color:var(--bb-purple);}
-  .cp-desc .bb-green{color:var(--bb-green);}
+  /* [Round 272] Extended to .hint-small and .desc-preview-box too -- the
+     round-270 "Auto: ..." hint under a mechanic/relic's description
+     textarea already ran its text through bbcodeToHtml(), but these
+     rules were .cp-desc-scoped only, so its color tags were silently
+     rendering as plain text. The new #m-desc-preview box needs the same
+     rules to work at all, so both get fixed here together. */
+  .cp-desc .bb-gold, .hint-small .bb-gold, .desc-preview-box .bb-gold{color:var(--bb-gold);}
+  .cp-desc .bb-red, .hint-small .bb-red, .desc-preview-box .bb-red{color:var(--bb-red);}
+  .cp-desc .bb-blue, .hint-small .bb-blue, .desc-preview-box .bb-blue{color:var(--bb-blue);}
+  .cp-desc .bb-purple, .hint-small .bb-purple, .desc-preview-box .bb-purple{color:var(--bb-purple);}
+  .cp-desc .bb-green, .hint-small .bb-green, .desc-preview-box .bb-green{color:var(--bb-green);}
   /* Round 95 — quick-insert color toolbar above the Description textarea.
      Each swatch button wraps the current text selection in that color's
      real [tag]...[/tag] pair (see wrapDescriptionSelection() in JS). */
@@ -1735,6 +1741,19 @@
   .desc-color-btn.bb-blue{background:var(--bb-blue);}
   .desc-color-btn.bb-purple{background:var(--bb-purple);}
   .desc-color-btn.bb-green{background:var(--bb-green);}
+  /* [Round 272] Tyler: "lets cut down the width of the name and
+     description box and put a preview box for what the description is
+     going to look like in that new space" -- mirrors the real
+     input[type=text]/textarea look (same background/border/radius/
+     padding/font, see the shared rule above) so it reads as part of the
+     same form, but isn't an editable control itself -- just
+     bbcodeToHtml(effective description) dropped in as HTML. See
+     openMechEditor's refreshMechDescHint. */
+  .desc-preview-box{
+    width:100%; min-height:60px; background:var(--ink); border:1px solid var(--border-soft);
+    color:var(--parchment); border-radius:var(--radius); padding:9px 11px;
+    font-family:'Spectral',serif; font-size:14px; overflow:auto; box-sizing:border-box;
+  }
 
   /* ---- Character & Art section (01) ---- everything below is a
      design-time-only preview, same honesty convention as .card-preview
@@ -15905,6 +15924,10 @@ function openMechEditor(mechId){
           <textarea id="m-description" placeholder="Leave blank to auto-fill from its effects." style="flex:1; min-height:60px;">${escapeHtml(m.description||'')}</textarea>
           <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
         </div>
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <label>Preview <span class="dim-hint">(how the description will look in-game)</span></label>
+          <div id="m-desc-preview" class="desc-preview-box" style="flex:1;"></div>
+        </div>
         <div style="flex:0 0 160px;">
           <label>Icon <span class="dim-hint">(optional, ${MECHANIC_ICON_WIDTH}&times;${MECHANIC_ICON_HEIGHT}px)</span></label>
           <div class="art-preview-frame" id="mi-icon-frame" style="aspect-ratio:${MECHANIC_ICON_WIDTH}/${MECHANIC_ICON_HEIGHT}; max-width:160px; cursor:pointer;">
@@ -15971,12 +15994,20 @@ function openMechEditor(mechId){
   // current without ever going stale, exactly like the saved description
   // itself (generateHookDescription(m.effects) is always computed fresh
   // from the CURRENT effects at Done-click time regardless of this hint).
+  // [Round 272] Extended to also drive the new #m-desc-preview box, which
+  // always shows the EFFECTIVE description (typed if present, else the
+  // same auto-generated guess the hint above uses), bbcode-rendered --
+  // unlike the hint, which only ever shows the auto-generated guess and
+  // only while the field is blank.
   const refreshMechDescHint = ()=>{
     const hintEl = document.getElementById('m-desc-auto-hint');
     const descEl = document.getElementById('m-description');
-    if(!hintEl || !descEl) return;
-    if(descEl.value.trim()){ hintEl.innerHTML = ''; return; }
-    hintEl.innerHTML = 'Auto: ' + bbcodeToHtml(generateHookDescription(m.effects));
+    const previewEl = document.getElementById('m-desc-preview');
+    if(!descEl) return;
+    const typed = descEl.value.trim();
+    const auto = generateHookDescription(m.effects);
+    if(hintEl) hintEl.innerHTML = typed ? '' : ('Auto: ' + bbcodeToHtml(auto));
+    if(previewEl) previewEl.innerHTML = bbcodeToHtml(typed || auto);
   };
   refreshMechDescHint();
   document.getElementById('m-description').addEventListener('input', refreshMechDescHint);
