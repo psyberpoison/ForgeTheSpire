@@ -339,8 +339,13 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // compiler.js:CARD_TRIGGER_HOOKS/TRIGGER_HOOKS) — using it on any
       // other trigger would reference an undefined variable and fail to
       // compile for real, so it's rejected here before that ever happens.
-      if (trigger !== 'OnAnyCardPlayed') {
-        errors.push(`${p} has kind "PlayedCardHasKeyword" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      // [2026-09-25] Widened from OnAnyCardPlayed-only — Tyler: "build it
+      // out for all of them" — AfterCardGeneratedForCombat/
+      // AfterCardDiscarded/OnExhaust now also expose a real referenced-card
+      // reference (see backend/compiler.js:TRIGGER_HOOKS' own
+      // cardParamExpr comments and resolveReferencedCardExpr).
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasKeyword" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_KEYWORDS.includes(cond.keyword)) errors.push(`${p}.keyword "${cond.keyword}" is not one of: ${CARD_KEYWORDS.join(', ')}.`);
       return;
@@ -357,8 +362,9 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // "reject clearly rather than silently accept something broken"
       // reasoning statusRef/cardRef references already get elsewhere in
       // this file.
-      if (trigger !== 'OnAnyCardPlayed') {
-        errors.push(`${p} has kind "PlayedCardHasTag" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasTag" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!isNonEmptyString(cond.tag)) {
         errors.push(`${p} has kind "PlayedCardHasTag" but no tag.`);
@@ -377,8 +383,9 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // (CARD_TYPES — the same list card.type itself is validated
       // against below), not a numeric threshold. Replaces the old
       // single-type "IsAttack" condition.
-      if (trigger !== 'OnAnyCardPlayed') {
-        errors.push(`${p} has kind "PlayedCardHasType" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasType" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_TYPES.includes(cond.cardType)) errors.push(`${p}.cardType "${cond.cardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
       return;

@@ -2135,13 +2135,20 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const mcEvidenceTag = mcIncrease
         ? `[BEST EFFORT, reduceOnly:false inferred — NOT independently confirmed by a decompiled sample, see compiler.js's costReductionTodoLines comment]`
         : `[BEST EFFORT]`;
-      if (ctx.thisIsCard) {
-        return `        this.EnergyCost.Add${mcScope}(${mcSignedAmountExpr}, ${mcReduceOnlyArg}); // ${mcEvidenceTag} see compiler.js's own comment on this case`;
+      // [2026-09-25] Generalized off the shared resolveActedCardExpr(ctx)
+      // (see its own comment) instead of repeating the inline
+      // thisIsCard/cardPlayBound check by hand — same refactor
+      // AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment
+      // already went through in round 197. Strictly additive: covers the
+      // same two cases as before (thisIsCard -> `this`, cardPlayBound ->
+      // `cardPlay.Card`) plus two new ones (affectedCardIsThisCard ->
+      // `this.Card`, hookCardExpr -> the referenced card on
+      // AfterCardGeneratedForCombat/AfterCardDiscarded/OnExhaust).
+      const mcCardExpr = resolveActedCardExpr(ctx);
+      if (!mcCardExpr) {
+        return `        ForgeActions.Todo("ModifyCost -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       }
-      if (ctx.cardPlayBound) {
-        return `        cardPlay.Card.EnergyCost.Add${mcScope}(${mcSignedAmountExpr}, ${mcReduceOnlyArg}); // ${mcEvidenceTag} see compiler.js's own comment on this case`;
-      }
-      return `        ForgeActions.Todo("ModifyCost -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      return `        ${mcCardExpr}.EnergyCost.Add${mcScope}(${mcSignedAmountExpr}, ${mcReduceOnlyArg}); // ${mcEvidenceTag} see compiler.js's own comment on this case`;
     }
     // [Round 197] Tyler: "we also need to add effects to remove or
     // afflict cards" -- the "known gap" flagged in round 190
@@ -2296,6 +2303,34 @@ function resolveActedCardExpr(ctx) {
   if (ctx.thisIsCard) return 'this';
   if (ctx.cardPlayBound) return 'cardPlay.Card';
   if (ctx.affectedCardIsThisCard) return 'this.Card';
+  // [2026-09-25] 4th case — ctx.hookCardExpr, set only for TRIGGER_HOOKS
+  // entries carrying a real `cardParamExpr` (AfterCardGeneratedForCombat/
+  // AfterCardDiscarded/OnExhaust today — see their own TRIGGER_HOOKS
+  // comments). Checked last, same priority order as the three above: a
+  // relic/mechanic hook never has thisIsCard/cardPlayBound/
+  // affectedCardIsThisCard set, so there's no ambiguity in practice.
+  if (ctx.hookCardExpr) return ctx.hookCardExpr;
+  return null;
+}
+
+// [2026-09-25] Companion to resolveActedCardExpr, for conditions that must
+// mean "the OTHER card this hook is reporting on," never "this entity's
+// own card." Deliberately does NOT check ctx.thisIsCard/
+// ctx.affectedCardIsThisCard — a card's own OnAnyCardPlayed override
+// (generateCardSource's ctx, "reacting to ANY other card's play") sets
+// BOTH cardPlayBound:true AND thisIsCard:true at once, where `this` (the
+// card the effect is authored on) and `cardPlay.Card` (the card that was
+// actually played) are two DIFFERENT real cards — resolveActedCardExpr's
+// thisIsCard-first order is correct for ACTIONS (ExhaustCard/AfflictCard/
+// etc. on a card's own effects list deliberately mean "this card"), but
+// would be flatly WRONG here: "the played card has keyword X" must never
+// silently become "I have keyword X." Used by PlayedCardHasKeyword/
+// PlayedCardHasTag/PlayedCardHasType — see their own conditionToCSharpRaw
+// cases and THAT_CARD_ONLY_CONDITION_KINDS' matching frontend comment
+// ("these three only ever belong under 'That Card,' not 'This Card'").
+function resolveReferencedCardExpr(ctx) {
+  if (ctx.cardPlayBound) return 'cardPlay.Card';
+  if (ctx.hookCardExpr) return ctx.hookCardExpr;
   return null;
 }
 
@@ -2943,7 +2978,19 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // `cardPlay` is always real by the time this compiles. Replaces the
       // old `IsAttack` condition, which hard-coded a single type instead
       // of letting the author pick any of the 5.
-      return `cardPlay.Card.Type == CardType.${cond.cardType} /* [VERIFIED via decompiling TheBurdenedNewCharacter.dll] */`;
+      {
+        // [2026-09-25] Generalized off resolveReferencedCardExpr(ctx) —
+        // see its own comment (why this must NOT fall back to `this`) —
+        // instead of the hardcoded `cardPlay.Card` literal, now that
+        // AfterCardGeneratedForCombat/AfterCardDiscarded/OnExhaust also
+        // expose a real referenced-card reference (their TRIGGER_HOOKS'
+        // own cardParamExpr). validate.js's trigger check (see its own
+        // comment) is what guarantees this is never null by the time this
+        // runs.
+        const pchtCardExpr = resolveReferencedCardExpr(ctx);
+        if (!pchtCardExpr) return `ForgeActions.TodoCondition("PlayedCardHasType -- no referenced-card reference in scope on this hook")`;
+        return `${pchtCardExpr}.Type == CardType.${cond.cardType} /* [VERIFIED via decompiling TheBurdenedNewCharacter.dll] */`;
+      }
     case 'PlayedCardHasKeyword':
       // [VERIFIED via reflect-baselib rounds 2/3/9] `cardPlay.Card` is a
       // real CardModel (round 3), and CardModel.Keywords is a real,
@@ -2953,7 +3000,13 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // actually in scope — see CARD_TRIGGER_HOOKS/TRIGGER_HOOKS'
       // OnAnyCardPlayed entries and validate.js's trigger check, which
       // rejects this condition anywhere else before it ever gets here.
-      return `cardPlay.Card.Keywords.Contains(${keywordExpr(cond.keyword)})`;
+      {
+        // [2026-09-25] Same resolveReferencedCardExpr(ctx) generalization
+        // as PlayedCardHasType's own case above — see that case's comment.
+        const pchkCardExpr = resolveReferencedCardExpr(ctx);
+        if (!pchkCardExpr) return `ForgeActions.TodoCondition("PlayedCardHasKeyword -- no referenced-card reference in scope on this hook")`;
+        return `${pchkCardExpr}.Keywords.Contains(${keywordExpr(cond.keyword)})`;
+      }
     case 'PlayedCardHasTag':
       // TRUE custom tags — Tyler's original "hit" example. NOT BaseLib's
       // CardTag (a real but closed enum, see Generated/
@@ -2968,7 +3021,13 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // Same trigger restriction as PlayedCardHasKeyword — only valid
       // where `cardPlay` is in scope (OnAnyCardPlayed), enforced by
       // validate.js before this ever runs.
-      return `(cardPlay.Card as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(cond.tag)}) == true`;
+      {
+        // [2026-09-25] Same resolveReferencedCardExpr(ctx) generalization
+        // as PlayedCardHasType's own case above — see that case's comment.
+        const pchtgCardExpr = resolveReferencedCardExpr(ctx);
+        if (!pchtgCardExpr) return `ForgeActions.TodoCondition("PlayedCardHasTag -- no referenced-card reference in scope on this hook")`;
+        return `(${pchtgCardExpr} as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(cond.tag)}) == true`;
+      }
     case 'CardsPlayedThisTurn': {
       // [VERIFIED via decompiling TheBurdenedNewCharacter.dll's Eternal] —
       // its real OnPlay body only grants Regen when this exact count is
@@ -3497,10 +3556,29 @@ const TRIGGER_HOOKS = {
     params: 'PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw',
     playerExpr: null, targetExpr: null, // no Creature reference in the real params at all
   },
+  // [2026-09-25] Tyler: "add a 'when any card is exhausted' trigger" ->
+  // turned out OnExhaust already existed but was fully stubbed (playerExpr
+  // null) since no Creature was thought to be in scope. [VERIFIED via
+  // direct sts2.dll IL disassembly of <Exhaust>d__6.MoveNext, the exact
+  // real method round 34 already identified as calling
+  // Hook.AfterCardExhausted]: this method reads `card.get_Owner()` TWICE
+  // -- once near the top (`card.Owner.Creature.CombatState`, used as a
+  // fallback when `card.CombatState` is null) and again is never nulled
+  // anywhere in the method body between that read and the
+  // `Hook.AfterCardExhausted(choiceContext, card, causedByEthereal)` call
+  // that fires afterward -- CardCmd.Exhaust never calls set_Owner(null) at
+  // any point. So `card.Owner` is confirmed real and populated (the
+  // exhausting player) at the exact moment this hook fires, same
+  // `.Creature` accessor every other Player-bound TRIGGER_HOOKS entry
+  // already uses. cardParamExpr: 'card' — see resolveActedCardExpr's own
+  // comment — additionally lets AfflictCard/RemoveAffliction/EnchantCard/
+  // RemoveEnchantment/ModifyCost act on the specific exhausted card, and
+  // lets PlayedCardHasKeyword/Tag/Type check its keyword/tag/type.
   OnExhaust: {
     method: 'AfterCardExhausted',
     params: 'PlayerChoiceContext choiceContext, CardModel card, bool causedByEthereal',
-    playerExpr: null, targetExpr: null,
+    playerExpr: 'card.Owner.Creature', targetExpr: null,
+    cardParamExpr: 'card',
   },
   // [Fix, round 35 -- Tyler: "we need to take a look at all of the
   // triggers that happen to both the player as well as to the enemies."]
@@ -3685,10 +3763,19 @@ const TRIGGER_HOOKS = {
     playerExpr: 'target', targetExpr: 'breaker',
     guardExpr: 'fgPlayer.IsEnemy',
   },
+  // cardParamExpr: 'card' added [2026-09-25] — Tyler's "build it out for
+  // all of them" (see OnExhaust's own comment on this same round) — this
+  // hook's real `CardModel card` param was already sitting unused for
+  // any card-scoped action/condition; playerExpr was already real here,
+  // this just additionally lets AfflictCard/RemoveAffliction/EnchantCard/
+  // RemoveEnchantment/ModifyCost/PlayedCardHasKeyword/Tag/Type act on the
+  // specific generated card via resolveActedCardExpr/
+  // resolveReferencedCardExpr.
   AfterCardGeneratedForCombat: {
     method: 'AfterCardGeneratedForCombat',
     params: 'CardModel card, Player creator',
     playerExpr: 'creator.Creature', targetExpr: null, // creator — bound as fgPlayer via .Creature, same pattern OnAnyCardPlayed's cardPlay.Player.Creature already uses.
+    cardParamExpr: 'card',
   },
   AfterCombatEnd: {
     method: 'AfterCombatEnd',
@@ -4079,10 +4166,24 @@ const TRIGGER_HOOKS = {
     params: 'PlayerChoiceContext choiceContext, Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
+  // [2026-09-25] Same fix/evidence-gathering as OnExhaust's own comment
+  // this round (Tyler: "build it out for all of them"). [VERIFIED via
+  // direct sts2.dll IL disassembly of <DiscardAndDraw>d__4.MoveNext, the
+  // exact real method round 34 already identified as calling
+  // Hook.AfterCardDiscarded]: `card.get_Owner()` is read at TWO points in
+  // this method body — once to resolve combatState/the discard pile,
+  // BEFORE the `Hook.AfterCardDiscarded(combatState, choiceContext,
+  // card)` call, and again AFTERWARD (to resolve the draw-replacement
+  // pile for the optional "draw N on discard" step) — with no
+  // set_Owner(null) call anywhere in the method in between. So `card.Owner`
+  // is confirmed real and populated (the discarding player) at the exact
+  // moment this hook fires. cardParamExpr: 'card' — see
+  // resolveActedCardExpr's own comment.
   AfterCardDiscarded: {
     method: 'AfterCardDiscarded',
     params: 'PlayerChoiceContext choiceContext, CardModel card',
-    playerExpr: null, targetExpr: null, // NEW for relics/mechanics — this exact hook already backs cards' own OnDiscard (CARD_TRIGGER_HOOKS) but had no relic/mechanic-level 'any card discarded' trigger until now (the parallel to OnAnyCardPlayed). Real params have no CardPlay/Creature.
+    playerExpr: 'card.Owner.Creature', targetExpr: null, // this exact hook already backs cards' own OnDiscard (CARD_TRIGGER_HOOKS) but had no relic/mechanic-level 'any card discarded' trigger until round 20 introduced it (the parallel to OnAnyCardPlayed).
+    cardParamExpr: 'card',
   },
   // --- Round 20 addition: AfterForge, a real Task-returning AbstractModel
   // hook that got missed entirely by Round 19's review (it was mistakenly
@@ -4907,7 +5008,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // entry; the assertion below is a cheap tripwire in case a future
     // TRIGGER_HOOKS edit ever breaks that invariant by hand.
     const hook = group[0].hook;
-    if (group.some(g => g.hook.params !== hook.params || g.hook.playerExpr !== hook.playerExpr || g.hook.targetExpr !== hook.targetExpr || g.hook.collectionExpr !== hook.collectionExpr)) {
+    if (group.some(g => g.hook.params !== hook.params || g.hook.playerExpr !== hook.playerExpr || g.hook.targetExpr !== hook.targetExpr || g.hook.collectionExpr !== hook.collectionExpr || g.hook.cardParamExpr !== hook.cardParamExpr)) {
       throw new Error(`TRIGGER_HOOKS entries sharing real method "${hook.method}" have mismatched params/playerExpr/targetExpr/collectionExpr — every id mapped to the same real method must describe the exact same real signature/binding, only guardExpr may differ. Fix the TRIGGER_HOOKS table.`);
     }
     // Local vars are `fgPlayer`/`fgTarget` (Forge-prefixed), NOT `player`/
@@ -4932,7 +5033,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // whole method body is just the Todo() fallback and neither is
     // invoked. So every reachable call passes through this ctx with
     // fgPlayer already unconditionally bound.
-    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
+    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', hookCardExpr: hook.cardParamExpr || null, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
     // Round 19 added a THIRD real shape beyond "both bound"/"neither bound"
     // — 22 of the 39 new hooks expose exactly ONE real Creature (playerExpr
     // set, targetExpr null: e.g. AfterGoldGained's bare `Player player`,

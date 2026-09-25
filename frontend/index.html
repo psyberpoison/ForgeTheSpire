@@ -3636,6 +3636,7 @@ const HOOK_TRIGGER_BINDING = {
   OnMyTurnStart: 'player', OnEnemyTurnStart: 'player',
   OnMyTurnEnd: 'player', OnEnemyTurnEnd: 'player',
   AfterActEntered: 'unbound', AfterAttack: 'unbound', AfterCardGeneratedForCombat: 'player',
+  OnExhaust: 'player', // [2026-09-25] previously had no entry at all here (treated as unbound-shaped by omission) -- see backend/compiler.js:TRIGGER_HOOKS.OnExhaust's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
   AfterCombatEnd: 'unbound', AfterCombatVictory: 'unbound',
   AfterDiedToDoom: 'unbound', AfterEnergyReset: 'player',
   AfterEnergySpent: 'unbound', AfterGoldGained: 'player', BeforeHandDraw: 'player',
@@ -3645,7 +3646,7 @@ const HOOK_TRIGGER_BINDING = {
   AfterPotionProcured: 'unbound',
   AfterRestSiteHeal: 'player', AfterRestSiteSmith: 'player', AfterShuffle: 'player',
   AfterStarsSpent: 'player', AfterStarsGained: 'player', AfterSummon: 'player',
-  BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'unbound',
+  BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
   AfterForge: 'player', // playerExpr: 'forger.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.AfterForge
   BeforeFlush: 'player', AfterFlush: 'player', // [Round 199] playerExpr: 'player.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.BeforeFlush/AfterFlush
 };
@@ -9283,12 +9284,12 @@ const CONDITION_KINDS = [
   // as the subject (see THAT_CARD_ONLY_CONDITION_KINDS above), repeating
   // "Played card" in the label itself is redundant with what's already
   // showing right next to it.
-  { id:'PlayedCardHasKeyword', label:'Has keyword', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for a game keyword. Only valid on the "OnAnyCardPlayed" trigger.' },
-  { id:'PlayedCardHasTag', label:'Has (gameplay) tag', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for a custom Gameplay Tag (one you typed in a card editor) — distinct from the fixed, built-in card tag below, which only offers a small closed set of values. Only valid on the "OnAnyCardPlayed" trigger.' },
-  { id:'PlayedCardHasType', label:'Is type', real:true, requiresTrigger:'OnAnyCardPlayed',
-    hint:'Checks the card that triggered this hook for its type (Attack/Skill/Power/Status/Curse). Only valid on the "OnAnyCardPlayed" trigger.' },
+  { id:'PlayedCardHasKeyword', label:'Has keyword', real:true, requiresTrigger:'cardReferenceTrigger',
+    hint:'Checks the card that triggered this hook for a game keyword. Valid on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust".' },
+  { id:'PlayedCardHasTag', label:'Has (gameplay) tag', real:true, requiresTrigger:'cardReferenceTrigger',
+    hint:'Checks the card that triggered this hook for a custom Gameplay Tag (one you typed in a card editor) — distinct from the fixed, built-in card tag below, which only offers a small closed set of values. Valid on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust".' },
+  { id:'PlayedCardHasType', label:'Is type', real:true, requiresTrigger:'cardReferenceTrigger',
+    hint:'Checks the card that triggered this hook for its type (Attack/Skill/Power/Status/Curse). Valid on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust".' },
   { id:'CardsPlayedThisTurn', label:'Cards played this turn', real:true,
     hint:'Counts how many cards you\'ve finished playing so far this turn. Use a comparator and value to check thresholds (e.g. "≤ 1" covers your first two plays, not just the first). Valid on every trigger, and inside the Glow section below.' },
   { id:'DamageBrokeBlock', label:"This card's damage broke the target's block", real:true, requiresTrigger:'OnPlay',
@@ -9435,8 +9436,24 @@ function conditionKindAllowedForTrigger(kindDef, trigger, modifierHook){
   if(kindDef.requiresTrigger === 'glowOrPlayabilityOrCardTrigger') {
     return (trigger === undefined && !modifierHook) || (trigger !== undefined && CARD_TRIGGERS.includes(trigger));
   }
+  // 'cardReferenceTrigger' [2026-09-25] — PlayedCardHasKeyword/Tag/Type,
+  // widened off OnAnyCardPlayed-only per Tyler's "build it out for all of
+  // them" (see CARD_REFERENCE_TRIGGERS' own comment below). Mirrors
+  // backend/validate.js:validateConditions' own widened trigger-restriction
+  // checks on these same 3 kinds exactly — kept as its own hand-mirrored
+  // literal since this file has no require(), same reasoning
+  // NO_CHOICE_CONTEXT_HOOK_TRIGGERS/HOOK_TRIGGER_BINDING already use.
+  if(kindDef.requiresTrigger === 'cardReferenceTrigger') return CARD_REFERENCE_TRIGGERS.includes(trigger);
   return kindDef.requiresTrigger === trigger;
 }
+// [2026-09-25] Mirrors backend/validate.js's own CARD_REF_LIST literal
+// inside validateConditions' PlayedCardHasKeyword/Tag/Type checks — the
+// 4 triggers whose real compiled hook exposes an actual referenced-card
+// reference (cardPlay.Card for OnAnyCardPlayed, or a real `card` param for
+// the other 3 — see backend/compiler.js:TRIGGER_HOOKS' own cardParamExpr
+// comments). Used by conditionKindAllowedForTrigger's 'cardReferenceTrigger'
+// sentinel and by CONDITION_SUBJECTS.ThatCard's onlyForTriggers below.
+const CARD_REFERENCE_TRIGGERS = ['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'];
 // Comparators used by every condition kind except PlayedCardHasKeyword
 // (which uses `keyword` instead — a has/has-not check, not a threshold).
 const COMPARATORS = [
@@ -9507,7 +9524,15 @@ const CONDITION_SUBJECTS = [
   // backend/compiler.js always uses `this`, never cardPlay.Card, no
   // matter what cond.subject says) — so hiding it elsewhere isn't just
   // tidying the dropdown, it matches what's actually real.
-  { id:'ThatCard', label:'That Card', onlyForKind:'CardPositionInHand', onlyForTrigger:'OnAnyCardPlayed', title:"The played card's position in its owner's hand (OnAnyCardPlayed — checking a DIFFERENT card's play, not this one's own)." },
+  // [2026-09-25] onlyForTrigger (single) -> onlyForTriggers (array) --
+  // Tyler's "build it out for all of them": AfterCardGeneratedForCombat/
+  // AfterCardDiscarded/OnExhaust now also expose a real referenced card
+  // (PlayedCardHasKeyword/Tag/Type — see CARD_REFERENCE_TRIGGERS' own
+  // comment), even though CardPositionInHand itself stays OnAnyCardPlayed-
+  // only (still the only trigger with the real Harmony hand-position
+  // tracker — see CONDITION_KINDS.CardPositionInHand's own hint). Title
+  // kept generic rather than re-explaining per-trigger.
+  { id:'ThatCard', label:'That Card', onlyForKind:'CardPositionInHand', onlyForTriggers:CARD_REFERENCE_TRIGGERS, title:"The referenced card from this hook (OnAnyCardPlayed's played card, or the generated/discarded/exhausted card on the other 3) — a DIFFERENT card from this one, not its own." },
 ];
 // Mirrors backend/compiler.js:PET_SUPPORTED_TRIGGERS — kept as its own
 // literal for the same "no require() in the browser" reason
@@ -9613,9 +9638,28 @@ function availableSubjects(eff){
   // show up as a kind option with no subject prerequisite at all.
   const cardPositionKindDef = CONDITION_KINDS.find(k => k.id === 'CardPositionInHand');
   const cardPositionReachable = !!cardPositionKindDef && conditionKindAllowedForTrigger(cardPositionKindDef, eff.trigger, eff.modifierHook);
-  const onlyForKindOk = s => !s.onlyForKind || cardPositionReachable;
+  // [2026-09-25] "That Card" also needs to appear at all once any
+  // THAT_CARD_ONLY_CONDITION_KINDS kind (PlayedCardHasKeyword/Tag/Type) is
+  // reachable, not only when CardPositionInHand is -- the original
+  // cardPositionReachable-only gate predates those 3 gaining any trigger
+  // beyond OnAnyCardPlayed (where CardPositionInHand was ALSO always
+  // reachable, so the two never diverged before now). "This Card" stays
+  // gated on cardPositionReachable alone -- it has no THAT_CARD_ONLY use,
+  // so widening it too would just add a dead-end empty kind dropdown on
+  // the 3 new triggers.
+  const thatCardOnlyKindReachable = THAT_CARD_ONLY_CONDITION_KINDS.some(kid => {
+    const kd = CONDITION_KINDS.find(k => k.id === kid);
+    return !!kd && conditionKindAllowedForTrigger(kd, eff.trigger, eff.modifierHook);
+  });
+  const onlyForKindOk = s => {
+    if(!s.onlyForKind) return true;
+    if(s.id === 'ThatCard') return cardPositionReachable || thatCardOnlyKindReachable;
+    return cardPositionReachable;
+  };
   // [Round 69] See CONDITION_SUBJECTS' own comment on ThatCard.
-  const onlyForTriggerOk = s => !s.onlyForTrigger || eff.trigger === s.onlyForTrigger;
+  // [2026-09-25] onlyForTrigger (single) generalized to onlyForTriggers
+  // (array) -- see ThatCard's own comment.
+  const onlyForTriggerOk = s => !s.onlyForTriggers || s.onlyForTriggers.includes(eff.trigger);
   // Round 20 — Group B modifier conditions (eff.modifierHook set, see
   // renderModifiersList below) are neither a normal trigger context nor a
   // glow/playability one: there's no cardPlay AND no Owner-based fallback,
