@@ -1196,25 +1196,11 @@
      health) so empty vs. filled slots are visually obvious at a glance,
      mirroring the real per-anchor caps enforced in backend/compiler.js. */
   .rb-preview{display:flex; flex-direction:column; gap:12px; margin-top:10px;}
-  /* [Round 223] Tyler: "modify the bar gui to show a real-time mock up of
-     what the creator is adding" — a single slider that scrubs every bar/
-     diamond shape below to the same fill level at once. Purely a preview
-     convenience (not saved with the character): a bar's real fill in-game
-     is its current status stack count out of Max, which doesn't exist
-     while you're still editing, so this just lets you eyeball what a
-     given fill level looks like. Defaults to 100% (full) on first render. */
-  .rb-preview-demo-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
-  /* [Round 225] Tyler: "the bar physically moves depending on if the
-     percentage...is 1, 2, or 3 digits...lets make the bar independent of
-     the text." The label used to be flex:0 0 auto, so its box (and
-     everything after it in the row) shifted with the digit count. Fixed
-     width + nowrap pins the label's box size regardless of content, and
-     the percent number itself also gets a fixed, right-aligned width as a
-     second line of defense — between the two, the slider's start position
-     can no longer move no matter what number is showing. */
-  .rb-preview-demo-label{font-size:11px; color:var(--parchment-dim); flex:0 0 128px; width:128px; white-space:nowrap; text-transform:none; letter-spacing:0; margin:0;}
-  .rb-preview-demo-pct{display:inline-block; min-width:26px; text-align:right;}
-  .rb-preview-demo-slider{flex:1 1 160px; max-width:260px;}
+  /* [Round 241] Tyler: "remove the global slider then. i dont need to see
+     them all moving at once" — the page-wide preview-fill scrubber (round
+     223, tweaked round 225) is gone; each bar/diamond editor now has its
+     own dedicated slider instead (rounds 233/240). .rb-preview-demo-row/
+     -label/-pct/-slider were only ever used by that removed markup. */
   .rb-preview-zones{display:flex; gap:20px; flex-wrap:wrap;}
   .rb-preview-zone{flex:1 1 220px; min-width:200px;}
   .rb-preview-zone-title{font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim); margin-bottom:6px;}
@@ -1239,6 +1225,16 @@
   }
   .rb-preview-bar-track-sm{flex:0 0 30px; height:11px;}
   .rb-preview-bar-fill{position:absolute; top:0; left:0; height:100%;}
+  /* [Round 233] The real compiled widget (ForgeResourceBarSupport.cs.
+     template's UpdateDiamondGroups) anchors the LEFT bar's fill to the
+     edge NEAREST the diamond and grows it OUTWARD (away from center) as
+     stacks increase — see LeftFill's Position/Size math there
+     (`Position = DiamondTrackWidth - w`, so the near-diamond edge stays
+     fixed while the far edge recedes as w shrinks). The RIGHT bar is a
+     normal left-anchored fill (already matched the real widget). Applied
+     only to a diamond group's left bar — standalone bars and the right
+     bar keep the plain left-anchored .rb-preview-bar-fill above. */
+  .rb-preview-bar-fill-rtl{left:auto; right:0;}
   /* [Round 224] One per stack boundary (1/max, 2/max, ... (max-1)/max) —
      statuses are integer stacks, so a bar's real fill always lands
      exactly on one of these lines, never in between. */
@@ -1298,7 +1294,85 @@
      and the search input (typing filters the list live) — no separate
      "browse" vs "search" mode, matching the ask that it stay one box. */
   .c-status-picker{width:130px; flex:0 0 auto;}
-  .c-status-picker .picker-filter{width:100%; font-size:12px; padding:3px 6px;}
+  .c-status-picker .picker-filter{width:100%; font-size:12px; padding:3px 6px; height:23px;}
+  /* [Round 261-266] Several rounds bisecting a height value (23 -> 28
+     -> 32 -> "matching" font/padding) before finding the actual root
+     cause: round 266 gave the input the SAME font-size:14px/padding:9px
+     11px as the global input/select rule (which a real <select> renders
+     at 34px), expecting a pixel match -- but Tyler saw it "jump up
+     again". Verified via Playwright (real Spectral webfont loaded): a
+     plain <input> and a plain <select> with byte-for-byte identical CSS
+     still render 2px apart in Chrome (36px vs 34px) -- some default
+     line-height/intrinsic-sizing difference between the two control
+     types that padding/font alone can't cancel out. [Round 267] Fixed by
+     setting an EXPLICIT height instead of deriving it from padding --
+     confirmed via the same harness this lands the input at exactly 34px,
+     matching the select's real rendered height to the pixel (top/bottom/
+     height all identical across all three columns). Only this ONE
+     instance (m-bar-thisstatus-picker) changes -- every other status
+     picker in the app keeps the stock 23px via .c-status-picker,
+     untouched. */
+  .m-bar-thisstatus-picker{width:100%;}
+  .m-bar-thisstatus-picker .picker-filter{height:34px; font-size:14px; padding:8px 11px;}
+  /* [Round 247] Tyler first flagged the status picker looking shrunken
+     next to Max/Color (round 246 grew the picker up to Max/Color's
+     height), then clarified: "i wanted the slim look for all of them" —
+     the picker's compact sizing was the one he liked, and Max/Color (plus
+     the Color swatch) should shrink down to match IT instead.
+     [Round 248] The round-247 class selectors (.m-bar-slim) never
+     actually won: a bare class has specificity (0,1,0), but the global
+     `input[type=number]{padding:9px 11px; font-size:14px}` rule is an
+     attribute selector, which carries the SAME weight as a class, so
+     type+attribute (0,1,1) beat a lone class every time regardless of
+     source order — nothing visibly shrank. ID selectors (1,0,0,0)
+     trivially outrank that combination, so this now targets the Max/
+     Color inputs by their existing unique ids directly. Applied to all
+     three boxes (This Status/Center Diamond/Paired Status) so the whole
+     row matches the picker's slim height uniformly. */
+  #m-bar-max, #m-bar-center-max, #m-bar-partner-max{font-size:12px; padding:3px 6px; height:23px;}
+  /* [Round 250] Tyler: "the color box is too tall" -- round 248's plain
+     height:32px on the color input alone wasn't enough: input[type=color]
+     renders a browser-native swatch button, and Chrome sizes the actual
+     visible swatch from its own internal ::-webkit-color-swatch-wrapper/
+     ::-webkit-color-swatch box model, which doesn't shrink to match an
+     outer height override the way a normal input's content does.
+     [Round 251] The round-250 pseudo-element reset had NO effect --
+     Tyler's next screenshot measured the exact same ~39-40px height (now
+     also shifted upward instead of bottom-aligned, since the swatch
+     content itself didn't move, only its wrapper's padding did). The
+     browser's native color-picker control apparently enforces its own
+     minimum rendered size below the pseudo-element level entirely,
+     un-fightable through height/padding alone. Switched to a clip-
+     wrapper instead: .m-bar-color-swatch is a plain div at the exact
+     visible size we want (44x32, matching Max), with overflow:hidden;
+     the actual <input type=color> inside it is deliberately oversized
+     (140%) and centered with negative margins, so however large the
+     browser insists on rendering it natively, only the wrapper's fixed
+     box is ever visible -- the wrapper decides the size now, not the
+     browser's internal minimum. */
+  /* [Round 252] Tyler: "no change" -- round 251's clip-wrapper WAS
+     rendering correctly (confirmed not a stale/cached build: checked the
+     packaged Electron build separately, and it's dated days older and
+     missing every fix back through round 242, so it can't be what
+     Tyler's screenshots were showing -- round 249's fix was already
+     visibly working for him by then). The wrapper just had the wrong
+     target size. Same root cause the round-989 .condition-row comment
+     already documented for an unrelated box: a plain <div>'s height is
+     governed entirely by its own CSS, but a text-editing <input>'s
+     intrinsic auto-height is driven by the font's ascent/descent
+     metrics, not just line-height+padding+border -- the two don't
+     naturally land on the same number even with identical font-size/
+     padding. Measured live in an isolated headless-Chromium harness
+     built from this file's exact CSS (same font-size:12px, padding:3px
+     6px, box-sizing:border-box, Spectral webfont) rather than guessing
+     from a screenshot: #m-bar-max and .c-status-picker .picker-filter
+     (both text-editing inputs) render at 23px; the old height:32px on
+     .m-bar-color-swatch (a plain clipped div, no font-metric quirk) was
+     genuinely 9px taller, not a caching artifact. Set all three to the
+     same explicit height:23px -- the swatch, the Max inputs, and the
+     status picker filter now measure identically. */
+  .m-bar-color-swatch{width:44px; height:23px; overflow:hidden; border-radius:var(--radius); border:1px solid var(--border-soft); background:var(--ink); position:relative;}
+  .m-bar-color-swatch input[type=color]{position:absolute; top:50%; left:50%; width:140%; height:140%; transform:translate(-50%,-50%); padding:0; margin:0; border:none; border-radius:0; background:none; cursor:pointer;}
   .c-status-picker .picker-list{
     position:absolute; z-index:30; top:100%; left:0; margin-top:3px;
     width:230px; max-height:260px; padding:4px;
@@ -3157,14 +3231,33 @@
            a vanilla status has no mechanic editor of its own to add a bar
            from. [Round 223] Moved below the mechanics grid (was above it)
            per Tyler's ask. -->
+      <!-- [Round 257] Tyler: "the track a built in status feature seems
+           a little out of place. The boxes don't align like we were
+           working on. You can't select multiple types of bars. You cant
+           even pick where the bar goes" — the inline Max/Color inputs
+           here (and on each already-added row below) never got the
+           box-based Layout/Anchor editor mechanics have had since round
+           227, and always hardcoded anchor:'HealthBar' on creation with
+           no way to change it afterward. Dropped Max/Color from this row
+           entirely: "+ Add" still creates the bar immediately (same
+           defaults as before — Max 5, #3399ff, standalone, below the
+           health bar), then opens the exact same box-based editor
+           (openVanillaBarEditor -> renderVanillaBarFieldsInto ->
+           renderBarFieldsCore, the same generalized function
+           openMechEditor's own bar fields now share) so Layout/Anchor/
+           Max/Color/pairing are all set from there instead. -->
       <div style="margin-top:18px; padding:12px 14px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--stone-2)">
-        <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. Custom (mechanic-linked) bars are toggled on/off and moved between these two from that mechanic's own editor below; built-in-status bars are added here and always stay below the health bar.">Resource bars</label>
+        <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. A bar's Layout (Single/Dual) and Anchor are set from its own editor — click a mechanic's 'Represent as a bar' box below for a custom status, or Edit on a row below for a built-in one.">Resource bars</label>
         <div class="rb-preview-mount"></div>
+        <!-- [Round 258/259] Tyler: "lets not have the user pick the
+             status until the add button is clicked" — the status picker
+             used to live right here (a plain <select>); it's now inside
+             the editor's own "This Status" box instead, alongside the
+             rest of the fields shown immediately via a transient
+             vbDraftBar (see thisStatusPickerHtml/renderBarFieldsCore), so
+             this row is just the button. -->
         <div class="row" style="margin-top:12px; align-items:flex-end; gap:8px; flex-wrap:wrap;">
-          <div style="flex:0 0 220px"><label style="font-size:11px">Track a built-in status</label><select id="vanilla-bar-status"></select></div>
-          <div style="flex:0 0 80px"><label style="font-size:11px">Max</label><input type="number" id="vanilla-bar-max" min="1" value="5"></div>
-          <div style="flex:0 0 50px"><label style="font-size:11px">Color</label><input type="color" id="vanilla-bar-color" value="#3399ff"></div>
-          <button type="button" id="add-vanilla-bar-btn" class="secondary">+ Add</button>
+          <button type="button" id="add-vanilla-bar-btn" class="secondary">+ Add a built-in-status bar</button>
         </div>
         <div id="vanilla-bars-list" style="margin-top:8px"></div>
       </div>
@@ -4653,6 +4746,39 @@ function blankState(){
 // stripping is caught by the existing "needs at least one" validation the
 // same as if the user had never picked one, not silently dropped.
 const PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND = ['TemporaryDexterity', 'TemporaryFocus', 'TemporaryStrength'];
+// [Round 249] Retroactive cleanup for orphaned diamond-group members --
+// see the "m-bar-enabled" uncheck handler's own round-249 comment for the
+// bug this repairs: unchecking "Represent as a bar" only ever removed the
+// mechanic's OWN bar entry, leaving any paired/center partners behind
+// still tagged layout:'diamond' with the old (now ownerless) diamondGroup
+// id. countResourceBarWidgetsForAnchor counts any leftover diamondGroup
+// id as 1 occupied widget regardless of whether a 'left' member still
+// exists, so a character saved mid-bug can get permanently stuck showing
+// its anchor as "full" with no bar visibly using it. Called from load()
+// on every startup (cheap, a no-op once nothing is orphaned) so a
+// character saved before this round's uncheck-handler fix existed still
+// self-heals on next load, the same "heal it and write the shape back"
+// convention migrateLegacyStatusActions and checkImportCompatibility
+// already use just below. Deletes rather than reverts-to-standalone
+// (unlike releaseGroupMember's usual fallback) because a group with no
+// left can never be exported anyway (compiler.js requires left+right),
+// so there's no legitimate standalone identity left to preserve.
+function repairOrphanedDiamondGroups(pkg){
+  const bars = pkg && pkg.character && Array.isArray(pkg.character.resourceBars) ? pkg.character.resourceBars : null;
+  if(!bars || !bars.length) return pkg;
+  const groupsWithLeft = new Set();
+  for(const b of bars){
+    if(b && b.layout === 'diamond' && b.diamondGroup && b.diamondRole === 'left') groupsWithLeft.add(b.diamondGroup);
+  }
+  const orphanedGroupIds = new Set();
+  for(const b of bars){
+    if(b && b.layout === 'diamond' && b.diamondGroup && !groupsWithLeft.has(b.diamondGroup)) orphanedGroupIds.add(b.diamondGroup);
+  }
+  if(orphanedGroupIds.size){
+    pkg.character.resourceBars = bars.filter(b => !(b && b.layout === 'diamond' && b.diamondGroup && orphanedGroupIds.has(b.diamondGroup)));
+  }
+  return pkg;
+}
 function migrateLegacyStatusActions(pkg){
   const migrateActions = (actions)=>{
     (actions||[]).forEach(act=>{
@@ -5299,7 +5425,7 @@ function load(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return blankState();
-    const migrated = migrateLegacyStatusActions(JSON.parse(raw));
+    const migrated = repairOrphanedDiamondGroups(migrateLegacyStatusActions(JSON.parse(raw)));
     const { pkg, report } = checkImportCompatibility(migrated);
     if(report.length){
       pendingImportCompatibilityReport = report;
@@ -5416,7 +5542,7 @@ function countResourceBarWidgetsForAnchor(bars, anchorName){
 function resourceBarAnchorOptionsHtml(selectedAnchor){
   return `
     <option value="EnergyCounter" ${selectedAnchor==='EnergyCounter'?'selected':''}>Above the energy counter</option>
-    <option value="HealthBar" ${selectedAnchor==='HealthBar'?'selected':''}>Below the health bar (1 total)</option>
+    <option value="HealthBar" ${selectedAnchor==='HealthBar'?'selected':''}>Below the health bar</option>
   `;
 }
 // Shared by both the Character-panel list (below) and the per-status
@@ -5434,6 +5560,17 @@ function tryChangeBarAnchor(bar, newAnchor, allBars){
   }
   bar.anchor = newAnchor;
   return true;
+}
+// [Round 257] Which anchor a brand-new standalone vanilla bar should be
+// created at: HealthBar (the long-standing default) if it still has its
+// one slot free, else EnergyCounter if IT has room (a new bar is always
+// standalone, so the plain MAX_RESOURCE_BARS_UI cap applies), else null
+// when neither has room — the only case Add should actually refuse.
+function vanillaBarCreateAnchor(){
+  const bars = state.character.resourceBars || [];
+  if(countResourceBarWidgetsForAnchor(bars, 'HealthBar') < 1) return 'HealthBar';
+  if(countResourceBarWidgetsForAnchor(bars, 'EnergyCounter') < MAX_RESOURCE_BARS_UI) return 'EnergyCounter';
+  return null;
 }
 // [Round 103] Tyler: "now that we have moved the bar creator/mover to the
 // status section, we no longer need this in the character section. Lets
@@ -5485,13 +5622,52 @@ function resourceBarWidgetsForAnchor(anchorName){
   const diamonds = Array.from(groupsById.entries()).map(([gid, entries]) => ({ type:'diamond', gid, entries }));
   return [...standalone, ...diamonds];
 }
-// [Round 223] Live-preview-only demo fill level (0-100), NOT saved with the
-// character — a bar's real fill in-game is its current status stack count
-// out of Max, which doesn't exist while you're still editing. Scrubbing the
-// slider updates every bar/diamond shape on the page directly (see
-// applyResourceBarPreviewFill below) rather than re-rendering, so dragging
-// stays smooth instead of losing the slider mid-drag on every tick.
-let rbPreviewDemoFill = 100;
+// [Round 233] Tyler: "lets have a slider for each of them" (the Paired
+// status and Center status searches in a Dual bar's own editor) — the
+// paired/center statuses usually carry very different real stack counts
+// than this mechanic's own bar, so a single shared demo level couldn't
+// preview what an asymmetric fill actually looks like. Two demo-only
+// fill levels (0-100 each), independent of each other. NOT saved with
+// the character — a bar's real fill in-game is its current status stack
+// count out of Max, which doesn't exist while you're still editing.
+//
+// [Round 233 fix] Tyler: "remove this redundant preview, make both bars
+// adjust the bigger preview" — an earlier pass drove these from a small
+// dedicated mini-widget in the editor itself; that duplicated the always-
+// visible per-anchor grid preview right below it, so instead these two
+// sliders now drive THAT SAME grid's own diamond chip for whichever group
+// is currently open in the mechanic editor. rbActiveDualGroupId names
+// that group (a diamondGroup id, or null when no dual-bar editor is open)
+// — resourceBarWidgetChipHtml's diamond branch checks it to decide
+// whether a given chip's right/center roles use these two independent
+// levels. Still persists across closing the editor (same convention as
+// rbBarOwnPreviewFill below never resetting) — reassigned every time a
+// dual-bar editor opens, so an unrelated later chip is never affected.
+let rbDualPairPreviewFill = 100;
+let rbDualCenterPreviewFill = 100;
+let rbActiveDualGroupId = null;
+// [Round 240] Tyler, having noticed the (now-removed, see round 241) page-
+// wide Preview fill slider only seemed to affect the one status he was
+// editing: "since this preview slider is only affecting this status, move
+// it into the 'this status' box." A THIRD independent demo level, truly
+// scoped to whichever bar is currently open in a mech editor
+// (rbActiveBarRef, a direct reference to that live resourceBars entry —
+// works the same whether it's a standalone bar's own chip or this bar's
+// own left/right slot within an active diamond group).
+let rbBarOwnPreviewFill = 100;
+let rbActiveBarRef = null;
+// [Round 242] Tyler: "if you add and remove the center diamond, it breaks
+// the preview." Root cause: applyDiamondPairPick creates a brand-new
+// resourceBars entry (via findResourceBarForStatus returning null) purely
+// to fill a paired/center role, and revertBarToStandalone (used when that
+// role is later released) always leaves the entry behind as a standalone
+// bar rather than removing it -- correct when the entry had real prior
+// standalone identity, wrong when it never existed before being picked.
+// That orphan then shows up as an unexpected extra chip in the preview.
+// rbGroupOnlyEntries tags entries created fresh for a group role so
+// releaseGroupMember (below) can delete them outright instead. In-memory
+// only -- never part of state, never saved/exported, resets on reload.
+const rbGroupOnlyEntries = new WeakSet();
 // [Round 224] Tyler: "the bar doesn't gate each section of it. If the max
 // is 1 stack, then the bar should either be empty or full. If it is 2
 // stacks, then the bar should be at 0, 50%, or 100%... the bar should have
@@ -5519,20 +5695,46 @@ function barTickMarksHtml(max){
   }
   return html;
 }
-function applyResourceBarPreviewFill(pct){
-  rbPreviewDemoFill = Math.max(0, Math.min(100, pct));
-  document.querySelectorAll('.rb-preview-mount').forEach(mount => {
-    const slider = mount.querySelector('.rb-preview-demo-slider');
-    if(slider && Number(slider.value) !== rbPreviewDemoFill) slider.value = rbPreviewDemoFill;
-    const pctEl = mount.querySelector('.rb-preview-demo-pct');
-    if(pctEl) pctEl.textContent = rbPreviewDemoFill;
-    mount.querySelectorAll('.rb-preview-bar-fill').forEach(el => {
-      el.style.width = quantizedBarFillPct(rbPreviewDemoFill, parseInt(el.dataset.rbMax, 10) || 1) + '%';
-    });
-    mount.querySelectorAll('.rb-preview-diamond-shape').forEach(el => {
-      const q = quantizedBarFillPct(rbPreviewDemoFill, parseInt(el.dataset.rbMax, 10) || 1);
-      el.style.opacity = (0.25 + 0.75 * (q/100)).toFixed(2);
-    });
+// [Round 233 fix] Live-drag handler for the "Paired status"/"Center
+// status" preview-fill sliders in a dual-bar editor — mutates the
+// matching elements' style directly, doesn't re-render, so dragging
+// stays smooth instead of losing the slider mid-drag on every tick.
+// Scoped to just the currently-open group's own right/center chip
+// elements (data-rb-group/data-rb-role, set by resourceBarWidgetChipHtml's
+// diamond branch) rather than every bar/diamond on the page.
+function applyDualRolePreviewFill(role, pct){
+  pct = Math.max(0, Math.min(100, pct));
+  // [Round 235] role is whichever actual side ('left'/'right') the
+  // paired status currently occupies, or 'center' — no longer always
+  // 'right' now that this bar's own side is user-choosable.
+  if(role === 'center') rbDualCenterPreviewFill = pct;
+  else rbDualPairPreviewFill = pct;
+  document.querySelectorAll(`.rb-dual-fill-pct[data-rb-dual-role="${role}"]`).forEach(el => { el.textContent = pct; });
+  document.querySelectorAll(`.rb-dual-fill-slider[data-rb-dual-role="${role}"]`).forEach(el => { if(Number(el.value) !== pct) el.value = pct; });
+  if(!rbActiveDualGroupId) return;
+  document.querySelectorAll(`.rb-preview-bar-fill[data-rb-role="${role}"][data-rb-group="${rbActiveDualGroupId}"]`).forEach(el => {
+    el.style.width = quantizedBarFillPct(pct, parseInt(el.dataset.rbMax, 10) || 1) + '%';
+  });
+  document.querySelectorAll(`.rb-preview-diamond-shape[data-rb-role="${role}"][data-rb-group="${rbActiveDualGroupId}"]`).forEach(el => {
+    const q = quantizedBarFillPct(pct, parseInt(el.dataset.rbMax, 10) || 1);
+    el.style.opacity = (0.25 + 0.75 * (q/100)).toFixed(2);
+  });
+}
+// [Round 240] Live-drag handler for the "This Status" box's own Preview
+// fill slider — same "mutate the matching element's style directly,
+// don't re-render" reasoning as the other two preview-fill handlers
+// above, scoped to whichever single element (at most one on the whole
+// page) is tagged data-rb-own="1" by resourceBarWidgetChipHtml — the
+// exact chip/side belonging to rbActiveBarRef, the bar currently open in
+// a mech editor. No role scoping needed (unlike the paired/center
+// sliders) since there's only ever one such slider rendered at a time.
+function applyBarOwnPreviewFill(pct){
+  pct = Math.max(0, Math.min(100, pct));
+  rbBarOwnPreviewFill = pct;
+  document.querySelectorAll('.rb-own-fill-pct').forEach(el => { el.textContent = pct; });
+  document.querySelectorAll('.rb-own-fill-slider').forEach(el => { if(Number(el.value) !== pct) el.value = pct; });
+  document.querySelectorAll('.rb-preview-bar-fill[data-rb-own="1"]').forEach(el => {
+    el.style.width = quantizedBarFillPct(pct, parseInt(el.dataset.rbMax, 10) || 1) + '%';
   });
 }
 // [Round 120] `removeTitle` names what the X actually removes — plain
@@ -5554,17 +5756,29 @@ function applyResourceBarPreviewFill(pct){
 // renders at all when a "center" entry exists (left+right with no center
 // is genuinely just two bars with nothing between them in the real game).
 function resourceBarWidgetChipHtml(widget, anchorName, slot){
-  const fillPct = rbPreviewDemoFill;
+  // [Round 241] Tyler: "remove the global slider then. i dont need to see
+  // them all moving at once" — there is no more page-wide scrubber. This
+  // is now a fixed baseline for any chip/side that isn't covered by one
+  // of the dedicated sliders above (rbBarOwnPreviewFill/rbDualPairPreviewFill/
+  // rbDualCenterPreviewFill) — i.e. every bar/group on the page other than
+  // the one currently open in a mech editor just renders full.
+  const fillPct = 100;
   if(widget.type === 'standalone'){
     const b = widget.bar;
     const max = Number.isFinite(b.max) && b.max > 0 ? Math.round(b.max) : 5;
     const orphaned = b.statusKind === 'custom' && !state.mechanics.some(m => m.id === b.status);
     const label = resourceBarWidgetLabel(b) || '(unknown status)';
     const removeTitle = orphaned ? `Remove this bar (its status "${label}" no longer exists)` : `Remove this bar`;
-    const barPct = quantizedBarFillPct(fillPct, max);
+    // [Round 240] A standalone bar can also be rbActiveBarRef — the exact
+    // status currently open in a mech editor — in which case it follows
+    // the "This Status" box's own dedicated slider (rbBarOwnPreviewFill)
+    // instead of the fixed 100% baseline. data-rb-own lets
+    // applyBarOwnPreviewFill target it directly.
+    const isOwnBar = b === rbActiveBarRef;
+    const barPct = quantizedBarFillPct(isOwnBar ? rbBarOwnPreviewFill : fillPct, max);
     return `<div class="rb-preview-chip${orphaned ? ' rb-preview-chip-orphaned' : ''}" title="${escapeAttr(label)} (max ${max})">
       <div class="rb-preview-chip-top">
-        <div class="rb-preview-bar-track"><div class="rb-preview-bar-fill" data-rb-max="${max}" style="width:${barPct}%; background:${escapeAttr(b.color||'#3399ff')}"></div>${barTickMarksHtml(max)}</div>
+        <div class="rb-preview-bar-track"><div class="rb-preview-bar-fill" data-rb-max="${max}" data-rb-own="${isOwnBar ? '1' : '0'}" style="width:${barPct}%; background:${escapeAttr(b.color||'#3399ff')}"></div>${barTickMarksHtml(max)}</div>
         <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="${escapeAttr(removeTitle)}">&times;</button>
       </div>
       <span class="rb-preview-chip-label">${escapeHtml(label)}${orphaned ? ' <em>(deleted status)</em>' : ''}</span>
@@ -5575,16 +5789,32 @@ function resourceBarWidgetChipHtml(widget, anchorName, slot){
   const center = widget.entries.find(e=>e.diamondRole==='center');
   const leftMax = Number.isFinite(left && left.max) && left.max > 0 ? Math.round(left.max) : 1;
   const rightMax = Number.isFinite(right && right.max) && right.max > 0 ? Math.round(right.max) : 1;
-  const leftPct = quantizedBarFillPct(fillPct, leftMax);
-  const rightPct = quantizedBarFillPct(fillPct, rightMax);
-  const leftBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill" data-rb-max="${leftMax}" style="width:${leftPct}%; background:${escapeAttr((left&&left.color)||'#3399ff')}"></div>${barTickMarksHtml(leftMax)}</div>`;
-  const rightBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill" data-rb-max="${rightMax}" style="width:${rightPct}%; background:${escapeAttr((right&&right.color)||'#3399ff')}"></div>${barTickMarksHtml(rightMax)}</div>`;
+  // [Round 233 fix] Tyler: "remove this redundant preview, make both bars
+  // adjust the bigger preview" — when this chip IS the group currently
+  // open in a mechanic's Dual-bar editor, its right/center roles use the
+  // editor's own two independent sliders (rbDualPairPreviewFill/
+  // rbDualCenterPreviewFill) instead of the fixed 100% baseline, so an
+  // asymmetric fill can be previewed right here instead of in a separate
+  // mini-widget. data-rb-group/data-rb-role let applyDualRolePreviewFill
+  // target these two elements directly for a smooth, no-re-render drag.
+  const isActiveGroup = !!widget.gid && widget.gid === rbActiveDualGroupId;
+  // [Round 240] Whichever of left/right IS rbActiveBarRef (the exact bar
+  // object open in a mech editor — this replaces round 235's role-string
+  // rbActiveDualOwnRole) follows the new dedicated "This Status" slider;
+  // within that same active group, the OTHER side (the paired status)
+  // still follows rbDualPairPreviewFill, same as round 235.
+  const leftIsOwn = left === rbActiveBarRef;
+  const rightIsOwn = right === rbActiveBarRef;
+  const leftPct = quantizedBarFillPct(leftIsOwn ? rbBarOwnPreviewFill : (isActiveGroup ? rbDualPairPreviewFill : fillPct), leftMax);
+  const rightPct = quantizedBarFillPct(rightIsOwn ? rbBarOwnPreviewFill : (isActiveGroup ? rbDualPairPreviewFill : fillPct), rightMax);
+  const leftBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill rb-preview-bar-fill-rtl" data-rb-max="${leftMax}" data-rb-group="${escapeAttr(widget.gid||'')}" data-rb-role="left" data-rb-own="${leftIsOwn ? '1' : '0'}" style="width:${leftPct}%; background:${escapeAttr((left&&left.color)||'#3399ff')}"></div>${barTickMarksHtml(leftMax)}</div>`;
+  const rightBar = `<div class="rb-preview-bar-track rb-preview-bar-track-sm"><div class="rb-preview-bar-fill" data-rb-max="${rightMax}" data-rb-group="${escapeAttr(widget.gid||'')}" data-rb-role="right" data-rb-own="${rightIsOwn ? '1' : '0'}" style="width:${rightPct}%; background:${escapeAttr((right&&right.color)||'#3399ff')}"></div>${barTickMarksHtml(rightMax)}</div>`;
   let diamond = '';
   if(center){
     const centerMax = Number.isFinite(center.max) && center.max > 0 ? Math.round(center.max) : 1;
-    const centerPct = quantizedBarFillPct(fillPct, centerMax);
+    const centerPct = quantizedBarFillPct(isActiveGroup ? rbDualCenterPreviewFill : fillPct, centerMax);
     const centerAlpha = (0.25 + 0.75 * (centerPct/100)).toFixed(2);
-    diamond = `<div class="rb-preview-diamond-shape" data-rb-max="${centerMax}" style="background:${escapeAttr(center.color||'#3399ff')}; opacity:${centerAlpha}"></div>`;
+    diamond = `<div class="rb-preview-diamond-shape" data-rb-max="${centerMax}" data-rb-group="${escapeAttr(widget.gid||'')}" data-rb-role="center" style="background:${escapeAttr(center.color||'#3399ff')}; opacity:${centerAlpha}"></div>`;
   }
   const names = [left, right].filter(Boolean).map(resourceBarWidgetLabel).join(' / ') || '(unknown status)';
   return `<div class="rb-preview-chip rb-preview-chip-diamond" title="${escapeAttr(names)} (diamond group)">
@@ -5595,6 +5825,7 @@ function resourceBarWidgetChipHtml(widget, anchorName, slot){
     <span class="rb-preview-chip-label">${escapeHtml(names)}</span>
   </div>`;
 }
+
 function resourceBarPreviewZoneHtml(title, anchorName, slotCount){
   const widgets = resourceBarWidgetsForAnchor(anchorName);
   const slots = [];
@@ -5606,12 +5837,16 @@ function resourceBarPreviewZoneHtml(title, anchorName, slotCount){
     <div class="rb-preview-slots">${slots.join('')}</div>
   </div>`;
 }
+// [Round 241] Tyler: "remove the global slider then. i dont need to see
+// them all moving at once" — the page-wide Preview fill scrubber (round
+// 223) is gone. Every bar/diamond editor now has its own dedicated
+// preview-fill slider scoped to just itself (round 233's paired/center
+// sliders, round 240's "This Status" slider); anything with no slider of
+// its own (i.e. every OTHER bar/group on the page that isn't currently
+// open in an editor) just renders at a fixed 100% — see the `fillPct`
+// constant in resourceBarWidgetChipHtml.
 function resourceBarPreviewHtml(){
   return `<div class="rb-preview">
-    <div class="rb-preview-demo-row">
-      <label class="rb-preview-demo-label" title="Scrubs every bar/diamond shape below to this fill level, just to preview how they'll look — a bar's real fill in-game is its current status stack count out of Max, so this isn't saved with your character.">Preview fill: <span class="rb-preview-demo-pct">${rbPreviewDemoFill}</span>%</label>
-      <input type="range" min="0" max="100" value="${rbPreviewDemoFill}" class="rb-preview-demo-slider">
-    </div>
     <div class="rb-preview-zones">
       ${resourceBarPreviewZoneHtml('Above the energy counter', 'EnergyCounter', MAX_RESOURCE_BARS_UI)}
       ${resourceBarPreviewZoneHtml('Below the health bar', 'HealthBar', 1)}
@@ -5622,14 +5857,9 @@ function resourceBarPreviewHtml(){
 // always-visible one at the top of the Mechanics section, and the one
 // inside whichever mechanic's own "Represent as a bar" editor happens to
 // be open) — call this after ANY resourceBars mutation, from anywhere.
-// Also re-wires each mount's own demo-fill slider (its own oninput calls
-// applyResourceBarPreviewFill directly rather than refreshResourceBarPreview,
-// so dragging it doesn't tear down and rebuild the slider on every tick).
 function refreshResourceBarPreview(){
   document.querySelectorAll('.rb-preview-mount').forEach(el => {
     el.innerHTML = resourceBarPreviewHtml();
-    const slider = el.querySelector('.rb-preview-demo-slider');
-    if(slider) slider.oninput = e => applyResourceBarPreviewFill(parseInt(e.target.value, 10) || 0);
   });
 }
 
@@ -5637,37 +5867,60 @@ function refreshResourceBarPreview(){
 // per Tyler's own answer when asked whether to drop vanilla-status bars
 // entirely: "Keep a small picker for built-in statuses too." A vanilla
 // status has no mechanic/editor of its own for a bar-toggle to live in,
-// so this stays the one place to create one. Deliberately minimal next to
-// round 92-102's old full list: no diamond-layout authoring here (that
-// stays a custom-mechanic-only feature via renderMechBarFields) and no
-// anchor control (vanilla bars are non-moveable, same round 102 rule).
+// so this stays the one place to create one.
+// [Round 257] Tyler: "the track a built in status feature seems a little
+// out of place... You cant even pick where the bar goes" — this used to
+// be deliberately minimal (no diamond-layout authoring, no anchor
+// control, both hardcoded — see the old round-102/227 version of this
+// comment) on the theory that vanilla bars didn't need it. They clearly
+// do: a vanilla status's own bar can be picked as a custom mechanic's
+// Dual-bar partner/center (round 227), so it needed a real Layout/Anchor
+// editor just as much as a mechanic's own bar always has. Each row now
+// opens openVanillaBarEditor -> renderVanillaBarFieldsInto ->
+// renderBarFieldsCore — the exact same box-based editor (with the same
+// round 248/252/253 alignment fixes already applied to it) that a custom
+// mechanic's "Represent as a bar" section uses, instead of a second,
+// separately-styled Max/Color pair that could (and did) drift out of
+// alignment with it.
 function vanillaResourceBars(){
   return (state.character.resourceBars || []).filter(b => b && b.statusKind === 'vanilla');
 }
+// Shared by the list row's ✕ and the editor modal's own "Remove bar"
+// button — same behavior the old .vb-remove handler already had: unpair
+// (never delete) a bar that's serving as someone's Dual-bar partner/
+// center, since deleting it here would silently orphan that OTHER
+// group's required left/right and break its export (see releaseGroupMember).
+function removeOrUnpairVanillaBar(builtinStatus){
+  const bar = findResourceBarForStatus('vanilla', builtinStatus);
+  if(!bar) return;
+  if(bar.layout === 'diamond'){
+    releaseGroupMember(bar);
+  } else {
+    state.character.resourceBars = (state.character.resourceBars || []).filter(b => b !== bar);
+  }
+  save();
+  renderVanillaBars();
+  refreshResourceBarPreview();
+}
 function renderVanillaBars(){
-  const statusSelEl = document.getElementById('vanilla-bar-status');
   const addBtn = document.getElementById('add-vanilla-bar-btn');
   const listEl = document.getElementById('vanilla-bars-list');
-  if(!statusSelEl || !listEl) return; // not mounted (e.g. section not yet rendered)
-  if(!statusSelEl.dataset.filled){
-    statusSelEl.innerHTML = optList(BUILTIN_STATUSES, BUILTIN_STATUSES[0]);
-    statusSelEl.dataset.filled = '1';
-  }
-  const atHealthLimit = countResourceBarWidgetsForAnchor(state.character.resourceBars || [], 'HealthBar') >= 1;
-  if(addBtn) addBtn.disabled = atHealthLimit;
-  if(addBtn) addBtn.title = atHealthLimit ? 'The "below health bar" anchor supports only 1 bar/diamond group total — remove or move the existing one first.' : '';
+  if(!addBtn || !listEl) return; // not mounted (e.g. section not yet rendered)
+  // [Round 257] A brand-new vanilla bar no longer has to land on HealthBar
+  // specifically — see vanillaBarCreateAnchor below, which now falls back
+  // to EnergyCounter when HealthBar's already full. Only block Add
+  // outright when NEITHER anchor has room left for one more standalone bar.
+  const noRoomAnywhere = vanillaBarCreateAnchor() === null;
+  if(addBtn) addBtn.disabled = noRoomAnywhere;
+  if(addBtn) addBtn.title = noRoomAnywhere ? 'Both anchors are full — remove or move an existing bar first.' : '';
   const bars = vanillaResourceBars();
   // [Round 227] A vanilla status's own bar can now also be picked as the
   // "Paired status"/"Center status" of a custom mechanic's Dual bar (see
-  // renderMechBarFields) — previously vanilla bars could only ever be
+  // renderBarFieldsCore) — previously vanilla bars could only ever be
   // standalone, so this row never had to say anything about layout/anchor
   // beyond the fixed "Below the health bar" text. Now it reflects the
   // real anchor (a paired vanilla status inherits its group's anchor,
-  // which can be above the energy counter) and its role, and the ✕
-  // un-pairs (reverts to a standalone bar) instead of deleting the entry
-  // outright when it's serving as someone's Dual-bar partner — deleting
-  // it here would otherwise silently orphan that other group's required
-  // left/right and break its export.
+  // which can be above the energy counter) and its role.
   const ROLE_LABELS = { left:'Dual bar — left', right:'Dual bar — right', center:'Dual bar — center (diamond)' };
   listEl.innerHTML = bars.map((bar) => {
     const isDiamond = bar.layout === 'diamond';
@@ -5676,50 +5929,34 @@ function renderVanillaBars(){
     return `
     <div class="row vb-row" data-id="${escapeAttr(bar.builtinStatus)}" style="align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
       <div class="hint-small" style="flex:0 0 160px; font-weight:600">${escapeHtml(bar.builtinStatus)}</div>
-      <div style="flex:0 0 80px"><label style="font-size:11px">Max</label><input type="number" class="vb-max" min="1" value="${Number.isFinite(bar.max) ? bar.max : 5}"></div>
-      <div style="flex:0 0 50px"><label style="font-size:11px">Color</label><input type="color" class="vb-color" value="${escapeAttr(bar.color || '#3399ff')}"></div>
-      <div class="hint-small" style="flex:0 0 auto">${escapeHtml(anchorLabel)} · ${escapeHtml(roleLabel)}</div>
+      <div class="hint-small" style="flex:1 1 auto">${escapeHtml(anchorLabel)} · ${escapeHtml(roleLabel)}</div>
+      <button type="button" class="vb-edit secondary">Edit</button>
       <button type="button" class="vb-remove" title="${isDiamond ? 'Unpair (reverts this back to its own single bar)' : 'Remove this bar'}">✕</button>
     </div>
   `;
   }).join('') || `<div class="hint-small">No built-in-status bars yet.</div>`;
   listEl.querySelectorAll('.vb-row').forEach(rowEl=>{
     const id = rowEl.dataset.id;
-    const bar = bars.find(b => b.builtinStatus === id);
-    rowEl.querySelector('.vb-max').addEventListener('input', e=>{ bar.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
-    rowEl.querySelector('.vb-color').addEventListener('input', e=>{ bar.color = e.target.value; save(); refreshResourceBarPreview(); });
-    rowEl.querySelector('.vb-remove').addEventListener('click', ()=>{
-      if(bar.layout === 'diamond'){
-        revertBarToStandalone(bar);
-      } else {
-        state.character.resourceBars = state.character.resourceBars.filter(b => b !== bar);
-      }
-      save();
-      renderVanillaBars();
-      refreshResourceBarPreview();
-    });
+    rowEl.querySelector('.vb-edit').addEventListener('click', ()=> openVanillaBarEditor(id));
+    rowEl.querySelector('.vb-remove').addEventListener('click', ()=> removeOrUnpairVanillaBar(id));
   });
 }
 document.addEventListener('click', (e)=>{
   if(e.target && e.target.id === 'add-vanilla-bar-btn'){
-    if(!Array.isArray(state.character.resourceBars)) state.character.resourceBars = [];
-    if(countResourceBarWidgetsForAnchor(state.character.resourceBars, 'HealthBar') >= 1) return;
-    const statusSelEl = document.getElementById('vanilla-bar-status');
-    const maxEl = document.getElementById('vanilla-bar-max');
-    const colorEl = document.getElementById('vanilla-bar-color');
-    const builtinStatus = statusSelEl ? statusSelEl.value : BUILTIN_STATUSES[0];
-    if(vanillaResourceBars().some(b => b.builtinStatus === builtinStatus)){
-      alert(`${builtinStatus} already has a bar.`);
-      return;
-    }
-    state.character.resourceBars.push({
-      enabled:true, statusKind:'vanilla', builtinStatus,
-      max: parseInt(maxEl && maxEl.value)||5, color: (colorEl && colorEl.value) || '#3399ff',
-      anchor:'HealthBar',
-    });
-    save();
-    renderVanillaBars();
-    refreshResourceBarPreview();
+    // [Round 258/259] Tyler: "lets not have the user pick the status
+    // until the add button is clicked" then "show Max/Color/Layout/Anchor
+    // right away too, not just after picking" — no bar is created here
+    // anymore at all; opening the editor with no status yet is what makes
+    // renderBarFieldsCore synthesize the transient vbDraftBar, showing
+    // the FULL editor immediately with This Status's own picker sitting
+    // in its box. Picking a status there (see thisStatusPickerHtml's
+    // wiring) is what actually creates/promotes the bar. The only thing
+    // still checked here is whether there's any room to put a new bar at
+    // all — vanillaBarCreateAnchor() === null already keeps addBtn
+    // disabled for that case, so this is a safety net, not the normal
+    // path.
+    if(vanillaBarCreateAnchor() === null) return;
+    openVanillaBarEditor();
     return;
   }
   // [Round 120] The X on each bar in the preview (both zones, every
@@ -5742,6 +5979,16 @@ document.addEventListener('click', (e)=>{
     const slot = parseInt(removeBtn.dataset.rbSlot, 10);
     const widget = resourceBarWidgetsForAnchor(anchorName)[slot];
     if(widget && Array.isArray(state.character.resourceBars)){
+      // [Round 234] Tyler: "if you click the x to remove the bar from the
+      // preview, it doesn't uncheck the bar box" — the removed entries can
+      // belong to a custom mechanic whose OWN editor happens to be open
+      // right now (its own "Represent as a bar" checkbox + m-bar-fields
+      // reads stale once the underlying resourceBars entry is gone from
+      // under it). Collect which mechanic ids this removal affects before
+      // mutating state, so syncOpenMechBarCheckbox below can tell whether
+      // the currently-open editor (if any) needs to reflect it.
+      const removedEntries = widget.type === 'standalone' ? [widget.bar] : widget.entries;
+      const affectedMechIds = new Set(removedEntries.filter(x => x && x.statusKind === 'custom').map(x => x.status));
       if(widget.type === 'standalone'){
         state.character.resourceBars = state.character.resourceBars.filter(x => x !== widget.bar);
       } else {
@@ -5751,6 +5998,7 @@ document.addEventListener('click', (e)=>{
       save();
       refreshResourceBarPreview();
       renderVanillaBars();
+      syncOpenMechBarCheckbox(affectedMechIds);
     }
   }
 });
@@ -8235,7 +8483,20 @@ const modal = document.getElementById('modal');
 // closeModal below so a stray call after the editor closes is a no-op
 // rather than a crash against DOM the modal just tore down.
 let activeCardEditorRefreshPreview = null;
+// [Round 255] Tyler: "if dual bar is selected, make the paired status a
+// requirement before they can close the editor" — a modal-wide close
+// guard rather than special-casing the mech editor's own Done button:
+// the X icon and clicking the overlay backdrop (see the overlay 'click'
+// listener further down) both call this same shared closeModal()
+// directly, so a guard that only lived in Done's onclick would still let
+// a half-formed Dual bar (no paired status) close via either of those.
+// Any editor can set this to a function returning a block reason string
+// (or null/falsy to allow closing) right after its own openModal() call;
+// openModal() itself always clears it first so a guard set by one editor
+// can never leak into the next one opened afterward.
+let modalCloseGuard = null;
 function openModal(html, opts){
+  modalCloseGuard = null;
   modal.innerHTML = html;
   // `wide` is used by the card editor (and anything else with a
   // side-by-side form + preview layout) — a plain toggle rather than a
@@ -8256,6 +8517,11 @@ function openModal(html, opts){
   document.body.style.overflow = 'hidden';
 }
 function closeModal(){
+  if(modalCloseGuard){
+    const blockReason = modalCloseGuard();
+    if(blockReason){ alert(blockReason); return; }
+  }
+  modalCloseGuard = null;
   overlay.classList.remove('open');
   modal.classList.remove('wide');
   modal.innerHTML = '';
@@ -10179,7 +10445,15 @@ function describeEffectBlock(eff){
   // reads like in-game ("Deal 6 damage.") — no "when played" prefix
   // needed. Every other trigger is non-default behavior worth calling
   // out explicitly (e.g. "When this card is discarded: ...").
-  const triggerPrefix = eff.trigger === 'OnPlay' ? '' : `${CARD_TRIGGER_LABELS[eff.trigger] || eff.trigger}, `;
+  // [Round 270 fix] was hardcoded to CARD_TRIGGER_LABELS only, so a
+  // relic/mechanic's own HOOK_TRIGGERS-only trigger id (e.g. 'OnMyTurnStart')
+  // fell through to the raw internal id instead of its real label ('At the
+  // start of your turn') -- harmless while this function only ever ran on
+  // card effects, but generateHookDescription() below now reuses it for
+  // relics/mechanics too, where every trigger needs its real label. Uses
+  // the same merged triggerLabel() lookup describePileTriggerEntry already
+  // uses, just below.
+  const triggerPrefix = eff.trigger === 'OnPlay' ? '' : `${triggerLabel(eff.trigger)}, `;
   let core;
   if(condsText){
     core = `${triggerPrefix}if ${condsText}, ${actionsText || 'nothing happens'}`;
@@ -10309,6 +10583,32 @@ function generateCardDescription(effects, keywords, advancedOptions){
     if(extraText) desc += (desc ? ' ' : '') + extraText;
   }
   return desc.trim() || 'This card has no effects defined yet.';
+}
+
+// [Round 270] Generic sibling of generateCardDescription() above, for
+// relics/mechanics -- Tyler: "add the auto-generate description feature
+// from the card section here as well. and also for relics if that isn't
+// in place already." Effects-only (no keywords/advancedOptions -- neither
+// concept exists on a relic/mechanic), and skips a 'Passive' block that
+// has no actions of its own to describe: the editor UI hides the normal
+// conditions/actions section entirely whenever trigger is 'Passive' (see
+// refreshPassiveMode/wirePassiveConfig -- that's where Modifiers/
+// Experimental/Weak-Vulnerable config lives instead), so a real saved
+// Passive block's actions/elseActions arrays are always empty in
+// practice; describing it anyway would produce a useless "Passive
+// (always active), nothing happens." sentence for the (very common) case
+// of a relic/mechanic that's ONLY a Passive modifier bundle with no
+// triggered effects at all. Deliberately does NOT attempt to describe
+// Modifiers/Experimental/Weak-Vulnerable config in prose -- same scope as
+// cards, which have no such concept either; a relic/mechanic whose entire
+// behavior lives in Modifiers still falls back to the default string
+// below, same as a card with no effects.
+function generateHookDescription(effects){
+  const sentences = (effects||[])
+    .filter(eff => !(eff.trigger === 'Passive' && !(eff.actions||[]).length && !(eff.elseActions||[]).length))
+    .map(describeEffectBlock)
+    .filter(Boolean);
+  return sentences.join(' ').trim() || 'This has no effects defined yet.';
 }
 
 // Updates the live preview panel from whatever's CURRENTLY in the form
@@ -11378,6 +11678,32 @@ function openCardEditor(cardId){
   };
 }
 
+// [Round 269] Tyler: "we can take out rest site options for status
+// triggers as well for the same reason. again, only statuses" -- same
+// reasoning as round 268's allowedModifierHookKeys: a status (mechanic)
+// is a Power, which only ever exists as something applied to a Creature
+// during combat, so the 'restsite' trigger category (AfterRestSiteHeal,
+// AfterRestSiteSmith) has no real combat-status equivalent to fire on.
+// Relics keep the full HOOK_TRIGGERS vocabulary unchanged -- only the two
+// status/mechanic renderEffectsList() call sites (openMechanicEditor's
+// initial render and its "+ Add effect block" handler) pass isRelic=false
+// here. Deliberately NOT applied to the enchantment "while pile"/"effects
+// list" renderEffectsList() call sites, which also happen to omit
+// isRelic (so it reads as falsy there too) -- Tyler's ask was specifically
+// "only statuses," and enchantments are a different entity kind that
+// wasn't part of this request, so those call sites keep passing the raw
+// HOOK_TRIGGERS constant directly rather than routing through this
+// function at all.
+const TRIGGER_CATEGORIES_RELIC_ONLY = ['restsite'];
+function allowedHookTriggers(isRelic){
+  if(isRelic) return HOOK_TRIGGERS;
+  const excluded = new Set(
+    TRIGGER_CATEGORIES
+      .filter(cat => TRIGGER_CATEGORIES_RELIC_ONLY.includes(cat.id))
+      .flatMap(cat => cat.triggers)
+  );
+  return HOOK_TRIGGERS.filter(t => !excluded.has(t));
+}
 function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic){
   // listElId defaults to 'effects-list' (the Character/Relic/Mechanic
   // editors' single effects panel, all three unaffected by this param).
@@ -14200,10 +14526,10 @@ function passiveConfigMarkup(entity, isRelic){
 // contain instead of whatever the user actually last edited.
 function wirePassiveConfig(container, entity, isRelic){
   document.getElementById('passive-add-modifier').onclick = ()=>{
-    entity.modifiers.push(blankModifier(Object.keys(MODIFIER_HOOKS)[0]));
-    renderModifiersList(entity);
+    entity.modifiers.push(blankModifier(allowedModifierHookKeys(isRelic)[0]));
+    renderModifiersList(entity, isRelic);
   };
-  renderModifiersList(entity);
+  renderModifiersList(entity, isRelic);
   if(!isRelic) return;
   const claimCb = document.getElementById('m-auto-claim-shop');
   claimCb.onchange = e=>{ entity.autoClaimShopInventory = e.target.checked; save(); };
@@ -14225,7 +14551,30 @@ function wirePassiveConfig(container, entity, isRelic){
   };
 }
 
-function renderModifiersList(entity){
+// [Round 268] Tyler: "statuses can only be applied in combat... remove
+// the rest site, potions/merchant, and misc from the modifiers section in
+// statuses only" -- a relic can meaningfully gate/modify rest-site,
+// shop, and misc (treasure/travel) behavior, but a status (mechanic) is a
+// Power, which only ever exists as something applied to a Creature during
+// combat -- those 3 categories' hooks (rest-site healing, potion/merchant
+// gating, treasure/travel) have no real combat-status equivalent to hook
+// into, so offering them on a status's own Modifiers picker was always a
+// dead end. Single source of truth for "which hook keys is this kind of
+// entity even allowed to pick," shared by both the picker itself and the
+// "+ Add modifier" button's own default-hook choice, so the two can never
+// drift out of sync with each other.
+const MODIFIER_CATEGORIES_RELIC_ONLY = ['restsite', 'potionsmerchant', 'misc'];
+function allowedModifierHookKeys(isRelic){
+  const allKeys = Object.keys(MODIFIER_HOOKS);
+  if(isRelic) return allKeys;
+  const excluded = new Set(
+    MODIFIER_HOOK_CATEGORIES
+      .filter(cat => MODIFIER_CATEGORIES_RELIC_ONLY.includes(cat.id))
+      .flatMap(cat => cat.hooks)
+  );
+  return allKeys.filter(k => !excluded.has(k));
+}
+function renderModifiersList(entity, isRelic){
   if(!Array.isArray(entity.modifiers)) entity.modifiers = [];
   const list = document.getElementById('modifiers-list');
   if(entity.modifiers.length === 0){
@@ -14275,7 +14624,7 @@ function renderModifiersList(entity){
       const kw = fieldsEl.querySelector('.mod-keyword'); if(kw) kw.onchange = e=> mod.keyword = e.target.value;
       const oo = fieldsEl.querySelector('.mod-option-op'); if(oo) oo.onchange = e=> mod.optionOp = e.target.value;
       const ot = fieldsEl.querySelector('.mod-option-type'); if(ot) ot.onchange = e=> mod.optionType = e.target.value;
-      const ro = fieldsEl.querySelector('.mod-reward-op'); if(ro) ro.onchange = e=> { mod.rewardOp = e.target.value; renderModifiersList(entity); };
+      const ro = fieldsEl.querySelector('.mod-reward-op'); if(ro) ro.onchange = e=> { mod.rewardOp = e.target.value; renderModifiersList(entity, isRelic); };
       const mcr = fieldsEl.querySelector('.mod-make-rerollable'); if(mcr) mcr.onchange = e=> mod.makeCardRewardsRerollable = e.target.checked;
       const ra = fieldsEl.querySelector('.mod-reward-amount'); if(ra) ra.oninput = e=> mod.rewardAmount = parseFloat(e.target.value)||0;
       const dp = fieldsEl.querySelector('.mod-dest-pile'); if(dp) dp.onchange = e=> mod.destPile = e.target.value;
@@ -14541,17 +14890,17 @@ function renderModifiersList(entity){
     // grouped by shape — Tyler: "lets categorize and color the passive
     // hooks," same treatment renderTriggerPicker/TRIGGER_CATEGORIES already
     // gave the Effects trigger dropdown back in round 19.
-    renderModifierHookPicker(block.querySelector('.mod-hook-picker'), Object.keys(MODIFIER_HOOKS), mod.hook, (newHook)=>{
+    renderModifierHookPicker(block.querySelector('.mod-hook-picker'), allowedModifierHookKeys(isRelic), mod.hook, (newHook)=>{
       // Switching hook can change the shape entirely (gate -> numeric etc)
       // — same "clear stale fields, start from a fresh blank shape"
       // convention wireConditionRowHandlers' c-kind handler already uses.
       Object.keys(mod).forEach(k=> delete mod[k]);
       Object.assign(mod, blankModifier(newHook));
-      renderModifiersList(entity);
+      renderModifiersList(entity, isRelic);
     });
     block.querySelector('.mod-remove').onclick = ()=>{
       entity.modifiers.splice(i, 1);
-      renderModifiersList(entity);
+      renderModifiersList(entity, isRelic);
     };
     list.appendChild(block);
   });
@@ -14692,6 +15041,16 @@ function openRelicEditor(relicId){
               <label>Rarity</label><select id="m-rarity">${optList(["Starter","Common","Uncommon","Rare","Shop","Event","Ancient"], relic.rarity)}</select>
             </div>
           </div>
+          <label style="margin-top:14px" title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this relic's effects (shown below in italics until you type your own).">Description</label>
+          <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
+            <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
+            <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
+            <button type="button" class="desc-color-btn bb-blue" onclick="wrapDescriptionSelection('blue')" title="[blue]...[/blue]"></button>
+            <button type="button" class="desc-color-btn bb-purple" onclick="wrapDescriptionSelection('purple')" title="[purple]...[/purple]"></button>
+            <button type="button" class="desc-color-btn bb-green" onclick="wrapDescriptionSelection('green')" title="[green]...[/green]"></button>
+          </div>
+          <textarea id="m-description" placeholder="Leave blank to auto-fill from its effects." style="min-height:44px;">${escapeHtml(relic.description||'')}</textarea>
+          <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
           <label style="margin-top:14px">Flavor text</label><textarea id="m-flavor" style="flex:1; min-height:60px;">${escapeHtml(relic.flavorText||'')}</textarea>
         </div>
         <div style="flex:0 0 160px;">
@@ -14722,6 +15081,20 @@ function openRelicEditor(relicId){
     </div>
   `, { wide: true });
   renderEffectsList(relic, HOOK_TRIGGERS, undefined, undefined, undefined, true);
+  // [Round 270] Same live "Auto: ..." hint as the mechanic editor -- see
+  // that editor's own comment (openMechEditor) for the full reasoning on
+  // why this uses a MutationObserver rather than threading a refresh
+  // through renderEffectsList's own add/remove/edit paths.
+  const refreshRelicDescHint = ()=>{
+    const hintEl = document.getElementById('m-desc-auto-hint');
+    const descEl = document.getElementById('m-description');
+    if(!hintEl || !descEl) return;
+    if(descEl.value.trim()){ hintEl.innerHTML = ''; return; }
+    hintEl.innerHTML = 'Auto: ' + bbcodeToHtml(generateHookDescription(relic.effects));
+  };
+  refreshRelicDescHint();
+  document.getElementById('m-description').addEventListener('input', refreshRelicDescHint);
+  new MutationObserver(refreshRelicDescHint).observe(document.getElementById('effects-list'), {childList:true, subtree:true, characterData:true});
 
   // Icon preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
   // commitAsset pattern openEpochEditor's portrait field uses, wired by
@@ -14778,6 +15151,9 @@ function openRelicEditor(relicId){
   document.getElementById('save-relic').onclick = ()=>{
     relic.name = document.getElementById('m-name').value;
     relic.rarity = document.getElementById('m-rarity').value;
+    const typedRelicDescription = document.getElementById('m-description').value.trim();
+    relic.description = typedRelicDescription || undefined;
+    relic.autoGeneratedDescription = typedRelicDescription ? undefined : generateHookDescription(relic.effects);
     relic.flavorText = document.getElementById('m-flavor').value;
     if(pendingRelicIconDataUrl !== undefined){
       relic.iconAssetRef = commitAsset(pendingRelicIconDataUrl, relic.iconAssetRef, 'relicIcon');
@@ -14804,8 +15180,16 @@ function renderMechanics(){
   refreshResourceBarPreview();
   state.mechanics.forEach(m=>{
     const t = document.createElement('div');
-    t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(m.name||'Untitled')}</div><div class="t-meta">${m.stackable?'stacking':'binary'} · ${m.isBuff?'buff':'debuff'}</div>`;
+    // [Round 256] Tyler: "if an icon is uploaded, we should be able to
+    // see it on the tile" — the mechanic editor has had its own icon
+    // upload field since round 229 (mi-icon-frame, committed via
+    // commitAsset(..., 'mechanicIcon')), but this grid never looked it
+    // up, unlike renderRelics just above, which already shows the exact
+    // same state.assets{id,kind,dataUrl} preview via findAssetDataUrl +
+    // .tile-has-icon/.tile-icon-preview. Same pattern, reused verbatim.
+    const iconUrl = findAssetDataUrl(m.iconAssetRef, 'mechanicIcon');
+    t.className = 'tile' + (iconUrl ? ' tile-has-icon' : '');
+    t.innerHTML = `<div class="t-name">${escapeHtml(m.name||'Untitled')}</div><div class="t-meta">${m.stackable?'stacking':'binary'} · ${m.isBuff?'buff':'debuff'}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
     t.onclick = ()=> openMechEditor(m.id);
     mechGrid.appendChild(t);
   });
@@ -14869,6 +15253,20 @@ function revertBarToStandalone(bar){
   delete bar.diamondGroup;
   delete bar.diamondRole;
 }
+// [Round 242] Releases a resourceBars entry from a diamond group role.
+// If the entry was created solely to fill that role (tracked via
+// rbGroupOnlyEntries -- see above), it never had independent existence,
+// so it's removed from the array outright. Otherwise it falls back to
+// revertBarToStandalone's existing safe behavior (never destroy data the
+// user didn't explicitly create).
+function releaseGroupMember(entry){
+  if(!entry) return;
+  if(rbGroupOnlyEntries.has(entry)){
+    state.character.resourceBars = (state.character.resourceBars || []).filter(x => x !== entry);
+  } else {
+    revertBarToStandalone(entry);
+  }
+}
 function findGroupMember(groupId, role, excludeBar){
   return (state.character.resourceBars || []).find(b => b && b !== excludeBar && b.layout === 'diamond' && b.diamondGroup === groupId && b.diamondRole === role);
 }
@@ -14887,12 +15285,12 @@ function statusLockedElsewhere(kind, value, thisGroupId){
 // into the group at the given role + this group's shared anchor (every
 // entry in a diamond group must share one anchor — validate.js/compiler.js
 // both enforce this).
-function applyDiamondPairPick(m, bar, groupId, role, kind, value){
-  if(kind === 'custom' && value === m.id) return; // can't pair with self — also excluded from the picker's own option list
+function applyDiamondPairPick(ownerKind, ownerId, bar, groupId, role, kind, value){
+  if(kind === ownerKind && value === ownerId) return; // can't pair with self — also excluded from the picker's own option list
   const prevHolder = findGroupMember(groupId, role, bar);
   const prevId = barEntryIdentity(prevHolder);
   if(prevHolder && !(prevId && prevId.kind === kind && prevId.value === value)){
-    revertBarToStandalone(prevHolder);
+    releaseGroupMember(prevHolder);
   }
   let target = findResourceBarForStatus(kind, value);
   if(!target){
@@ -14901,6 +15299,10 @@ function applyDiamondPairPick(m, bar, groupId, role, kind, value){
       : { enabled:true, statusKind:'custom', status:value, max:5, color:'#3399ff', label:(state.mechanics.find(x=>x.id===value)||{}).name || '' };
     if(!Array.isArray(state.character.resourceBars)) state.character.resourceBars = [];
     state.character.resourceBars.push(target);
+    // [Round 242] this entry didn't exist before this pick -- tag it so
+    // releasing it later can delete it outright rather than stranding it
+    // as an orphaned standalone bar.
+    rbGroupOnlyEntries.add(target);
   }
   target.layout = 'diamond';
   target.diamondGroup = groupId;
@@ -14908,81 +15310,321 @@ function applyDiamondPairPick(m, bar, groupId, role, kind, value){
   target.anchor = bar.anchor;
   save();
 }
-function renderMechBarFields(m){
-  const bar = mechResourceBar(m);
+// [Round 234] Tyler: "if you click the x to remove the bar from the
+// preview, it doesn't uncheck the bar box" — the delegated X-button
+// handler (below, on the preview grid) can remove a resourceBars entry
+// belonging to a mechanic whose OWN editor modal happens to be open at
+// the same time, and that modal's "Represent as a bar" checkbox/fields
+// were only ever synced from user actions taken INSIDE that same modal,
+// never from an external removal. `#m-bar-enabled`'s own data-mech-id
+// (set in openMechEditor's template) identifies which mechanic, if any,
+// the currently-open editor belongs to — getElementById naturally comes
+// back null once no mech editor is open (closeModal empties modal.
+// innerHTML), so this is a no-op then, no separate open/close tracking
+// needed. affectedMechIds is the set of custom-mechanic ids the just-
+// removed bar/diamond-group entries belonged to.
+function syncOpenMechBarCheckbox(affectedMechIds){
+  const cb = document.getElementById('m-bar-enabled');
+  if(!cb || !cb.dataset.mechId || !affectedMechIds.has(cb.dataset.mechId)) return;
+  const m = state.mechanics.find(x => x.id === cb.dataset.mechId);
+  if(!m) return;
+  const stillHasBar = !!mechResourceBar(m);
+  cb.checked = stillHasBar;
+  const fieldsWrap = document.getElementById('m-bar-fields');
+  if(fieldsWrap) fieldsWrap.style.display = stillHasBar ? '' : 'none';
+  renderMechBarFields(m);
+}
+// [Round 259] Tyler: "show Max/Color/Layout/Anchor right away too, not
+// just after picking" — round 258's picker-only view (a bare box with
+// nothing but a status search in it, everything else hidden until picked)
+// undershot: he wants the WHOLE editor live immediately, status search
+// just sitting in This Status's own left side alongside it, matching
+// Center/Paired's box shape exactly. vbDraftBar is a transient (never
+// saved on its own — see save(), which only ever serializes `state`)
+// stand-in resourceBars entry used ONLY while ownerId is still null: it
+// flows through the exact same rendering/Layout/Anchor/Center/Paired code
+// below as a real bar (bar.max, bar.layout, bar.diamondGroup, all of it
+// already just reads/writes whatever object `bar` points at), so nothing
+// past this point needs to know it isn't persisted yet. The groupId this
+// produces while drafting (`pair-vanilla-null`, since ownerId literally
+// is null) is a stable, deterministic placeholder for the one editor that
+// can ever be open at a time — renamed to the real `pair-vanilla-<status>`
+// the moment This Status's own picker (see thisStatusPickerHtml/its wiring
+// below) promotes the draft into state.character.resourceBars.
+let vbDraftBar = null;
+function renderBarFieldsCore(ownerKind, ownerId){
   const fieldsEl = document.getElementById('m-bar-fields');
+  const bar = (ownerKind === 'vanilla' && ownerId == null)
+    ? (vbDraftBar || (vbDraftBar = { enabled:true, statusKind:'vanilla', builtinStatus:null, max:5, color:'#3399ff', layout:'standalone', anchor: vanillaBarCreateAnchor() || 'HealthBar' }))
+    : findResourceBarForStatus(ownerKind, ownerId);
   if(!bar){ fieldsEl.innerHTML = ''; refreshResourceBarPreview(); return; }
   const isDiamond = bar.layout === 'diamond';
   // [Round 227] Tyler: "change the layout options to 'Single' and 'Dual'
   // bars. If dual bars is selected, it should prompt the user to select
-  // another status to track as well." This mechanic's own bar is always
-  // the group's "left" entry once Dual is picked (there's no real data
-  // anywhere with a custom mechanic's OWN bar saved as right/center — this
-  // whole diamond-group UI has only ever existed here, never produced any
-  // real saved pairs, confirmed by checking every real character_project.json
-  // on Tyler's machine — so this normalize-on-render is safe). The group
-  // id is preserved if one already exists (never silently renamed), and
-  // only minted fresh the first time this bar transitions into Dual.
-  if(isDiamond && !bar.diamondGroup) bar.diamondGroup = `pair-${m.id}`;
-  if(isDiamond) bar.diamondRole = 'left';
-  const groupId = isDiamond ? bar.diamondGroup : `pair-${m.id}`;
-  const partner = isDiamond ? findGroupMember(groupId, 'right', bar) : null;
+  // another status to track as well." The group id is preserved if one
+  // already exists (never silently renamed), and only minted fresh the
+  // first time this bar transitions into Dual.
+  //
+  // [Round 235] Tyler: "when the layout is set to dual bar, the user
+  // should be able to place it the left or right." This mechanic's own
+  // bar used to be forced to "left" on every render (round 227's
+  // reasoning: no real saved pair ever used anything else) — now it only
+  // DEFAULTS to "left" the first time it becomes a diamond (still no
+  // diamondRole set, or a stale/foreign value), and otherwise keeps
+  // whatever side the "This bar's side" selector below last set, so a
+  // user pick of "right" survives across re-renders instead of snapping
+  // back to left on every field edit.
+  if(isDiamond && !bar.diamondGroup) bar.diamondGroup = `pair-${ownerKind}-${ownerId}`;
+  if(isDiamond && bar.diamondRole !== 'left' && bar.diamondRole !== 'right') bar.diamondRole = 'left';
+  const groupId = isDiamond ? bar.diamondGroup : `pair-${ownerKind}-${ownerId}`;
+  // [Round 235] The partner now sits on whichever side THIS bar isn't —
+  // previously hardcoded to 'right' back when this bar was always 'left'.
+  const otherSideRole = bar.diamondRole === 'right' ? 'left' : 'right';
+  // [Round 233 fix] Names which diamond group (if any) the two independent
+  // preview-fill sliders below currently apply to — resourceBarWidgetChipHtml
+  // reads this to know whether THIS chip in the always-visible grid preview
+  // should use them for its right/center roles instead of the fixed 100%
+  // baseline. null while editing a standalone (non-Dual) bar.
+  rbActiveDualGroupId = isDiamond ? groupId : null;
+  // [Round 240] Which exact bar the new "This Status" preview-fill slider
+  // (and its data-rb-own targeting in resourceBarWidgetChipHtml) applies
+  // to — set unconditionally, since a standalone bar needs its own
+  // dedicated preview slider too, not just a bar that's part of a Dual
+  // group.
+  rbActiveBarRef = bar;
+  const partner = isDiamond ? findGroupMember(groupId, otherSideRole, bar) : null;
   const center = isDiamond ? findGroupMember(groupId, 'center', bar) : null;
   const partnerId = barEntryIdentity(partner);
   const centerId = barEntryIdentity(center);
   const sameIdentity = (kind, value, id) => !!id && id.kind === kind && id.value === value;
-  const partnerExclude = (kind, value) => (kind === 'custom' && value === m.id) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, centerId);
-  const centerExclude = (kind, value) => (kind === 'custom' && value === m.id) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, partnerId);
+  const partnerExclude = (kind, value) => (kind === ownerKind && value === ownerId) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, centerId);
+  const centerExclude = (kind, value) => (kind === ownerKind && value === ownerId) || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, partnerId);
+  // [Round 258] Only relevant when ownerKind === 'vanilla' (see
+  // thisStatusBoxHtml below) — vanilla-only (kind==='custom' always
+  // excluded) since re-typing this bar as a custom mechanic would
+  // collide with that mechanic's own "Represent as a bar" flow, which
+  // already owns its bar via statusKind==='custom'+status===m.id. No
+  // self-exclusion (unlike partner/center) since matching the CURRENT
+  // status is exactly what should highlight as picker-option-current.
+  const thisStatusExclude = (kind, value) => kind === 'custom' || statusLockedElsewhere(kind, value, groupId) || sameIdentity(kind, value, partnerId) || sameIdentity(kind, value, centerId);
+  // [Round 238] Tyler: "dont have a dropdown to select which side. assume
+  // left, and have a checkbox for right side. this should also swap the
+  // positions of the current status and the paired status in the gui" —
+  // the 3 boxes are now built as separate strings and assembled in
+  // whichever order matches bar.diamondRole, so the GUI's left-to-right
+  // box order always mirrors the real widget's actual left/right layout
+  // instead of always reading "this status" first regardless of which
+  // side it's actually on.
+  // [Round 239] Tyler: "there is too much padding all over these boxes.
+  // move the checkbox to the right side of the color picker. reduce the
+  // padding above the statuses, move the slider bars up" — box padding,
+  // the title-to-divider gap, and the divider-to-preview-fill gap all
+  // tightened. The real cause of the big empty gap above each Preview
+  // fill slider: the picker/Max/Color/clear-button row was wrapping onto
+  // extra (invisible, since Max/Color use visibility:hidden until a
+  // status is picked) lines because the picker's own min-width plus
+  // Max/Color/button didn't fit the box's width on one line — widening
+  // the boxes slightly and shrinking the picker's/Max's/Color's minimum
+  // widths keeps that row to one line so no hidden second/third line eats
+  // vertical space. The Right-side checkbox moved off its own row into
+  // the same row as Max/Color.
+  // [Round 258] Tyler: "add statuses to the left side of the box" — for a
+  // vanilla-status-owned bar only (a mechanic's "This Status" is always
+  // just the mechanic itself; re-picking it here would make no sense), a
+  // status picker exists so a fresh draft (or an existing vanilla bar) can
+  // be assigned/renamed without leaving this editor. Wired separately
+  // below (same pattern as the partner/center pickers) since
+  // wireMergedStatusPicker needs the element to already be in the DOM —
+  // that wiring doesn't care which box the element physically lives in.
+  // [Round 260] Tyler: "move the status search bar up into the top box
+  // with the layout and anchor" — moved out of This Status's own row
+  // (below) and into the structural Layout/Anchor row instead, so it
+  // reads as a third control alongside them rather than living inside
+  // the This Status box next to Max/Color.
+  // [Round 261] Tyler: "move it to the left of layout and make this one
+  // box only the same size as the other 2" — reordered ahead of Layout,
+  // and switched from flex-grow (1 1 160px) to a fixed width
+  // (flex:0 0 180px) matching Layout/Anchor's own boxes exactly, so all
+  // three sit the same size in a row instead of the search box stretching
+  // to fill leftover space.
+  // [Round 261] A plain wrapper div's inline flex:0 0 180px never
+  // actually widens the picker -- .c-status-picker{width:130px; flex:0 0
+  // auto} (the fixed CSS class always present on a mergedStatusPickerHtml
+  // instance) lives on the INNER picker-wrap div, and overrides a bare
+  // wrapper's own size. [Round 262] Tyler: "i meant the height, not the
+  // width. shrink it back down so that all 3 boxes can fit on one line"
+  // -- round 261's flex:0 0 180px WIDTH match was the wrong read (and
+  // literally didn't fit: 180*3 + gaps exceeds the modal's real content
+  // width, verified via Playwright -- Anchor wrapped onto its own second
+  // line, exactly what Tyler saw). What he actually wanted matched was
+  // HEIGHT: a "Status" label now sits above the picker, same shape as
+  // Layout/Anchor's own label+control columns, so its total box height
+  // lines up with theirs (see .m-bar-thisstatus-picker's CSS override,
+  // which also drops the compact-picker font/padding down here in favor
+  // of the same size every other input/select in the app uses) -- while
+  // its own column width (flex:0 0 150px, narrower than Layout/Anchor's
+  // 180px) is exactly what leaves room for all three on one line.
+  const thisStatusPickerHtml = ownerKind === 'vanilla'
+    ? `<div style="flex:0 0 150px"><label style="font-size:11px">Status</label>${mergedStatusPickerHtml(carrierFromBarEntry(bar), BAR_PAIR_FIELDS, 'm-bar-thisstatus-picker', thisStatusExclude)}</div>`
+    : '';
+  const thisStatusBoxHtml = `
+      <div style="flex:1 1 220px; min-width:210px; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; background:rgba(255,255,255,0.02); display:flex; flex-direction:column">
+        <div style="display:grid; grid-template-columns:16px 1fr 16px; align-items:center; padding-bottom:3px; margin-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.1)">
+          <div></div>
+          <div style="font-size:13px; font-weight:600; text-align:center">This Status</div>
+          <div></div>
+        </div>
+        <div class="row" style="gap:6px; align-items:flex-end; flex-wrap:wrap">
+          <div style="flex:0 0 60px"><label style="font-size:11px">Max</label><input type="number" id="m-bar-max" min="1" value="${Number.isFinite(bar.max) ? bar.max : 5}"></div>
+          <div style="flex:0 0 44px"><label style="font-size:11px">Color</label><div class="m-bar-color-swatch"><input type="color" id="m-bar-color" value="${escapeAttr(bar.color || '#3399ff')}"></div></div>
+          <div style="flex:1 1 auto; display:${isDiamond ? '' : 'none'}">
+            <!-- [Round 253] Tyler: "make the right side checkbox aligned
+                 vertically with the two boxes to the left of it" -- this
+                 column only ever had ONE line (the checkbox+label itself),
+                 while Max/Color are each a caption line + a 23px input/
+                 swatch line, so this column's total height (~22px) was
+                 far shorter than theirs (~42px); align-items:flex-end on
+                 the row bottom-aligns each column's own box, so the
+                 shorter column just sat low, not level with the Max/
+                 Color boxes. Added a hidden spacer label matching the
+                 real "Max"/"Color" caption line exactly (same font-size,
+                 same first-child margin cascade) so this column is the
+                 same total height, then gave the checkbox's own label an
+                 explicit height:23px (matching #m-bar-max/.m-bar-color-
+                 swatch, same round-252 number) with align-items:center to
+                 center the checkbox+text inside that band -- verified in
+                 the same Playwright harness round 252 used: checkbox
+                 label now spans the identical top/bottom pixels as the
+                 Max input and Color swatch. -->
+            <label style="font-size:11px; visibility:hidden">Max</label>
+            <label style="font-size:11px; margin:0; display:flex; align-items:center; gap:6px; height:23px; cursor:pointer; white-space:nowrap" title="Unchecked = left side (the default). Checked = this status's own bar renders on the right side instead — its paired status automatically takes the other side."><input type="checkbox" id="m-bar-side-right" ${bar.diamondRole === 'right' ? 'checked' : ''}> Right side</label>
+          </div>
+        </div>
+        <div style="margin-top:auto; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06)">
+          <label style="font-size:11px" title="Scrubs THIS status's own chip in the preview below — unlike the page-wide Preview fill slider further down, this one never touches any other bar on the page. Not saved with your character.">Preview fill: <span class="rb-own-fill-pct">${rbBarOwnPreviewFill}</span>%</label>
+          <input type="range" min="0" max="100" value="${rbBarOwnPreviewFill}" class="rb-own-fill-slider" style="width:100%">
+        </div>
+      </div>`;
+  const centerBoxHtml = `
+      <div style="flex:1 1 220px; min-width:210px; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; background:rgba(255,255,255,0.02); display:${isDiamond ? 'flex' : 'none'}; flex-direction:column">
+        <div style="display:grid; grid-template-columns:16px 1fr 16px; align-items:center; padding-bottom:3px; margin-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.1)">
+          <div></div>
+          <div style="font-size:13px; font-weight:600; text-align:center">Center Diamond (optional)</div>
+          <button type="button" id="m-bar-center-clear" class="secondary" style="width:16px; height:16px; padding:0; border-radius:3px; display:flex; align-items:center; justify-content:center; line-height:1; font-size:10px; visibility:${center ? 'visible' : 'hidden'}" title="Remove the center status">✕</button>
+        </div>
+        <div class="row" style="gap:6px; align-items:flex-end; flex-wrap:wrap">
+          <div style="flex:1 1 90px; min-width:80px">
+            ${mergedStatusPickerHtml(carrierFromBarEntry(center), BAR_PAIR_FIELDS, 'm-bar-center-picker', centerExclude)}
+          </div>
+          <div style="flex:0 0 60px; visibility:${center ? 'visible' : 'hidden'}"><label style="font-size:11px">Max</label><input type="number" id="m-bar-center-max" min="1" value="${Number.isFinite(center && center.max) ? center.max : 5}"></div>
+          <div style="flex:0 0 44px; visibility:${center ? 'visible' : 'hidden'}"><label style="font-size:11px">Color</label><div class="m-bar-color-swatch"><input type="color" id="m-bar-center-color" value="${escapeAttr((center && center.color) || '#3399ff')}"></div></div>
+        </div>
+        <div style="margin-top:auto; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06)">
+          <label style="font-size:11px" title="Scrubs this group's own chip in the preview below independently of its left/right bars — lets you preview an asymmetric fill, not saved with your character.">Preview fill: <span class="rb-dual-fill-pct" data-rb-dual-role="center">${rbDualCenterPreviewFill}</span>%</label>
+          <input type="range" min="0" max="100" value="${rbDualCenterPreviewFill}" class="rb-dual-fill-slider" data-rb-dual-role="center" style="width:100%">
+        </div>
+      </div>`;
+  const pairedBoxHtml = `
+      <div style="flex:1 1 220px; min-width:210px; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; background:rgba(255,255,255,0.02); display:${isDiamond ? 'flex' : 'none'}; flex-direction:column">
+        <div style="display:grid; grid-template-columns:16px 1fr 16px; align-items:center; padding-bottom:3px; margin-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.1)">
+          <div></div>
+          <div style="font-size:13px; font-weight:600; text-align:center">Paired Status</div>
+          <div></div>
+        </div>
+        <div class="row" style="gap:6px; align-items:flex-end; flex-wrap:wrap">
+          <div style="flex:1 1 90px; min-width:80px">
+            ${mergedStatusPickerHtml(carrierFromBarEntry(partner), BAR_PAIR_FIELDS, 'm-bar-partner-picker', partnerExclude)}
+          </div>
+          <div style="flex:0 0 60px; visibility:${partner ? 'visible' : 'hidden'}"><label style="font-size:11px">Max</label><input type="number" id="m-bar-partner-max" min="1" value="${Number.isFinite(partner && partner.max) ? partner.max : 5}"></div>
+          <div style="flex:0 0 44px; visibility:${partner ? 'visible' : 'hidden'}"><label style="font-size:11px">Color</label><div class="m-bar-color-swatch"><input type="color" id="m-bar-partner-color" value="${escapeAttr((partner && partner.color) || '#3399ff')}"></div></div>
+        </div>
+        <div style="margin-top:auto; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06)">
+          <label style="font-size:11px" title="Scrubs this group's own chip in the preview below independently of its center/this-bar's-own-side bars — lets you preview an asymmetric fill, not saved with your character.">Preview fill: <span class="rb-dual-fill-pct" data-rb-dual-role="${otherSideRole}">${rbDualPairPreviewFill}</span>%</label>
+          <input type="range" min="0" max="100" value="${rbDualPairPreviewFill}" class="rb-dual-fill-slider" data-rb-dual-role="${otherSideRole}" style="width:100%">
+        </div>
+      </div>`;
+  const threeBoxesHtml = bar.diamondRole === 'right'
+    ? pairedBoxHtml + centerBoxHtml + thisStatusBoxHtml
+    : thisStatusBoxHtml + centerBoxHtml + pairedBoxHtml;
   fieldsEl.innerHTML = `
-    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
-      <div style="flex:0 0 90px"><label style="font-size:11px">Max</label><input type="number" id="m-bar-max" min="1" value="${Number.isFinite(bar.max) ? bar.max : 5}"></div>
-      <div style="flex:0 0 50px"><label style="font-size:11px">Color</label><input type="color" id="m-bar-color" value="${escapeAttr(bar.color || '#3399ff')}"></div>
-      <div style="flex:0 0 160px"><label style="font-size:11px">Layout</label><select id="m-bar-layout">
+    <div class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; background:rgba(255,255,255,0.02)">
+      ${thisStatusPickerHtml}
+      <div style="flex:0 0 180px"><label style="font-size:11px">Layout</label><select id="m-bar-layout">
         <option value="standalone" ${!isDiamond ? 'selected' : ''}>Single bar</option>
         <option value="diamond" ${isDiamond ? 'selected' : ''}>Dual bar</option>
       </select></div>
       <div style="flex:0 0 180px"><label style="font-size:11px" title="Which HUD element this status's bar anchors to. Set per status.">Anchor</label><select id="m-bar-anchor">${resourceBarAnchorOptionsHtml(resolveBarAnchor(bar))}</select></div>
     </div>
-    <div id="m-bar-diamond-fields" style="margin-top:10px; display:${isDiamond ? '' : 'none'}">
-      <label style="font-size:11px">Paired status</label>
-      ${mergedStatusPickerHtml(carrierFromBarEntry(partner), BAR_PAIR_FIELDS, 'm-bar-partner-picker', partnerExclude)}
-      <div style="margin-top:10px; display:flex; align-items:flex-end; gap:8px">
-        <div style="flex:1 1 auto">
-          <label style="font-size:11px">Center status (optional)</label>
-          ${mergedStatusPickerHtml(carrierFromBarEntry(center), BAR_PAIR_FIELDS, 'm-bar-center-picker', centerExclude)}
-        </div>
-        <button type="button" id="m-bar-center-clear" class="secondary" style="flex:0 0 auto; display:${center ? '' : 'none'}" title="Remove the center status">✕</button>
-      </div>
+    <!-- [Round 237] Tyler: "lets make the 3 boxes side by side [this
+         status][center diamond][paired status]" — Max/Color/Side for THIS
+         bar moved out of the structural row above (Layout/Anchor govern
+         the whole group either way, so they stay put) and into their own
+         box here, ordered to match the real widget's left-diamond-right
+         reading. align-items:stretch on this row means all 3 boxes share
+         the tallest one's height automatically — no manual height math
+         needed. The "This status" box always shows (a standalone bar
+         still has its own Max/Color); the other two only exist once
+         there's a Dual bar to hold them. [Round 238] Which box reads
+         first is no longer fixed — threeBoxesHtml above already put them
+         in left-to-right order matching bar.diamondRole. -->
+    <div class="row" style="gap:12px; align-items:stretch; flex-wrap:wrap; margin-top:8px">${threeBoxesHtml}
     </div>
     <!-- [Round 103] Live preview, right where the bar is actually being
          created/moved — Tyler: "so that the user can see their bars as
          they create them." refreshResourceBarPreview() (called at the end
          of this function, and after every field change below) fills this
-         in the same way it fills the section-level one. -->
-    <div class="rb-preview-mount" style="margin-top:10px"></div>
+         in the same way it fills the section-level one. [Round 236 layout
+         fix] Tyler: "the layout is a bit jumbled" — a clear border-top +
+         extra margin here separates this page-wide live preview (its own
+         "Preview fill" scrubber affects EVERY bar on the page) from the
+         two group-scoped preview-fill sliders above, which used to sit
+         right on top of it with nothing distinguishing the two scopes. -->
+    <div class="rb-preview-mount" style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.1)"></div>
   `;
   document.getElementById('m-bar-max').addEventListener('input', e=>{ bar.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
   document.getElementById('m-bar-color').addEventListener('input', e=>{ bar.color = e.target.value; save(); refreshResourceBarPreview(); });
   document.getElementById('m-bar-layout').addEventListener('change', e=>{
     const goingDiamond = e.target.value === 'diamond';
     if(!goingDiamond && bar.layout === 'diamond'){
-      // Leaving Dual — release whoever was paired as right/center so the
-      // group is never left half-formed (compiler.js requires every
-      // diamond group to keep a left+right; an orphaned right/center with
-      // no left would fail export).
+      // Leaving Dual — release whoever was paired (this bar's own side's
+      // opposite) and the center so the group is never left half-formed
+      // (compiler.js requires every diamond group to keep a left+right;
+      // an orphaned right/center with no left would fail export).
+      // [Round 235] otherSideRole instead of a hardcoded 'right' — the
+      // partner can now be on either side.
       const oldGroupId = bar.diamondGroup;
       if(oldGroupId){
-        revertBarToStandalone(findGroupMember(oldGroupId, 'right', bar));
-        revertBarToStandalone(findGroupMember(oldGroupId, 'center', bar));
+        releaseGroupMember(findGroupMember(oldGroupId, otherSideRole, bar));
+        releaseGroupMember(findGroupMember(oldGroupId, 'center', bar));
       }
-      revertBarToStandalone(bar);
+      revertBarToStandalone(bar); // [Round 242] this mechanic's own bar always reverts, never deletes
     } else if(goingDiamond && bar.layout !== 'diamond'){
       bar.layout = 'diamond';
       bar.diamondGroup = groupId;
       bar.diamondRole = 'left';
     }
     save();
-    renderMechBarFields(m);
+    renderBarFieldsCore(ownerKind, ownerId);
+  });
+  // [Round 235] Tyler: "when the layout is set to dual bar, the user
+  // should be able to place it the left or right." Swaps this bar's own
+  // side with whoever currently holds the target side (almost always the
+  // paired status) so the group never ends up with two bars claiming the
+  // same side — a straight left<->right swap, never a delete.
+  // [Round 238] Tyler: "dont have a dropdown to select which side. assume
+  // left, and have a checkbox for right side" — same swap logic as round
+  // 235, just driven by a checkbox's checked state instead of a <select>'s
+  // value.
+  const sideCheckbox = document.getElementById('m-bar-side-right');
+  if(sideCheckbox) sideCheckbox.addEventListener('change', e=>{
+    const newRole = e.target.checked ? 'right' : 'left';
+    if(newRole === bar.diamondRole) return;
+    const oldRole = bar.diamondRole;
+    const occupant = findGroupMember(groupId, newRole, bar);
+    bar.diamondRole = newRole;
+    if(occupant) occupant.diamondRole = oldRole;
+    save();
+    renderBarFieldsCore(ownerKind, ownerId);
   });
   document.getElementById('m-bar-anchor').addEventListener('change', e=>{
     const ok = tryChangeBarAnchor(bar, e.target.value, state.character.resourceBars || []);
@@ -14999,30 +15641,241 @@ function renderMechBarFields(m){
       const centerBar = findGroupMember(bar.diamondGroup, 'center', bar);
       if(partnerBar) partnerBar.anchor = bar.anchor;
       if(centerBar) centerBar.anchor = bar.anchor;
-      save();
     }
-    renderMechBarFields(m); // re-render either way: reverts a blocked change back to its real value
+    // [Round 254 fix] Tyler: "if i change the bar location from below
+    // health to above energy, it doesnt always clear it out" -- save()
+    // used to live INSIDE the diamond-only block above, so a standalone
+    // bar's anchor change (the common case -- most bars aren't part of a
+    // diamond group) mutated `bar.anchor` in memory only. The preview
+    // zones still looked right immediately (same in-memory object, so the
+    // old zone's slot correctly emptied on screen) but nothing was
+    // written to localStorage, so the very next load() silently reverted
+    // it back to the old anchor -- reproduced and confirmed in an
+    // isolated test extracting this exact before/after logic: in-memory
+    // anchor flips to the new value, the saved/persisted copy stays on
+    // the old one. save() now runs unconditionally whenever the change
+    // was accepted, diamond or not.
+    if(ok) save();
+    renderBarFieldsCore(ownerKind, ownerId); // re-render either way: reverts a blocked change back to its real value
+  });
+  // [Round 258/259] This Status's own picker (vanilla owner only — see
+  // thisStatusPickerHtml above; a no-op for a mechanic, where the
+  // element simply doesn't exist in the DOM and wireMergedStatusPicker's
+  // own null-pickerEl guard handles that). Unconditional/outside the
+  // isDiamond block below since it applies to a Single bar just as much
+  // as a Dual one. Two cases: `bar` is still vbDraftBar (nothing picked
+  // yet — this pick is what promotes the draft into real, saved state,
+  // including renaming its placeholder `pair-vanilla-null` group, if it
+  // already has one, to the real group id and cascading that rename to
+  // any partner/center already picked against it), or `bar` is an
+  // already-real entry (a plain rename in place). Both branches: re-
+  // picking a status that already has its OWN separate bar is blocked
+  // with an alert rather than silently merging two entries.
+  const thisStatusPickerEl = fieldsEl.querySelector('.m-bar-thisstatus-picker');
+  wireMergedStatusPicker(thisStatusPickerEl, carrierFromBarEntry(bar), BAR_PAIR_FIELDS, (kind, value)=>{
+    if(bar === vbDraftBar){
+      if(findResourceBarForStatus('vanilla', value)){
+        alert(`${value} already has its own resource bar. Remove or rename that one first.`);
+        renderBarFieldsCore(ownerKind, ownerId); // re-render the still-unpromoted draft as-is
+        return;
+      }
+      bar.builtinStatus = value;
+      if(bar.layout === 'diamond' && bar.diamondGroup){
+        const oldGroupId = bar.diamondGroup;
+        const newGroupId = `pair-vanilla-${value}`;
+        if(oldGroupId !== newGroupId){
+          (state.character.resourceBars || []).forEach(b => { if(b && b.diamondGroup === oldGroupId) b.diamondGroup = newGroupId; });
+          bar.diamondGroup = newGroupId;
+        }
+      }
+      if(!Array.isArray(state.character.resourceBars)) state.character.resourceBars = [];
+      state.character.resourceBars.push(bar);
+      vbDraftBar = null;
+      vbEditorCurrentStatus = value;
+      save();
+      renderVanillaBars();
+      refreshResourceBarPreview();
+      renderBarFieldsCore('vanilla', value);
+      return;
+    }
+    if(value === ownerId) return;
+    if(findResourceBarForStatus('vanilla', value)){
+      alert(`${value} already has its own resource bar. Remove or rename that one first.`);
+      renderBarFieldsCore(ownerKind, ownerId); // revert the picker's shown text back to the real current value
+      return;
+    }
+    bar.statusKind = 'vanilla';
+    bar.builtinStatus = value;
+    save();
+    renderVanillaBars();
+    refreshResourceBarPreview();
+    vbEditorCurrentStatus = value;
+    renderBarFieldsCore('vanilla', value);
   });
   if(isDiamond){
     const partnerPickerEl = fieldsEl.querySelector('.m-bar-partner-picker');
     wireMergedStatusPicker(partnerPickerEl, carrierFromBarEntry(partner), BAR_PAIR_FIELDS, (kind, value)=>{
-      applyDiamondPairPick(m, bar, groupId, 'right', kind, value);
-      renderMechBarFields(m);
+      applyDiamondPairPick(ownerKind, ownerId, bar, groupId, otherSideRole, kind, value);
+      renderBarFieldsCore(ownerKind, ownerId);
     });
     const centerPickerEl = fieldsEl.querySelector('.m-bar-center-picker');
     wireMergedStatusPicker(centerPickerEl, carrierFromBarEntry(center), BAR_PAIR_FIELDS, (kind, value)=>{
-      applyDiamondPairPick(m, bar, groupId, 'center', kind, value);
-      renderMechBarFields(m);
+      applyDiamondPairPick(ownerKind, ownerId, bar, groupId, 'center', kind, value);
+      renderBarFieldsCore(ownerKind, ownerId);
     });
     const clearCenterBtn = document.getElementById('m-bar-center-clear');
     if(clearCenterBtn) clearCenterBtn.addEventListener('click', ()=>{
-      revertBarToStandalone(findGroupMember(groupId, 'center', bar));
+      releaseGroupMember(findGroupMember(groupId, 'center', bar));
       save();
-      renderMechBarFields(m);
+      renderBarFieldsCore(ownerKind, ownerId);
+    });
+    // [Round 236] Tyler: "we still dont have an option for paired status'
+    // color/max or the diamond's color/max" — the partner and center are
+    // real resourceBars entries with their own max/color (set to a 5/
+    // #3399ff default the moment applyDiamondPairPick creates them), but
+    // until now nothing let the user actually edit them after picking —
+    // only this mechanic's own bar's Max/Color inputs existed. Same
+    // "mutate the object directly, save, refresh the preview, don't
+    // re-render the whole editor" pattern as the m-bar-max/m-bar-color
+    // handlers above. Only wired when partner/center actually exist
+    // (their inputs are display:none until a status is picked).
+    const partnerMaxEl = document.getElementById('m-bar-partner-max');
+    if(partnerMaxEl && partner) partnerMaxEl.addEventListener('input', e=>{ partner.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
+    const partnerColorEl = document.getElementById('m-bar-partner-color');
+    if(partnerColorEl && partner) partnerColorEl.addEventListener('input', e=>{ partner.color = e.target.value; save(); refreshResourceBarPreview(); });
+    const centerMaxEl = document.getElementById('m-bar-center-max');
+    if(centerMaxEl && center) centerMaxEl.addEventListener('input', e=>{ center.max = parseInt(e.target.value)||1; save(); refreshResourceBarPreview(); });
+    const centerColorEl = document.getElementById('m-bar-center-color');
+    if(centerColorEl && center) centerColorEl.addEventListener('input', e=>{ center.color = e.target.value; save(); refreshResourceBarPreview(); });
+    // [Round 233 fix] Tyler: "remove this redundant preview, make both
+    // bars adjust the bigger preview" — these two sliders now drive THIS
+    // group's own chip in the always-visible per-anchor grid preview
+    // (applyDualRolePreviewFill mutates the matching elements' style
+    // directly, no re-render, so dragging stays smooth) instead of a
+    // separate mini preview.
+    fieldsEl.querySelectorAll('.rb-dual-fill-slider').forEach(slider => {
+      slider.oninput = e => {
+        const role = e.target.dataset.rbDualRole;
+        const val = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+        applyDualRolePreviewFill(role, val);
+      };
     });
   }
+  // [Round 240] The "This Status" box's own Preview fill slider — wired
+  // outside the isDiamond block above since a standalone bar needs it
+  // too, not just one that's part of a Dual group.
+  const ownFillSlider = fieldsEl.querySelector('.rb-own-fill-slider');
+  if(ownFillSlider) ownFillSlider.oninput = e => {
+    applyBarOwnPreviewFill(Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)));
+  };
   refreshResourceBarPreview();
 }
+// [Round 257] Thin wrappers over the generalized renderBarFieldsCore --
+// Tyler: "the track a built in status feature seems a little out of
+// place... You cant even pick where the bar goes" (no Layout/Anchor
+// controls existed for a vanilla-status-initiated bar, unlike a custom
+// mechanic's). Rather than duplicate the ~300-line box-UI/Layout/Anchor
+// editor a second time for vanilla statuses (real risk of the two drifting
+// out of sync the way round 247/248's class-vs-id specificity bug already
+// showed duplicated styling can), the core was generalized to take an
+// explicit (ownerKind, ownerId) identity instead of a mechanic object --
+// 'custom'+mechanic id for renderMechBarFields (unchanged behavior, every
+// existing call site below still just calls this the same way), 'vanilla'
+// +builtinStatus name for the new vanilla bar editor.
+function renderMechBarFields(m){ renderBarFieldsCore('custom', m.id); }
+function renderVanillaBarFieldsInto(builtinStatus){ renderBarFieldsCore('vanilla', builtinStatus); }
+// [Round 255/257] Shared by openMechEditor and openVanillaBarEditor: a
+// Dual bar with no paired status blocks the modal from closing (X icon,
+// clicking outside, or Done — all three funnel through closeModal, which
+// checks modalCloseGuard) until either a partner is picked or Layout is
+// switched back to Single bar. Center is deliberately not required,
+// matching the "Center Diamond (optional)" label on that box. Reads live
+// state on every close attempt rather than a snapshot, so it stays
+// correct across whatever Layout/pairing changes happen while the modal
+// is open, and clears itself automatically once the bar itself is gone
+// (Delete for a mechanic, Remove bar for a vanilla status).
+function barDualPairCloseGuard(ownerKind, ownerId){
+  return () => {
+    const linkedBar = findResourceBarForStatus(ownerKind, ownerId);
+    if(linkedBar && linkedBar.layout === 'diamond'){
+      const otherRole = linkedBar.diamondRole === 'right' ? 'left' : 'right';
+      if(!findGroupMember(linkedBar.diamondGroup, otherRole, linkedBar)){
+        return 'Dual bar needs a paired status first — pick one in the Paired Status box below, or switch Layout back to Single bar.';
+      }
+    }
+    return null;
+  };
+}
+// [Round 258] Tracks whichever vanilla status the open editor currently
+// applies to — starts null for a brand-new bar (still vbDraftBar, not yet
+// promoted into state) and flips to the real builtinStatus the moment
+// This Status's own picker promotes/renames it (see the picker wiring in
+// renderBarFieldsCore). vb-editor-remove and the close guard both read
+// this instead of a stale value captured when the modal first opened,
+// since that identity can change mid-session now.
+let vbEditorCurrentStatus = null;
+// [Round 259] Shared by vb-editor-remove and vanillaBarEditorCloseGuard:
+// abandons an unpromoted draft, releasing any partner/center it already
+// picked against its placeholder `pair-vanilla-null` group so a group
+// with no real left member (the draft itself, which was never actually
+// in state.character.resourceBars) never gets left behind.
+function discardVanillaDraft(){
+  if(vbDraftBar && vbDraftBar.layout === 'diamond' && vbDraftBar.diamondGroup){
+    releaseGroupMember(findGroupMember(vbDraftBar.diamondGroup, 'right', vbDraftBar));
+    releaseGroupMember(findGroupMember(vbDraftBar.diamondGroup, 'center', vbDraftBar));
+    save();
+  }
+  vbDraftBar = null;
+}
+// [Round 259] Assigned to modalCloseGuard once, in openVanillaBarEditor —
+// unlike barDualPairCloseGuard(ownerKind, ownerId), this takes no
+// arguments and re-reads vbEditorCurrentStatus/vbDraftBar live on every
+// close attempt, since either can change mid-session (a draft gets
+// promoted, a real bar gets renamed) after the modal first opens.
+function vanillaBarEditorCloseGuard(){
+  if(vbEditorCurrentStatus) return barDualPairCloseGuard('vanilla', vbEditorCurrentStatus)();
+  discardVanillaDraft(); // never promoted -- nothing to keep, but clean up any partner/center it started
+  return null; // always allow closing an unpromoted draft
+}
+// [Round 257] The vanilla-status counterpart to openMechEditor's own
+// "Represent as a bar" section — a dedicated small modal rather than a
+// second copy of the box UI crammed inline into the already-busy
+// Mechanics panel.
+// [Round 258/259] Tyler: "lets not have the user pick the status until
+// the add button is clicked... add statuses to the left side of the
+// box" then "show Max/Color/Layout/Anchor right away too, not just after
+// picking" — builtinStatus is optional: add-vanilla-bar-btn no longer
+// creates a bar or picks a status up front, it just opens this modal
+// empty, and renderBarFieldsCore synthesizes a transient vbDraftBar so
+// the WHOLE editor (Layout/Anchor/Max/Color/Center/Paired) is live
+// immediately, with This Status's own picker sitting right there in its
+// box rather than gating everything else behind picking first.
+function openVanillaBarEditor(builtinStatus){
+  vbEditorCurrentStatus = builtinStatus || null;
+  if(!vbEditorCurrentStatus) vbDraftBar = null; // a fresh Add always starts a brand-new draft, never a stale leftover one
+  openModal(`
+    <div class="modal-head"><h3>Resource Bar</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <div id="m-bar-fields" class="ench-field-box"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="danger" id="vb-editor-remove">Remove bar</button>
+      <button id="vb-editor-done">Done</button>
+    </div>
+  `);
+  renderVanillaBarFieldsInto(vbEditorCurrentStatus);
+  modalCloseGuard = vanillaBarEditorCloseGuard;
+  document.getElementById('vb-editor-done').onclick = ()=> closeModal();
+  document.getElementById('vb-editor-remove').onclick = ()=>{
+    if(vbEditorCurrentStatus){
+      removeOrUnpairVanillaBar(vbEditorCurrentStatus);
+    } else {
+      discardVanillaDraft();
+    }
+    closeModal(); // the bar is gone/reverted/discarded now, so the guard reads null and allows this
+  };
+}
+
 function openMechEditor(mechId){
   const m = state.mechanics.find(x=>x.id===mechId);
   if(!m.effects) m.effects = []; // upgrade path for mechanics saved before this field existed
@@ -15041,7 +15894,16 @@ function openMechEditor(mechId){
       <div style="display:flex; gap:24px; align-items:stretch;">
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Name</label><input type="text" id="m-name" value="${escapeAttr(m.name)}">
-          <label style="margin-top:14px">Description</label><textarea id="m-desc" style="flex:1; min-height:60px;">${escapeHtml(m.description||'')}</textarea>
+          <label style="margin-top:14px" title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this status's effects (shown below in italics until you type your own).">Description</label>
+          <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
+            <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
+            <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
+            <button type="button" class="desc-color-btn bb-blue" onclick="wrapDescriptionSelection('blue')" title="[blue]...[/blue]"></button>
+            <button type="button" class="desc-color-btn bb-purple" onclick="wrapDescriptionSelection('purple')" title="[purple]...[/purple]"></button>
+            <button type="button" class="desc-color-btn bb-green" onclick="wrapDescriptionSelection('green')" title="[green]...[/green]"></button>
+          </div>
+          <textarea id="m-description" placeholder="Leave blank to auto-fill from its effects." style="flex:1; min-height:60px;">${escapeHtml(m.description||'')}</textarea>
+          <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
         </div>
         <div style="flex:0 0 160px;">
           <label>Icon <span class="dim-hint">(optional, ${MECHANIC_ICON_WIDTH}&times;${MECHANIC_ICON_HEIGHT}px)</span></label>
@@ -15081,7 +15943,7 @@ function openMechEditor(mechId){
         <label for="m-stay-visible-zero" style="margin:0" title="Compiles to a character-wide Harmony patch on PowerModel.ShouldRemoveDueToAmount (not a per-status override — that method isn't virtual). Real vanilla effect [VERIFIED by decompiling Tyler's own real, compiled 'The Burdened' reference mod's Patches/ModStatusRowPatch.cs]: this status stays on screen showing 0 instead of vanishing the instant its last stack is spent. Only applies exactly at 0 — driven negative still removes it as normal.">Stay visible at 0 stacks</label>
       </div>
       <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
-        <input type="checkbox" id="m-bar-enabled" ${mechResourceBar(m) ? 'checked' : ''}>
+        <input type="checkbox" id="m-bar-enabled" data-mech-id="${escapeAttr(m.id)}" ${mechResourceBar(m) ? 'checked' : ''}>
         <label for="m-bar-enabled" style="margin:0" title="Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below.">Represent as a bar</label>
       </div>
       <div id="m-bar-fields" class="ench-field-box" style="display:${mechResourceBar(m) ? '' : 'none'}"></div>
@@ -15095,8 +15957,40 @@ function openMechEditor(mechId){
       <button id="save-mech">Done</button>
     </div>
   `, {wide:true});
-  renderEffectsList(m, HOOK_TRIGGERS);
+  renderEffectsList(m, allowedHookTriggers(false));
   renderMechBarFields(m);
+  // [Round 270] Live "Auto: ..." hint under the Description textarea,
+  // same "editable box, auto-fills a best-effort guess while left blank"
+  // feature the card editor already has (see generateHookDescription's
+  // own comment) -- reads m.effects live via a MutationObserver on
+  // #effects-list (rather than threading a refresh call through
+  // renderEffectsList's own add/remove/edit paths, which is shared by
+  // cards/relics/mechanics/enchantments/afflictions and would need a
+  // parameter change touching every one of them for one editor's own
+  // hint) so adding/editing/removing an effect block keeps the hint
+  // current without ever going stale, exactly like the saved description
+  // itself (generateHookDescription(m.effects) is always computed fresh
+  // from the CURRENT effects at Done-click time regardless of this hint).
+  const refreshMechDescHint = ()=>{
+    const hintEl = document.getElementById('m-desc-auto-hint');
+    const descEl = document.getElementById('m-description');
+    if(!hintEl || !descEl) return;
+    if(descEl.value.trim()){ hintEl.innerHTML = ''; return; }
+    hintEl.innerHTML = 'Auto: ' + bbcodeToHtml(generateHookDescription(m.effects));
+  };
+  refreshMechDescHint();
+  document.getElementById('m-description').addEventListener('input', refreshMechDescHint);
+  new MutationObserver(refreshMechDescHint).observe(document.getElementById('effects-list'), {childList:true, subtree:true, characterData:true});
+  // [Round 255] Tyler: "if dual bar is selected, make the paired status a
+  // requirement before they can close the editor" — reads live state on
+  // every close attempt (not a snapshot taken here), so it stays correct
+  // across Layout/pairing changes made while the editor is open, and
+  // through Delete (which removes this mechanic's own bar entirely, so
+  // the guard's lookup goes back to null and it clears itself — no
+  // separate bypass needed there). [Round 257] Pulled into the shared
+  // barDualPairCloseGuard so the vanilla bar editor enforces the exact
+  // same rule instead of a second, separately-maintained copy of it.
+  modalCloseGuard = barDualPairCloseGuard('custom', m.id);
 
   // Icon preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
   // commitAsset pattern openRelicEditor's own icon field uses (round 229).
@@ -15143,7 +16037,7 @@ function openMechEditor(mechId){
     refreshMechIconPreview();
   };
 
-  document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnTurnStart', conditions:[], actions:[]}); renderEffectsList(m, HOOK_TRIGGERS); };
+  document.getElementById('add-effect').onclick = ()=>{ m.effects.push({trigger:'OnTurnStart', conditions:[], actions:[]}); renderEffectsList(m, allowedHookTriggers(false)); };
   document.getElementById('delete-mech').onclick = ()=>{
     if(m.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==m.iconAssetRef);
     state.mechanics = state.mechanics.filter(x=>x.id!==mechId);
@@ -15174,6 +16068,24 @@ function openMechEditor(mechId){
         state.character.resourceBars.push({ enabled:true, statusKind:'custom', status:m.id, max:5, color:'#3399ff', label:m.name||'', layout:'standalone', anchor:'HealthBar' });
       }
     } else {
+      // [Round 249] Tyler: "i unchecked the bar box... now i cant recheck
+      // it because it says i have 1 health bar bar already" — if this
+      // mechanic's own bar was part of a Dual bar group, the old code
+      // below only ever removed THIS entry (statusKind==='custom' &&
+      // status===m.id), leaving its paired/center partners behind still
+      // tagged layout:'diamond' with the old diamondGroup id. Even with
+      // no left side left, countResourceBarWidgetsForAnchor still counts
+      // any leftover diamondGroup id as 1 occupied widget for that
+      // anchor — so unchecking silently left the anchor "full" and
+      // re-checking hit the cap. Release the group first (same pattern
+      // as the m-bar-layout "leave Dual" handler above), THEN remove
+      // this bar's own entry.
+      const uncheckedBar = mechResourceBar(m);
+      if(uncheckedBar && uncheckedBar.layout === 'diamond' && uncheckedBar.diamondGroup){
+        const uncheckedOtherRole = uncheckedBar.diamondRole === 'right' ? 'left' : 'right';
+        releaseGroupMember(findGroupMember(uncheckedBar.diamondGroup, uncheckedOtherRole, uncheckedBar));
+        releaseGroupMember(findGroupMember(uncheckedBar.diamondGroup, 'center', uncheckedBar));
+      }
       state.character.resourceBars = state.character.resourceBars.filter(b => !(b.statusKind === 'custom' && b.status === m.id));
     }
     save();
@@ -15182,7 +16094,9 @@ function openMechEditor(mechId){
   });
   document.getElementById('save-mech').onclick = ()=>{
     m.name = document.getElementById('m-name').value;
-    m.description = document.getElementById('m-desc').value;
+    const typedMechDescription = document.getElementById('m-description').value.trim();
+    m.description = typedMechDescription || undefined;
+    m.autoGeneratedDescription = typedMechDescription ? undefined : generateHookDescription(m.effects);
     m.stackable = document.getElementById('m-stack').value === 'true';
     m.decaysPerTurn = document.getElementById('m-decay').value === 'true';
     m.isBuff = document.getElementById('m-buff').value === 'buff';
@@ -16867,9 +17781,22 @@ function renderTriggerPicker(container, values, selected, onSelect){
 // named after the picker they were built for first.
 function renderModifierHookPicker(container, values, selected, onSelect){
   const valueSet = new Set(values);
+  // [Round 268 fix] This used to spread each MODIFIER_HOOK_CATEGORIES
+  // entry into `{...cat, triggers: cat.hooks.filter(...)}` -- computing a
+  // correctly-filtered `triggers` field, but then never actually reading
+  // it: the row-emptiness filter, render()'s own option list, and
+  // catColorFor all kept reading the ORIGINAL, unfiltered `cat.hooks`
+  // instead (a leftover from adapting renderTriggerPicker, whose own
+  // category objects are already field-named `triggers`, not `hooks`).
+  // Net effect: `values` never actually restricted which hooks showed in
+  // this picker, for anyone who ever called it with a narrower list than
+  // every hook -- confirmed via a direct read of every call site, only
+  // ever the full Object.keys(MODIFIER_HOOKS) until now. Fixed to match
+  // renderTriggerPicker's own, already-correct pattern: read the
+  // filtered `triggers` field everywhere below, not `hooks`.
   const rows = MODIFIER_HOOK_CATEGORIES
     .map(cat => ({ ...cat, triggers: cat.hooks.filter(t => valueSet.has(t)) }))
-    .filter(cat => cat.hooks.length > 0);
+    .filter(cat => cat.triggers.length > 0);
   // A value not covered by any MODIFIER_HOOK_CATEGORIES entry (should never
   // happen; the console.assert sweep near that const's own definition
   // already checks this at load time) gets a synthetic "Other" category
@@ -16880,7 +17807,7 @@ function renderModifierHookPicker(container, values, selected, onSelect){
   if(leftover.length) rows.push({ id:'other', label:'Other', color:'#7a8699', triggers:leftover });
 
   const catColorFor = t => {
-    const cat = rows.find(c => c.hooks.includes(t));
+    const cat = rows.find(c => c.triggers.includes(t));
     return cat ? cat.color : '#7a8699';
   };
 
@@ -16893,7 +17820,7 @@ function renderModifierHookPicker(container, values, selected, onSelect){
           <div class="picker-option trig-cat-row" style="--cat-color:${cat.color}" tabindex="0">
             ${escapeHtml(cat.label)} <span class="trig-cat-row-arrow">›</span>
             <div class="trig-sub-list">
-              ${cat.hooks.map(t => `<div class="picker-option${t===selected?' picker-option-current':''}" data-hook="${t}">${escapeHtml((MODIFIER_HOOKS[t] ? MODIFIER_HOOKS[t].label : t))}</div>`).join('')}
+              ${cat.triggers.map(t => `<div class="picker-option${t===selected?' picker-option-current':''}" data-hook="${t}">${escapeHtml((MODIFIER_HOOKS[t] ? MODIFIER_HOOKS[t].label : t))}</div>`).join('')}
             </div>
           </div>
         `).join('')}

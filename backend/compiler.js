@@ -6333,27 +6333,136 @@ ${typeChecks}
 `;
 }
 
-// [2026-09-23] Paired class-level half of the 'extraHealText' modifier
-// shape -- see MODIFIER_HOOKS' ModifyExtraRestSiteHealText entry and
+// [2026-09-23] Builds the single 'ModifyExtraRestSiteHealText' loc row
+// -- see MODIFIER_HOOKS' ModifyExtraRestSiteHealText entry and
 // generateModifierOverrides' 'extraHealText' branch for the full real-
 // evidence trail (BaseLib.Abstracts.ILocalizationProvider, confirmed via
-// direct InterfaceImpl reads of both sts2.dll and BaseLib.dll). A
-// `Localization` override is a CLASS-level property -- can only appear
-// once per generated class -- so it's generated here, once, alongside
-// (not inside) generateModifierOverrides' per-modifier-block loop, and
-// only when a real 'ModifyExtraRestSiteHealText' modifier with actual
-// text is present (validate.js requires non-empty text whenever this
-// modifier exists, so `mod.extraHealText` is trustworthy here -- the
-// `!mod.extraHealText` branch below is just defense-in-depth for a
+// direct InterfaceImpl reads of both sts2.dll and BaseLib.dll). Only
+// returns a row when a real 'ModifyExtraRestSiteHealText' modifier with
+// actual text is present (validate.js requires non-empty text whenever
+// this modifier exists, so `mod.extraHealText` is trustworthy here --
+// the `!mod.extraHealText` branch below is just defense-in-depth for a
 // package saved before that validation existed). "EXTRAHEALTEXT" is an
 // arbitrary Forge-chosen key -- the ONLY other place it needs to match is
 // generateModifierOverrides' own 'extraHealText' branch, which it does.
+// [Round 270] Used to BE the entire `Localization` override by itself
+// (a class-level property, so it can only appear once per generated
+// class); now just returns this one tuple's source text, folded into
+// generateRelicLocalization/generateMechanicLocalization's own combined
+// Localization property below, since relics/mechanics now also carry a
+// real title/description(/flavor) row there.
 function generateExtraHealTextLocalization(entity) {
   const mod = (entity.modifiers || []).find(m => m.hook === 'ModifyExtraRestSiteHealText');
   if (!mod || !mod.extraHealText) return null;
   const text = String(mod.extraHealText).replace(/"/g, '\\"').replace(/\n/g, '\\n');
-  return `    // modifier: ModifyExtraRestSiteHealText -> Localization [real BaseLib.Abstracts.ILocalizationProvider override, paired with the ModifyExtraRestSiteHealText override above/below -- see MODIFIER_HOOKS' own entry]
-    public override List<(string, string)>? Localization => new List<(string, string)> { ("EXTRAHEALTEXT", "${text}") };`;
+  return `("EXTRAHEALTEXT", "${text}")`;
+}
+
+// Escapes a string for use inside a C# regular (non-verbatim) string
+// literal INCLUDING real newlines -- csharpStringLiteral above handles
+// quotes/backslashes but leaves a literal newline character in place,
+// which is a genuine C# compile error (CS1010) inside a plain "..."
+// literal. Used for relic/mechanic description/flavor text below, which
+// (unlike gameplay tags/card names) really can contain user-typed line
+// breaks.
+function csharpLocLiteral(str) {
+  return `"${String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r\n/g, '\n').replace(/\n/g, '\\n')}"`;
+}
+
+// [Round 270] Real Localization override for RELICS -- Tyler: "add the
+// auto-generate description feature from the card section here as well.
+// and also for relics if that isn't in place already," then, once told
+// relics had no real in-game description output at all yet: "look
+// through my character dll as well as game files. I want this
+// verified." Verified via direct ECMA-335 IL reads of BOTH the real
+// installed sts2.dll (tools/reflect-baselib/bin/Debug/net9.0/sts2.dll)
+// AND the real installed BaseLib.dll -- not inferred from naming:
+//   - CustomRelicModel implements BaseLib.Abstracts.ILocalizationProvider
+//     (confirmed off BaseLib.dll's InterfaceImpl table -- the SAME
+//     interface CardLoc/generateCardLocalization already use for cards;
+//     see this file's own comment on MODIFIER_HOOKS.
+//     ModifyExtraRestSiteHealText for the original find).
+//   - RelicModel.get_Title()/get_Description()/get_Flavor() (all three,
+//     direct sts2.dll IL read) each build a LocString the exact same
+//     way: LocTable "relics", key "{this.Id.Entry}.title" / ".description"
+//     / ".flavor" -- read live off LocManager.Instance at ACCESS time,
+//     not baked into the class at all.
+//   - BaseLib.Abstracts.RelicLoc (direct BaseLib.dll IL read of its own
+//     op_Implicit -> List<(string,string)> conversion) is a real,
+//     purpose-built helper confirmed to emit exactly [("title", Title),
+//     ("description", Description), ("flavor", Flavor)] tuples -- same
+//     shape as CardLoc, just with an extra Flavor slot.
+//   - BaseLib.Patches.Localization.ModelLocPatch.AddModelLoc (direct
+//     BaseLib.dll IL read) is the real Harmony patch that walks every
+//     loaded ILocalizationProvider model at content-load time, reads its
+//     .Localization list, and writes each tuple into LocManager's live
+//     "relics" table under key "{this.Id.Entry}.{tupleKey}" -- exactly
+//     the keys RelicModel's own getters above read back out at runtime.
+// Net finding: this was a real, working, VERIFIED mechanism Forge had
+// simply never wired up for relics before this round -- Relic.cs.template
+// deliberately has no Name/Title override at all (see its own header
+// comment, "based on the same CS0506 evidence that killed them on Card
+// and Character"), and nothing else in this file ever wrote a "relics"
+// loc entry, so a relic's Name/Description/Flavor text has never
+// actually reached a compiled mod until now. Built as ONE raw
+// List<(string,string)> rather than `new RelicLoc(...)` directly --
+// RelicLoc's own op_Implicit unconditionally emits all 3 of its fields as
+// separate tuples regardless of whether they're set, and while an empty
+// "flavor" row is harmless (RelicModel.get_Flavor has no "HasFlavor"-
+// style gate the way PowerModel.SmartDescription does -- see
+// generateMechanicLocalization's own comment for why THAT one needs the
+// opposite care), building the row list directly keeps this function's
+// real, verified output explicit rather than delegating to an unread
+// record type. `Localization` is a class-level property (only one per
+// generated class), so this also absorbs the extraHealText row
+// generateExtraHealTextLocalization used to emit as its own override.
+function generateRelicLocalization(relic) {
+  const rows = [`("title", ${csharpLocLiteral(relic.name || 'Untitled')})`];
+  const description = (relic.description || relic.autoGeneratedDescription || '').trim();
+  if (description) rows.push(`("description", ${csharpLocLiteral(description)})`);
+  const flavor = (relic.flavorText || '').trim();
+  if (flavor) rows.push(`("flavor", ${csharpLocLiteral(flavor)})`);
+  const extraHealTextRow = generateExtraHealTextLocalization(relic);
+  if (extraHealTextRow) rows.push(extraHealTextRow);
+  return `    // [Round 270] Real BaseLib.Abstracts.ILocalizationProvider override -- see this file's own generateRelicLocalization comment for the full sts2.dll/BaseLib.dll IL evidence trail.
+    public override List<(string, string)>? Localization => new List<(string, string)> { ${rows.join(', ')} };`;
+}
+
+// [Round 270] Real Localization override for MECHANICS (statuses) -- same
+// ask/verification as generateRelicLocalization above, same evidence tier.
+// CustomPowerModel implements BaseLib.Abstracts.ILocalizationProvider
+// (same InterfaceImpl confirmation as CustomRelicModel). PowerModel.
+// get_Title()/get_Description() (direct sts2.dll IL read) build a
+// LocString the exact same way: LocTable "powers", key
+// "{this.Id.Entry}.title" / ".description". BaseLib.Abstracts.PowerLoc
+// (direct BaseLib.dll IL read of its own op_Implicit) emits
+// [("title", Title), ("description", Description),
+// ("smartDescription", SmartDescription)] tuples -- but unlike Flavor
+// above, SmartDescription is NOT safe to leave empty: PowerModel.
+// get_HasSmartDescription() (direct sts2.dll IL read) is a pure
+// LocTable.HasEntry(key) check -- it does NOT check whether the value is
+// non-empty -- so registering an empty "smartDescription" tuple would
+// make HasSmartDescription true and get_SmartDescription() (confirmed:
+// falls back to plain Description only when HasSmartDescription is
+// false) return a blank LocString instead of falling back, i.e. it would
+// make the tooltip WORSE than not touching this at all. Forge has no
+// authored source for SmartDescription content (no confirmed dynamic-var
+// template syntax for it either), so this deliberately builds the row
+// list directly (same reasoning as generateRelicLocalization) and never
+// emits a "smartDescription" row -- HasSmartDescription then correctly
+// stays false and PowerModel.SmartDescription cleanly falls back to
+// Description on its own, real, verified default behavior. Same
+// Localization-is-class-level-only reasoning as relics: also absorbs the
+// extraHealText row (a legacy mechanic saved before round 268 restricted
+// that modifier category to relics-only could still carry one).
+function generateMechanicLocalization(mechanic) {
+  const rows = [`("title", ${csharpLocLiteral(mechanic.name || 'Untitled')})`];
+  const description = (mechanic.description || mechanic.autoGeneratedDescription || '').trim();
+  if (description) rows.push(`("description", ${csharpLocLiteral(description)})`);
+  const extraHealTextRow = generateExtraHealTextLocalization(mechanic);
+  if (extraHealTextRow) rows.push(extraHealTextRow);
+  return `    // [Round 270] Real BaseLib.Abstracts.ILocalizationProvider override -- see this file's own generateMechanicLocalization comment for the full sts2.dll/BaseLib.dll IL evidence trail.
+    public override List<(string, string)>? Localization => new List<(string, string)> { ${rows.join(', ')} };`;
 }
 
 function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverride) {
@@ -6366,7 +6475,7 @@ function generateRelicSource(relic, namespace, poolClassName, refMaps, iconOverr
     relicName: relic.name.replace(/"/g, '\\"'),
     rarity: relic.rarity,
     iconOverride: iconOverride || '',
-    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps), generateExtraHealTextLocalization(relic), generateClaimShopInventoryOverride(relic)].filter(Boolean).join('\n\n'),
+    hookMethods: [generateHookEffects(relic, 'relic', refMaps), generateModifierOverrides(relic, 'relic', refMaps), generateRelicLocalization(relic), generateClaimShopInventoryOverride(relic)].filter(Boolean).join('\n\n'),
   });
 }
 
@@ -6482,7 +6591,7 @@ function generateMechanicSource(mechanic, namespace, refMaps, iconOverride) {
     // TRIGGER_HOOKS), see Power.cs.template's header for the one remaining
     // honest caveat (player/target binding here isn't confirmed to be
     // specifically "this power's owner").
-    hookMethods: [generateHookEffects(mechanic, 'mechanic', refMaps), generateModifierOverrides(mechanic, 'mechanic', refMaps), generateExtraHealTextLocalization(mechanic)].filter(Boolean).join('\n\n'),
+    hookMethods: [generateHookEffects(mechanic, 'mechanic', refMaps), generateModifierOverrides(mechanic, 'mechanic', refMaps), generateMechanicLocalization(mechanic)].filter(Boolean).join('\n\n'),
   });
 }
 
