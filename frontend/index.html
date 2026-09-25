@@ -9723,6 +9723,29 @@ function fixConditionSubjectForTrigger(cond, trigger){
     if(cond.subject === 'ThatCard' && trigger !== 'OnAnyCardPlayed') cond.subject = 'ThisCard';
     return;
   }
+  // [2026-09-25] Same class of bug as the .c-subject onchange fix above,
+  // reached from the OTHER direction: the EFFECT's trigger changes (not
+  // the condition's subject) out from under a PlayedCardHasKeyword/Tag/
+  // Type condition. These three kinds are only ever valid under subject
+  // 'ThatCard' (THAT_CARD_ONLY_CONDITION_KINDS) and only for triggers
+  // where conditionKindAllowedForTrigger's 'cardReferenceTrigger' check
+  // passes (CARD_REFERENCE_TRIGGERS). Unlike CardPositionInHand, there is
+  // no other subject these kinds can fall back to (they have no meaning
+  // under 'ThisCard' at all — see THAT_CARD_ONLY_CONDITION_KINDS' own
+  // comment), so an invalid trigger switch here means a full kind reset,
+  // same as CardPositionInHand's own "no longer allowed at all" branch
+  // above. Without this, editing an effect's trigger away from e.g.
+  // AfterCardDiscarded left cond.kind='PlayedCardHasKeyword' with no kind
+  // dropdown option matching it — the exact same silent mismatch Tyler
+  // reported, just triggered by a different field changing.
+  if(THAT_CARD_ONLY_CONDITION_KINDS.includes(cond.kind)){
+    const def = CONDITION_KINDS.find(k => k.id === cond.kind);
+    if(!def || !conditionKindAllowedForTrigger(def, trigger, undefined)){
+      Object.keys(cond).forEach(k=> delete cond[k]);
+      Object.assign(cond, blankCondition('HasStatusStacks'));
+    }
+    return;
+  }
   if(!SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind)) return;
   if(cond.subject === 'Pet' && !PET_SUPPORTED_TRIGGERS.includes(trigger)) cond.subject = 'Self';
   if(cond.subject === 'CardTarget' && (HOOK_TRIGGER_BINDING[trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(trigger))) cond.subject = 'Self';
@@ -13018,8 +13041,28 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
     const validKinds = conditionKindsForSubject(eff, newSubject);
     const kindStillValid = validKinds.some(k => k.id === cond.kind);
     if(!kindStillValid){
-      const isCardSubject = newSubject === 'ThisCard' || newSubject === 'ThatCard';
-      const fallbackKindId = isCardSubject ? 'CardPositionInHand' : (validKinds[0] ? validKinds[0].id : cond.kind);
+      // [2026-09-25 fix] Was `isCardSubject ? 'CardPositionInHand' : ...` —
+      // hardcoded CardPositionInHand as the fallback for ANY This Card/
+      // That Card switch, which was correct back when it was the ONLY
+      // card-subject kind. Since round 282 widened THAT_CARD_ONLY_
+      // CONDITION_KINDS' own trigger reachability (PlayedCardHasKeyword/
+      // Tag/Type now valid under "That Card" on AfterCardGeneratedFor
+      // Combat/AfterCardDiscarded/OnExhaust, where CardPositionInHand
+      // itself stays invalid — no real hand-position tracker there), that
+      // hardcoded fallback could pick a kind NOT in validKinds at all —
+      // cond.kind then matched none of the c-kind <select>'s own options
+      // (built from validKinds two lines below), so the browser silently
+      // defaulted the dropdown to its first option's label while the
+      // actual fields rendered still followed the real (mismatched)
+      // cond.kind — Tyler: "swapping to 'that card' doesn't properly
+      // update the following values." Fixed by only preferring
+      // CardPositionInHand when it's ACTUALLY in validKinds (preserves
+      // the exact existing OnAnyCardPlayed behavior), else falling
+      // through to validKinds[0] like the non-card-subject branch always
+      // did — one rule instead of a hardcoded special case.
+      const fallbackKindId = validKinds.some(k => k.id === 'CardPositionInHand')
+        ? 'CardPositionInHand'
+        : (validKinds[0] ? validKinds[0].id : cond.kind);
       Object.keys(cond).forEach(k=> delete cond[k]);
       Object.assign(cond, blankCondition(fallbackKindId));
       cond.subject = newSubject;
