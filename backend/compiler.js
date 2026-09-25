@@ -3913,6 +3913,57 @@ const TRIGGER_HOOKS = {
     playerExpr: 'applier', targetExpr: null,
     guardExpr: 'fgPlayer.IsEnemy',
   },
+  // [Round 276] Tyler: "the burdened new character dll file contains a
+  // fatigue status. It checks for 'if stacks of this status are added'
+  // can we add that hook as well as a 'when stacks of this status are
+  // removed' hook?" -- direct evidence from TWO real sources:
+  //
+  // 1. TheBurdenedNewCharacter.Powers.FatiguePower's real, compiled
+  //    AfterPowerAmountChanged override (disassembled via
+  //    tools/sts2tools/il_dump.py) gates its whole body on
+  //    `power == this && amount > 0` before doing anything -- i.e. "this
+  //    exact status instance's own stacks, and only when they went UP."
+  //    `power == this` is REQUIRED, not defensive boilerplate: confirmed
+  //    by direct sts2.dll IL read of PowerCmd.ModifyAmount, which calls
+  //    the real `MegaCrit.Sts2.Core.Hooks.Hook.AfterPowerAmountChanged`
+  //    STATIC dispatcher (same class/pattern already documented above at
+  //    TRIGGER_SELF_LOOP_ACTIONS' AfterDamageGiven entry) -- a real,
+  //    global broadcast to every hook listener in combat, not scoped to
+  //    the power that actually changed. Without the self-check, THIS
+  //    hook fires for every status change on EITHER side, which is
+  //    exactly the existing (unfiltered) AfterMyPowerAmountChanged/
+  //    AfterEnemyPowerAmountChanged behavior above.
+  //
+  // 2. Same IL read confirms `amount` is a real signed delta (decimal):
+  //    PowerCmd.ModifyAmount computes `newAmount = power.Amount +
+  //    (decimal)modifiedOffset` BEFORE calling SetAmount, and only AFTER
+  //    that calls Hook.AfterPowerAmountChanged with that same offset as
+  //    `amount` -- so `amount > 0` genuinely means "stacks just went up"
+  //    and `amount < 0` means "stacks just went down," exactly the two
+  //    directions FatiguePower itself branches on.
+  //
+  // No separate native "stacks added"/"stacks removed" hook exists --
+  // both of these compile to the SAME real AfterPowerAmountChanged
+  // method as the pair above, merged into one generated override by
+  // generateHookEffects' methodGroups (see that function's own comment).
+  // Design call confirmed with Tyler via AskUserQuestion: no Mine/Enemy
+  // split here (unlike the pair above) -- FatiguePower's own code never
+  // checks who applied the change, only that it's THIS status and the
+  // direction, so that's exactly what's implemented. `applier` stays
+  // bound as fgPlayer regardless (same real single-Creature binding the
+  // pair above already has) so effect actions can still reference it.
+  AfterThisPowerStacksAdded: {
+    method: 'AfterPowerAmountChanged',
+    params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
+    playerExpr: 'applier', targetExpr: null,
+    guardExpr: 'power == this && amount > 0',
+  },
+  AfterThisPowerStacksRemoved: {
+    method: 'AfterPowerAmountChanged',
+    params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
+    playerExpr: 'applier', targetExpr: null,
+    guardExpr: 'power == this && amount < 0',
+  },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   AfterPreventingMyDeath: {
     method: 'AfterPreventingDeath',

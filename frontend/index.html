@@ -3469,6 +3469,14 @@ const HOOK_TRIGGER_LABELS = {
   // below for the caveat) is whoever changed the status's stacks.
   AfterMyPowerAmountChanged: 'After you change a status’s stacks',
   AfterEnemyPowerAmountChanged: 'After an enemy changes a status’s stacks',
+  // [Round 276] Self-scoped pair, built on the same real hook as the two
+  // above -- see backend/compiler.js:TRIGGER_HOOKS.AfterThisPowerStacks
+  // Added's own comment for the real FatiguePower/PowerCmd.ModifyAmount
+  // evidence. Deliberately no "you"/"enemy" wording here (Tyler chose no
+  // Mine/Enemy split) -- fires regardless of who caused the change, only
+  // filtered to THIS status and the direction.
+  AfterThisPowerStacksAdded: 'When this status’s stacks increase',
+  AfterThisPowerStacksRemoved: 'When this status’s stacks decrease',
   OnMyTurnStart: 'At the start of your turn',
   OnEnemyTurnStart: 'At the start of an enemy’s turn',
   OnMyTurnEnd: 'At the end of your turn',
@@ -3555,6 +3563,11 @@ const TRIGGER_HINTS = {
   // the "your" variant.
   AfterMyPowerAmountChanged: 'Triggers when YOU are the one CAUSING the change, not when the enemy causes the change to happen to you.',
   AfterEnemyPowerAmountChanged: 'Triggers when an ENEMY is the one CAUSING the change, not when you cause the change to happen to them.',
+  // [Round 276] Unlike the pair above, these two don't care who applied
+  // the change -- only that it's happening to THIS status specifically
+  // (matches the real FatiguePower code Tyler found this pattern in).
+  AfterThisPowerStacksAdded: 'Only fires for THIS status’s own stacks going up -- not any other status, and it doesn’t matter who caused it.',
+  AfterThisPowerStacksRemoved: 'Only fires for THIS status’s own stacks going down -- not any other status, and it doesn’t matter who caused it.',
   OnDiscard: '',
   OnTurnEndInHand: '',
   OnAnyCardPlayed: '',
@@ -3597,6 +3610,7 @@ const HOOK_TRIGGER_BINDING = {
   BeforeMyDamageReceived: 'both', BeforeEnemyDamageReceived: 'both',
   BeforeMyDeath: 'player', BeforeEnemyDeath: 'player',
   AfterMyPowerAmountChanged: 'player', AfterEnemyPowerAmountChanged: 'player',
+  AfterThisPowerStacksAdded: 'player', AfterThisPowerStacksRemoved: 'player', // [Round 276]
   AfterPreventingMyDeath: 'player', AfterPreventingEnemyDeath: 'player',
   OnMyDamageTaken: 'both', OnEnemyDamageTaken: 'both',
   OnMyTurnStart: 'player', OnEnemyTurnStart: 'player',
@@ -3845,7 +3859,7 @@ const TRIGGER_CATEGORIES = [
   // more saturated — 5.14:1 contrast, now the most legible of the three
   // reds/pinks in this list rather than the least.
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
-  { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels)
+  { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged','AfterThisPowerStacksAdded','AfterThisPowerStacksRemoved'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels). [Round 276] two new self-scoped triggers added to this same category.
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
   { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','OnExhaust','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
@@ -3854,7 +3868,7 @@ const TRIGGER_CATEGORIES = [
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
 ];
-const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 // Sweep TRIGGER_CATEGORIES against the real union of CARD_TRIGGERS +
 // HOOK_TRIGGERS at load time, so a future trigger added to one list without
 // a matching category entry fails loudly in the console instead of just
