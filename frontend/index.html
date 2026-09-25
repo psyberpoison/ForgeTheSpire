@@ -3501,7 +3501,6 @@ const HOOK_TRIGGER_LABELS = {
   OnDrawCard: 'When a card is drawn',
   Passive: 'Passive (always active)',
   AfterCardGeneratedForCombat: 'When a card is generated for combat',
-  AfterModifyingCardPlayCount: 'When a card’s play count is modified',
   AfterCardDiscarded: 'Whenever any card is discarded',
   AfterAttack: 'After an attack command resolves',
   AfterDiedToDoom: 'After an enemy dies to Doom',
@@ -3640,7 +3639,7 @@ const HOOK_TRIGGER_BINDING = {
   AfterCombatEnd: 'unbound', AfterCombatVictory: 'unbound',
   AfterDiedToDoom: 'unbound', AfterEnergyReset: 'player',
   AfterEnergySpent: 'unbound', AfterGoldGained: 'player', BeforeHandDraw: 'player',
-  AfterHandEmptied: 'player', AfterItemPurchased: 'player', AfterModifyingCardPlayCount: 'unbound',
+  AfterHandEmptied: 'player', AfterItemPurchased: 'player',
   AfterPreventingDraw: 'unbound', AfterOrbChanneled: 'player', AfterOrbEvoked: 'unbound',
   BeforePotionUsed: 'player', AfterPotionUsed: 'player', AfterPotionDiscarded: 'unbound',
   AfterPotionProcured: 'unbound',
@@ -3873,7 +3872,7 @@ function hookBindingHint(id){
 // CARD_TRIGGERS + HOOK_TRIGGERS so this list can't silently drift out of
 // sync with either as future triggers get added.
 const TRIGGER_CATEGORIES = [
-  { id:'cardplay', label:'Card Play', color:'#8a5fd6', triggers:['OnPlay','OnAnyCardPlayed','AfterCardGeneratedForCombat','AfterModifyingCardPlayCount','AfterCardDiscarded','OnDiscard','OnTurnEndInHand','OnRetained'] },
+  { id:'cardplay', label:'Card Play', color:'#8a5fd6', triggers:['OnPlay','OnAnyCardPlayed','AfterCardGeneratedForCombat','AfterCardDiscarded','OnDiscard','OnTurnEndInHand','OnRetained'] },
   { id:'damage', label:'Damage / Attack', color:'#c65a48', triggers:['OnMyDamageTaken','OnEnemyDamageTaken','AfterAttack','AfterMyDamageGiven','AfterEnemyDamageGiven','BeforeMyDamageReceived','BeforeEnemyDamageReceived','OnKillEnemy'] },
   { id:'defense', label:'Defense / Block', color:'#4b93dd', triggers:['AfterMyBlockCleared','AfterEnemyBlockCleared','AfterMyBlockGained','AfterEnemyBlockGained','AfterMyBlockBroken','AfterEnemyBlockBroken'] },
   // [Round 154] Tyler: "the color is a bit dark, hard to read" — the old
@@ -3897,7 +3896,7 @@ const TRIGGER_CATEGORIES = [
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
 ];
-const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterModifyingCardPlayCount","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterThisPowerApplied","AfterThisPowerRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterThisPowerApplied","AfterThisPowerRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 // Sweep TRIGGER_CATEGORIES against the real union of CARD_TRIGGERS +
 // HOOK_TRIGGERS at load time, so a future trigger added to one list without
 // a matching category entry fails loudly in the console instead of just

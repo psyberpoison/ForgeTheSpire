@@ -1240,7 +1240,6 @@
             "Passive",
             "OnAnyCardPlayed",
             "AfterCardGeneratedForCombat",
-            "AfterModifyingCardPlayCount",
             "AfterCardDiscarded",
             "AfterAttack",
             "AfterMyDamageGiven",

@@ -3852,11 +3852,6 @@ const TRIGGER_HOOKS = {
     params: 'Player player, MerchantEntry itemPurchased, int goldSpent',
     playerExpr: 'player.Creature', targetExpr: null,
   },
-  AfterModifyingCardPlayCount: {
-    method: 'AfterModifyingCardPlayCount',
-    params: 'CardModel card',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
-  },
   AfterPreventingDraw: {
     method: 'AfterPreventingDraw',
     params: '',
