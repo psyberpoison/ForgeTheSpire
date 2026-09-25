@@ -1748,10 +1748,21 @@
      padding/font, see the shared rule above) so it reads as part of the
      same form, but isn't an editable control itself -- just
      bbcodeToHtml(effective description) dropped in as HTML. See
-     openMechEditor's refreshMechDescHint. */
+     openMechEditor's refreshMechDescHint.
+     [Round 273] Tyler: "make the preview text a bit more grey to show
+     that it is uneditable text... any other way that doesn't make it
+     look like a modifiable field" -- base text color dropped to
+     --parchment-dim (same convention .cp-desc/.hint-small/.panel-desc
+     already use for non-editable text elsewhere in this app). The real
+     [gold]/[red]/[blue]/[purple]/[green] bbcode tags still render at
+     full color via the more-specific .desc-preview-box .bb-* rules above
+     (same override relationship .cp-desc's own dim base + colored .bb-*
+     children already have), so a description that actually uses color
+     tags still previews its real color -- only the plain surrounding
+     text reads as dim/uneditable. */
   .desc-preview-box{
     width:100%; min-height:60px; background:var(--ink); border:1px solid var(--border-soft);
-    color:var(--parchment); border-radius:var(--radius); padding:9px 11px;
+    color:var(--parchment-dim); border-radius:var(--radius); padding:9px 11px;
     font-family:'Spectral',serif; font-size:14px; overflow:auto; box-sizing:border-box;
   }
 
@@ -15927,6 +15938,17 @@ function openMechEditor(mechId){
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Preview <span class="dim-hint">(how the description will look in-game)</span></label>
           <div id="m-desc-preview" class="desc-preview-box" style="flex:1;"></div>
+          <!-- [Round 273] Spacer matching #m-desc-auto-hint's own
+               class+margin exactly, height set by JS (see
+               refreshMechDescHint) to that real hint's own measured
+               height every refresh -- reserves exactly as much space in
+               THIS column as the real hint takes up in the Name/
+               Description column (0 when the hint is empty because text
+               is typed, one line's worth when it's showing the "Auto:
+               ..." guess, more if that guess ever wraps), so the preview
+               box's own flex:1 bottom edge lines up with the description
+               textarea's bottom in every state instead of drifting. -->
+          <div id="m-desc-preview-spacer" class="hint-small" style="margin-top:4px; visibility:hidden; overflow:hidden; height:0;">&nbsp;</div>
         </div>
         <div style="flex:0 0 160px;">
           <label>Icon <span class="dim-hint">(optional, ${MECHANIC_ICON_WIDTH}&times;${MECHANIC_ICON_HEIGHT}px)</span></label>
@@ -16003,10 +16025,18 @@ function openMechEditor(mechId){
     const hintEl = document.getElementById('m-desc-auto-hint');
     const descEl = document.getElementById('m-description');
     const previewEl = document.getElementById('m-desc-preview');
+    const spacerEl = document.getElementById('m-desc-preview-spacer');
     if(!descEl) return;
     const typed = descEl.value.trim();
     const auto = generateHookDescription(m.effects);
     if(hintEl) hintEl.innerHTML = typed ? '' : ('Auto: ' + bbcodeToHtml(auto));
+    // [Round 273] Mirror the real hint's own rendered height onto the
+    // spacer right after updating its content -- 0 when it's empty
+    // (typed case), one line when it's the "Auto: ..." guess, more if
+    // that guess is long enough to wrap. Keeps the preview box's bottom
+    // edge aligned with the description textarea's bottom in every
+    // state, not just the blank/default one.
+    if(spacerEl && hintEl) spacerEl.style.height = hintEl.getBoundingClientRect().height + 'px';
     if(previewEl) previewEl.innerHTML = bbcodeToHtml(typed || auto);
   };
   refreshMechDescHint();
