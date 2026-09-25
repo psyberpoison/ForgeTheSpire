@@ -3248,6 +3248,22 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">Custom buffs/debuffs (like Vulnerable or Strength, but yours). Define these before referencing them in card or relic effects.</div>
+      <!-- [Round 284] Tyler: "characters might have many statuses. lets
+           add the ability to label them (non gameplay) so that the user
+           can search through all statuses that they mark with a label"
+           — same organizational-only "Label" concept cards already have
+           (see allCardTags/setupCompactTagPicker/renderTagFilterChips
+           and the "Filter by label" toolbar group in section-cards
+           above), just for state.mechanics instead, and reusing the
+           exact same .tag-filter-chips/.tag-chip styling. Only one label
+           field here — unlike cards, mechanics have no second "real
+           gameplay tag that compiles into the mod" concept to keep
+           separate from it; Tyler asked for exactly one, explicitly
+           non-gameplay. -->
+      <div style="margin:10px 0 14px">
+        <label>Filter by label <span style="font-weight:400; text-transform:none; letter-spacing:0;">(any selected)</span></label>
+        <div class="tag-filter-chips" id="mech-label-filter-chips"></div>
+      </div>
       <div class="grid-cards" id="mechanics-grid"></div>
       <!-- [Round 103] Tyler: "now that we have moved the bar creator/mover
            to the status section, we no longer need this in the character
@@ -8723,6 +8739,14 @@ const CARD_RARITY_ORDER = ["Basic","Common","Uncommon","Rare","Ancient","Event",
 let cardSortField = 'rarity';
 let cardSortDir = 'asc';
 const activeTagFilters = new Set();
+// [Round 284] Same "view-only, not persisted" convention as
+// activeTagFilters just above, but for the Mechanics (statuses) grid's
+// own label filter — see allMechanicLabels/renderMechLabelFilterChips
+// near renderMechanics below. A separate Set (not activeTagFilters
+// itself) since cards and mechanics have entirely separate label
+// vocabularies; a label named the same on both would otherwise
+// cross-filter the wrong section.
+const activeMechLabelFilters = new Set();
 // Card board search — Tyler: "between the filter by tag area and the add
 // card button I would like the ability to search for cards that the user
 // has created that have some effect... this search should search through
@@ -15335,6 +15359,40 @@ function openRelicEditor(relicId){
 
 /* ---------- MECHANICS ---------- */
 const mechGrid = document.getElementById('mechanics-grid');
+// [Round 284] Mirrors allCardTags() (see that function's own comment) —
+// every distinct label currently used by any status, sorted, for the
+// filter chips row and the per-status picker's <datalist> suggestions.
+function allMechanicLabels(){
+  const set = new Set();
+  state.mechanics.forEach(m => (m.labels||[]).forEach(t => set.add(t)));
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
+}
+// [Round 284] Mirrors renderTagFilterChips() (see that function's own
+// comment) — one chip per distinct label across all statuses, with a
+// live count, toggling membership in activeMechLabelFilters and
+// re-rendering the grid on click. No "no labels yet" placeholder text
+// here either, same reasoning as the card version: an empty row after
+// the "Filter by label" caption already reads as "nothing to filter by
+// yet" without needing its own sentence.
+function renderMechLabelFilterChips(){
+  const el = document.getElementById('mech-label-filter-chips');
+  const labels = allMechanicLabels();
+  if(labels.length === 0){
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = labels.map(t=>{
+    const count = state.mechanics.filter(m=>(m.labels||[]).includes(t)).length;
+    return `<button type="button" class="tag-chip${activeMechLabelFilters.has(t)?' active':''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)} <span class="tf-count">${count}</span></button>`;
+  }).join('');
+  el.querySelectorAll('.tag-chip').forEach(btn=>{
+    btn.onclick = ()=>{
+      const tag = btn.dataset.tag;
+      if(activeMechLabelFilters.has(tag)) activeMechLabelFilters.delete(tag); else activeMechLabelFilters.add(tag);
+      renderMechanics();
+    };
+  });
+}
 function renderMechanics(){
   mechGrid.innerHTML = '';
   // [Round 103] The resource-bar preview + built-in-status picker both
@@ -15344,7 +15402,16 @@ function renderMechanics(){
   // stale data.
   renderVanillaBars();
   refreshResourceBarPreview();
-  state.mechanics.forEach(m=>{
+  // [Round 284] Same "filter chips control which tiles render" pattern
+  // renderCards() already uses for activeTagFilters — see that
+  // function's own comment. Statuses matching ANY selected label show;
+  // the "+" add tile always shows regardless, same as an active tag
+  // filter never hides "+ Add card" there either.
+  renderMechLabelFilterChips();
+  const visibleMechanics = activeMechLabelFilters.size === 0
+    ? state.mechanics
+    : state.mechanics.filter(m => (m.labels||[]).some(t => activeMechLabelFilters.has(t)));
+  visibleMechanics.forEach(m=>{
     const t = document.createElement('div');
     // [Round 256] Tyler: "if an icon is uploaded, we should be able to
     // see it on the tile" — the mechanic editor has had its own icon
@@ -15363,7 +15430,7 @@ function renderMechanics(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const m = { id: uid('mech'), name:'New Status', description:'', stackable:true, decaysPerTurn:true, isBuff:false, effects:[], modifiers:[] };
+    const m = { id: uid('mech'), name:'New Status', description:'', stackable:true, decaysPerTurn:true, isBuff:false, effects:[], modifiers:[], labels:[] };
     state.mechanics.push(m);
     save(); renderMechanics();
     openMechEditor(m.id);
@@ -16046,6 +16113,7 @@ function openMechEditor(mechId){
   const m = state.mechanics.find(x=>x.id===mechId);
   if(!m.effects) m.effects = []; // upgrade path for mechanics saved before this field existed
   if(!Array.isArray(m.modifiers)) m.modifiers = []; // upgrade path for mechanics saved before this field existed
+  if(!Array.isArray(m.labels)) m.labels = []; // upgrade path for mechanics saved before this field existed (round 284)
   // [Round 219] Same migration as openRelicEditor's own — see that
   // function's comment for the full reasoning. Mechanics only ever carry
   // .modifiers (no autoClaimShopInventory/Weak-Vulnerable fields — those
@@ -16128,6 +16196,22 @@ function openMechEditor(mechId){
         <label for="m-bar-enabled" style="margin:0" title="Represent this status's current stack count as an on-screen bar. Anchor (above the energy counter, or below the health bar) is set per status below.">Represent as a bar</label>
       </div>
       <div id="m-bar-fields" class="ench-field-box" style="display:${mechResourceBar(m) ? '' : 'none'}"></div>
+      <!-- [Round 284] Same compact, collapsed-by-default widget the card
+           editor's own "Labels:" tagline uses (setupCompactTagPicker) —
+           organizational only, has no effect on the compiled mod, same
+           as cards' .tags field. Wired below via setupCompactTagPicker
+           against m.labels directly (mutated in place — same convention
+           m.effects/m.modifiers already follow in this editor, unlike
+           the card editor's own local-copy-until-Done dance). -->
+      <div class="tagline" style="margin-top:16px">
+        <span class="tagline-label">Labels:</span>
+        <div class="tag-add-row">
+          <button type="button" class="ghost tag-toggle-btn" id="mech-label-toggle" title="Your own organizational label, e.g. &quot;turn 1&quot; or &quot;stacking debuff&quot; — sorts/filters the Mechanics grid only. Purely for you; has no effect in the compiled mod.">+ Label</button>
+          <input type="text" id="mech-label-input" placeholder="e.g. stacking debuff" list="mech-label-suggestions" maxlength="40" style="display:none">
+          <datalist id="mech-label-suggestions"></datalist>
+        </div>
+        <div class="chip-row" id="mech-label-chip-row"></div>
+      </div>
       <label style="margin-top:20px">What this does</label>
       <div class="panel-desc" style="margin:-4px 0 12px">Same trigger → condition → action blocks as cards/relics — e.g. a Poison-style mechanic might use "On Turn Start" to lose HP equal to its own stacks. Set a block's trigger to "Passive" for a status that doesn't react to anything — that's where Modifiers now lives.</div>
       <div id="effects-list"></div>
@@ -16140,6 +16224,16 @@ function openMechEditor(mechId){
   `, {wide:true});
   renderEffectsList(m, allowedHookTriggers(false));
   renderMechBarFields(m);
+  // [Round 284] See the "Labels:" tagline markup above, and
+  // setupCompactTagPicker's own header comment for the widget's
+  // behavior — m.labels is mutated in place by this call (push/splice
+  // straight into the real array the editor already has a reference to,
+  // same as m.effects/m.modifiers elsewhere in this function), so there
+  // is no separate writeback needed in the Done handler below.
+  setupCompactTagPicker({
+    chipRowId: 'mech-label-chip-row', toggleBtnId: 'mech-label-toggle', inputId: 'mech-label-input', suggestionsId: 'mech-label-suggestions',
+    tags: m.labels, suggestions: allMechanicLabels(),
+  });
   // [Round 270] Live "Auto: ..." hint under the Description textarea,
   // same "editable box, auto-fills a best-effort guess while left blank"
   // feature the card editor already has (see generateHookDescription's

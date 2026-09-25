@@ -962,6 +962,16 @@
           "items": {
             "$ref": "#/definitions/modifierBlock"
           }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "uniqueItems": true,
+          "description": "[Round 284] Forge-only organizational metadata, same concept and same purely-cosmetic scope as card.tags above — free-text labels the character author assigns to a status (e.g. \"turn 1\", \"stacking debuff\") purely to sort/filter the Mechanics section's own grid in frontend/index.html. Not a real MegaCrit/BaseLib concept; compiler.js never reads this field and nothing here is exported into the compiled mod. Unlike cards, mechanics have only this one label concept — no equivalent of card.gameplayTags exists for statuses (Tyler asked for exactly one, explicitly non-gameplay, field)."
         }
       }
     },
