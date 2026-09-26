@@ -628,19 +628,32 @@
      story. Applies to every <select> in the app; the status pickers are
      unaffected since they're text inputs, not <select> elements. */
   select{appearance:none; -webkit-appearance:none; -moz-appearance:none; line-height:1;}
-  /* [Round 285] Tyler: "the new max stacks box is a different height
-     from the other boxes" -- the shared input[type=text]/[type=number]/
-     select/textarea rule above already gives every one of them the same
-     width/padding/border/font-size, but only <select> got line-height:1
-     reset (round 88, right above). A plain <input> element's default
-     line-height is the font's own "normal" metric, slightly taller than
-     1 for Spectral at this size -- invisible until this round's "Stack
-     max" box became the first place a number input ever sat directly in
-     a .row next to <select> siblings, exposing the mismatch. Scoped to
-     input[type=number] only (not text inputs app-wide, which have never
-     had this reported and mostly aren't paired against selects in a
-     shared row) to keep this a precise fix, not a redesign. */
-  input[type=number]{line-height:1;}
+  /* [Round 285 follow-up, take 2] Tyler: "the box still isnt the same
+     height. instead if going on a wild goose chase like last time, lets
+     look at what we did the last time we added a number box that ended
+     up working." The take-1 fix just above this comment's old spot
+     (`input[type=number]{line-height:1;}`) was WRONG -- shipped and
+     reported fixed without live-measuring it first, then proven
+     insufficient by Tyler's own screenshot. Root cause is the same one
+     already documented (and correctly fixed) for `.condition-row
+     .c-hand-position` further down this file: a <select> with
+     appearance:none (line 630, round 88) becomes a plain CSS-governed
+     box whose height line-height fully controls, but a text-editing
+     <input>'s intrinsic auto-height in Chromium is driven by the font's
+     own ascent/descent metrics, not the line-height property -- so
+     resetting line-height on the input did nothing measurable. Confirmed
+     live via Playwright + getBoundingClientRect() on the real rendered
+     "Edit Mechanic" modal (same methodology as that precedent, not a
+     hand computation): under this shared rule's padding:9px 11px/
+     font-size:14px/border:1px/box-sizing:border-box, the <select>
+     siblings (#m-stack, #m-decay, #m-buff) resolve to exactly 34px tall;
+     #m-max-stacks (the <input type=number>) resolved to 36px before this
+     fix, and to a live-verified exact 34px match after adding an
+     explicit height below. This is a different pixel value than
+     .c-hand-position's height:20px because that rule uses a much
+     smaller font-size:12px/padding:3px 6px combo -- not reusable as-is,
+     had to be re-derived for this context's own padding/font-size. */
+  #m-max-stacks{height:34px;}
   textarea{resize:vertical; min-height:60px;}
   .row{display:flex; gap:14px;}
   .row > *{flex:1;}
