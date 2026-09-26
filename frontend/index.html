@@ -628,6 +628,19 @@
      story. Applies to every <select> in the app; the status pickers are
      unaffected since they're text inputs, not <select> elements. */
   select{appearance:none; -webkit-appearance:none; -moz-appearance:none; line-height:1;}
+  /* [Round 285] Tyler: "the new max stacks box is a different height
+     from the other boxes" -- the shared input[type=text]/[type=number]/
+     select/textarea rule above already gives every one of them the same
+     width/padding/border/font-size, but only <select> got line-height:1
+     reset (round 88, right above). A plain <input> element's default
+     line-height is the font's own "normal" metric, slightly taller than
+     1 for Spectral at this size -- invisible until this round's "Stack
+     max" box became the first place a number input ever sat directly in
+     a .row next to <select> siblings, exposing the mismatch. Scoped to
+     input[type=number] only (not text inputs app-wide, which have never
+     had this reported and mostly aren't paired against selects in a
+     shared row) to keep this a precise fix, not a redesign. */
+  input[type=number]{line-height:1;}
   textarea{resize:vertical; min-height:60px;}
   .row{display:flex; gap:14px;}
   .row > *{flex:1;}
@@ -1748,7 +1761,9 @@
      padding/font, see the shared rule above) so it reads as part of the
      same form, but isn't an editable control itself -- just
      bbcodeToHtml(effective description) dropped in as HTML. See
-     openMechEditor's refreshMechDescHint.
+     openMechEditor's refreshMechDescPreview (renamed round 285, no
+     longer double-duty with a separate text hint -- see that function's
+     own header comment).
      [Round 273] Tyler: "make the preview text a bit more grey to show
      that it is uneditable text... any other way that doesn't make it
      look like a modifiable field" -- base text color dropped to
@@ -16130,31 +16145,21 @@ function openMechEditor(mechId){
       <div style="display:flex; gap:24px; align-items:stretch;">
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Name</label><input type="text" id="m-name" value="${escapeAttr(m.name)}">
-          <label style="margin-top:14px" title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this status's effects (shown below in italics until you type your own).">Description</label>
-          <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
-            <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
-            <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
-            <button type="button" class="desc-color-btn bb-blue" onclick="wrapDescriptionSelection('blue')" title="[blue]...[/blue]"></button>
-            <button type="button" class="desc-color-btn bb-purple" onclick="wrapDescriptionSelection('purple')" title="[purple]...[/purple]"></button>
-            <button type="button" class="desc-color-btn bb-green" onclick="wrapDescriptionSelection('green')" title="[green]...[/green]"></button>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:14px;">
+            <label style="margin:0" title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this status's effects (shown in the preview until you type your own).">Description</label>
+            <div class="desc-colorbar" style="margin:0" title="Wrap the selected description text in the game's own real color tag (click with nothing selected to drop an empty pair to type into).">
+              <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
+              <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
+              <button type="button" class="desc-color-btn bb-blue" onclick="wrapDescriptionSelection('blue')" title="[blue]...[/blue]"></button>
+              <button type="button" class="desc-color-btn bb-purple" onclick="wrapDescriptionSelection('purple')" title="[purple]...[/purple]"></button>
+              <button type="button" class="desc-color-btn bb-green" onclick="wrapDescriptionSelection('green')" title="[green]...[/green]"></button>
+            </div>
           </div>
           <textarea id="m-description" placeholder="Leave blank to auto-fill from its effects." style="flex:1; min-height:60px;">${escapeHtml(m.description||'')}</textarea>
-          <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
         </div>
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Preview <span class="dim-hint">(how the description will look in-game)</span></label>
           <div id="m-desc-preview" class="desc-preview-box" style="flex:1;"></div>
-          <!-- [Round 273] Spacer matching #m-desc-auto-hint's own
-               class+margin exactly, height set by JS (see
-               refreshMechDescHint) to that real hint's own measured
-               height every refresh -- reserves exactly as much space in
-               THIS column as the real hint takes up in the Name/
-               Description column (0 when the hint is empty because text
-               is typed, one line's worth when it's showing the "Auto:
-               ..." guess, more if that guess ever wraps), so the preview
-               box's own flex:1 bottom edge lines up with the description
-               textarea's bottom in every state instead of drifting. -->
-          <div id="m-desc-preview-spacer" class="hint-small" style="margin-top:4px; visibility:hidden; overflow:hidden; height:0;">&nbsp;</div>
         </div>
         <div style="flex:0 0 160px;">
           <label>Icon <span class="dim-hint">(optional, ${MECHANIC_ICON_WIDTH}&times;${MECHANIC_ICON_HEIGHT}px)</span></label>
@@ -16245,44 +16250,39 @@ function openMechEditor(mechId){
     chipRowId: 'mech-label-chip-row', toggleBtnId: 'mech-label-toggle', inputId: 'mech-label-input', suggestionsId: 'mech-label-suggestions',
     tags: m.labels, suggestions: allMechanicLabels(),
   });
-  // [Round 270] Live "Auto: ..." hint under the Description textarea,
+  // [Round 270] Live-updating preview of the EFFECTIVE description under
+  // the Description textarea -- typed text if present, else Forge's own
+  // best-effort guess from this status's effects (generateHookDescription,
   // same "editable box, auto-fills a best-effort guess while left blank"
-  // feature the card editor already has (see generateHookDescription's
-  // own comment) -- reads m.effects live via a MutationObserver on
-  // #effects-list (rather than threading a refresh call through
-  // renderEffectsList's own add/remove/edit paths, which is shared by
-  // cards/relics/mechanics/enchantments/afflictions and would need a
-  // parameter change touching every one of them for one editor's own
-  // hint) so adding/editing/removing an effect block keeps the hint
+  // feature the card editor already has). Reads m.effects live via a
+  // MutationObserver on #effects-list (rather than threading a refresh
+  // call through renderEffectsList's own add/remove/edit paths, which is
+  // shared by cards/relics/mechanics/enchantments/afflictions and would
+  // need a parameter change touching every one of them for one editor's
+  // own preview) so adding/editing/removing an effect block keeps it
   // current without ever going stale, exactly like the saved description
   // itself (generateHookDescription(m.effects) is always computed fresh
-  // from the CURRENT effects at Done-click time regardless of this hint).
-  // [Round 272] Extended to also drive the new #m-desc-preview box, which
-  // always shows the EFFECTIVE description (typed if present, else the
-  // same auto-generated guess the hint above uses), bbcode-rendered --
-  // unlike the hint, which only ever shows the auto-generated guess and
-  // only while the field is blank.
-  const refreshMechDescHint = ()=>{
-    const hintEl = document.getElementById('m-desc-auto-hint');
+  // from the CURRENT effects at Done-click time regardless of this
+  // preview). [Round 285] Tyler: "get rid of the 'auto' hint text below
+  // the description box since we already have a preview" -- this used to
+  // ALSO drive a separate "Auto: ..." text hint below the textarea (plus
+  // a spacer div that mirrored that hint's height so the preview column
+  // stayed aligned) before #m-desc-preview existed alongside it; once the
+  // real preview box shipped (round 272) the hint became pure
+  // duplication, and the spacer had no purpose left once the hint it was
+  // matching was gone. Both removed; this function (renamed to match —
+  // it only ever drives the preview now) is otherwise unchanged.
+  const refreshMechDescPreview = ()=>{
     const descEl = document.getElementById('m-description');
     const previewEl = document.getElementById('m-desc-preview');
-    const spacerEl = document.getElementById('m-desc-preview-spacer');
     if(!descEl) return;
     const typed = descEl.value.trim();
     const auto = generateHookDescription(m.effects);
-    if(hintEl) hintEl.innerHTML = typed ? '' : ('Auto: ' + bbcodeToHtml(auto));
-    // [Round 273] Mirror the real hint's own rendered height onto the
-    // spacer right after updating its content -- 0 when it's empty
-    // (typed case), one line when it's the "Auto: ..." guess, more if
-    // that guess is long enough to wrap. Keeps the preview box's bottom
-    // edge aligned with the description textarea's bottom in every
-    // state, not just the blank/default one.
-    if(spacerEl && hintEl) spacerEl.style.height = hintEl.getBoundingClientRect().height + 'px';
     if(previewEl) previewEl.innerHTML = bbcodeToHtml(typed || auto);
   };
-  refreshMechDescHint();
-  document.getElementById('m-description').addEventListener('input', refreshMechDescHint);
-  new MutationObserver(refreshMechDescHint).observe(document.getElementById('effects-list'), {childList:true, subtree:true, characterData:true});
+  refreshMechDescPreview();
+  document.getElementById('m-description').addEventListener('input', refreshMechDescPreview);
+  new MutationObserver(refreshMechDescPreview).observe(document.getElementById('effects-list'), {childList:true, subtree:true, characterData:true});
   // [Round 255] Tyler: "if dual bar is selected, make the paired status a
   // requirement before they can close the editor" — reads live state on
   // every close attempt (not a snapshot taken here), so it stays correct
