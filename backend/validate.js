@@ -2173,6 +2173,15 @@ function validateCharacterPackage(pkg) {
     if (mech.hideIcon !== undefined && typeof mech.hideIcon !== 'boolean') {
       errors.push(`${p}.hideIcon must be a boolean.`);
     }
+    // [Round 285] See schema/character.schema.json's mechanic.maxStacks/
+    // instanceType for the full evidence trail (compiler.js:
+    // generateMaxStacksSupportFile / generateMechanicSource).
+    if (mech.maxStacks !== undefined && (typeof mech.maxStacks !== 'number' || !Number.isFinite(mech.maxStacks) || mech.maxStacks < 0)) {
+      errors.push(`${p}.maxStacks must be a non-negative number (0 = unlimited).`);
+    }
+    if (mech.instanceType !== undefined && !['merge', 'separate', 'separatePerApplier'].includes(mech.instanceType)) {
+      errors.push(`${p}.instanceType must be one of "merge", "separate", or "separatePerApplier".`);
+    }
     if (mech.effects !== undefined) {
       validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'mechanic', gameplayTagsInUse });
     }

@@ -15430,7 +15430,7 @@ function renderMechanics(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const m = { id: uid('mech'), name:'New Status', description:'', stackable:true, decaysPerTurn:true, isBuff:false, effects:[], modifiers:[], labels:[] };
+    const m = { id: uid('mech'), name:'New Status', description:'', stackable:true, decaysPerTurn:true, isBuff:false, effects:[], modifiers:[], labels:[], maxStacks:0, instanceType:'merge' };
     state.mechanics.push(m);
     save(); renderMechanics();
     openMechEditor(m.id);
@@ -16114,6 +16114,8 @@ function openMechEditor(mechId){
   if(!m.effects) m.effects = []; // upgrade path for mechanics saved before this field existed
   if(!Array.isArray(m.modifiers)) m.modifiers = []; // upgrade path for mechanics saved before this field existed
   if(!Array.isArray(m.labels)) m.labels = []; // upgrade path for mechanics saved before this field existed (round 284)
+  if(!Number.isFinite(m.maxStacks)) m.maxStacks = 0; // upgrade path for mechanics saved before this field existed (round 285)
+  if(!['merge','separate','separatePerApplier'].includes(m.instanceType)) m.instanceType = 'merge'; // upgrade path for mechanics saved before this field existed (round 285)
   // [Round 219] Same migration as openRelicEditor's own — see that
   // function's comment for the full reasoning. Mechanics only ever carry
   // .modifiers (no autoClaimShopInventory/Weak-Vulnerable fields — those
@@ -16174,6 +16176,15 @@ function openMechEditor(mechId){
         <div><label>Stackable</label><select id="m-stack">${optList(['true','false'], String(m.stackable))}</select></div>
         <div><label>Decays each turn</label><select id="m-decay">${optList(['true','false'], String(m.decaysPerTurn))}</select></div>
         <div><label>Type</label><select id="m-buff">${optList(['buff','debuff'], m.isBuff?'buff':'debuff')}</select></div>
+        <div><label title="Caps this status's stacks at this value — applying more just holds it here instead of going higher. 0 = unlimited.">Stack max</label><input type="number" id="m-max-stacks" min="0" step="1" value="${Number.isFinite(m.maxStacks) ? m.maxStacks : 0}" placeholder="0 = unlimited"></div>
+      </div>
+      <div style="margin-top:12px">
+        <label title="How multiple applications of this status interact. Merge (default): every application adds to the same status, same as today. Always separate: each application is its own independent status that never combines with another — e.g. applying 2 then 4 stays as two separate statuses of 2 and 4, never merging into 6. Separate per source: applications from the same source merge together, but a different source (a different enemy, say) gets its own separate status.">Instancing</label>
+        <select id="m-instance-type">
+          <option value="merge" ${(m.instanceType||'merge')==='merge'?'selected':''}>Merge (default — everything stacks together)</option>
+          <option value="separate" ${m.instanceType==='separate'?'selected':''}>Always separate (never merges — each application is independent)</option>
+          <option value="separatePerApplier" ${m.instanceType==='separatePerApplier'?'selected':''}>Separate per source (merges with the same applier, not others)</option>
+        </select>
       </div>
       <div class="row mech-check-row" style="margin-top:12px; align-items:center; gap:8px">
         <input type="checkbox" id="m-hide-icon" ${m.hideIcon ? 'checked' : ''}>
@@ -16391,6 +16402,13 @@ function openMechEditor(mechId){
     m.stackable = document.getElementById('m-stack').value === 'true';
     m.decaysPerTurn = document.getElementById('m-decay').value === 'true';
     m.isBuff = document.getElementById('m-buff').value === 'buff';
+    // [Round 285] parseInt + Math.max guards against a blank/negative/
+    // non-numeric box (browser number inputs can still be typed/pasted
+    // into an invalid state) — always lands on a clean non-negative
+    // integer, same "0 = unlimited" contract compiler.js's
+    // generateMaxStacksSupportFile expects.
+    m.maxStacks = Math.max(0, Math.floor(parseFloat(document.getElementById('m-max-stacks').value)) || 0);
+    m.instanceType = document.getElementById('m-instance-type').value;
     m.hideIcon = document.getElementById('m-hide-icon').checked;
     m.allowNegative = document.getElementById('m-allow-negative').checked;
     m.hideFlash = document.getElementById('m-hide-flash').checked;
