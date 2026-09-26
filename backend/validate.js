@@ -200,6 +200,9 @@ const ACTION_TYPES = [
   // real CardCmd.ClearAffliction/PileTypeExtensions.GetPile evidence
   // (directly evidenced by Afflictions/Reckless.cs's own real OnPlay).
   'ClearAfflictionFromPile',
+  // [Round 286] "SummonPet" -- see compiler.js's actionToCSharp
+  // "SummonPet" case for the real PlayerCmd.AddPet<T> evidence trail.
+  'SummonPet',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -658,7 +661,7 @@ if (cond.kind === 'CardPositionInHand') {
 // re-using every one of these same rules (a valid action here is a valid
 // action there too, same ACTION_TYPES/validTargetsForAction/statusRefs
 // etc. checks) rather than a second, drift-prone copy of this function.
-function validateActions(actions, path, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, fieldName = 'actions', xContext = {}) {
+function validateActions(actions, path, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, fieldName = 'actions', xContext = {}) {
   if (!Array.isArray(actions)) { errors.push(`${path}.${fieldName} must be an array.`); return; }
   // xEligible — whether amountIsX/hitCountIsX are even allowed at this
   // call site. [VERIFIED via decompiling TheBurdenedNewCharacter.dll]
@@ -927,6 +930,21 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else if (act.afflictionRef !== undefined) {
       errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
     }
+    // [Round 286] petRef -- SummonPet only, same "reject an empty pick
+    // with a friendlier message, reject a stale/unknown/not-real id
+    // otherwise" shape as afflictionRef right above. petIds only contains
+    // REAL (compileReal:true) pets -- a data-capture-only pet is a valid
+    // pets[] entry but not a valid SummonPet target, same as it not
+    // getting a class in compiler.js's petClassById.
+    if (act.type === 'SummonPet') {
+      if (act.petRef === '' || act.petRef === undefined) {
+        errors.push(`${p}: action "SummonPet" needs a pet selected — pick one from the dropdown, or add a pet first and turn on "Compile this pet for real" if none exist yet (Pets section).`);
+      } else if (!petIds.has(act.petRef)) {
+        errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined real (compileReal) pet id.`);
+      }
+    } else if (act.petRef !== undefined) {
+      errors.push(`${p}: petRef is only meaningful on "SummonPet" — action type is "${act.type}".`);
+    }
     // [Round 199] pile -- ClearAfflictionFromPile only, same "must be one
     // of PILE_TYPES, or omitted (defaults to Hand)" shape whileInHand's
     // own .pile field already uses (see its own check further below).
@@ -1095,7 +1113,7 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         if (!Array.isArray(act.followUp.actions) || !act.followUp.actions.length) {
           errors.push(`${p}.followUp.actions must be a non-empty array.`);
         } else {
-          validateActions(act.followUp.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, 'followUp.actions', xContext);
+          validateActions(act.followUp.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'followUp.actions', xContext);
         }
       }
     }
@@ -1230,7 +1248,7 @@ const TRIGGER_SELF_LOOP_ACTIONS = {
   AfterCardDiscarded: (a) => a && a.type === 'DiscardCard',
 };
 
-function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
+function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
   if (!Array.isArray(effects)) { errors.push(`${path}.effects must be an array.`); return; }
   const xContext = { entityKind, cardCostsX, cardCostsStarX };
   effects.forEach((eff, i) => {
@@ -1297,7 +1315,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // entry whose OWN pile isn't Hand (see validateActions' own
     // ReturnToHand check below), so validateActions needs the pile this
     // specific effect block is scoped to, not just its trigger.
-    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
+    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
     // elseActions — Tyler's "if X, deal 12, else deal 5" ask. Optional
     // (undefined means "no else branch", same as an empty array) — only
     // validated when present, but when present AND non-empty, this effect
@@ -1309,7 +1327,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // at all — rejected here instead of shipping a UI-visible action list
     // that quietly never runs).
     if (eff.elseActions !== undefined) {
-      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
+      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
     }
     if (Array.isArray(eff.elseActions) && eff.elseActions.length && (!Array.isArray(eff.conditions) || !eff.conditions.length)) {
       errors.push(`${p}.elseActions has entries but ${p}.conditions is empty — "else" only makes sense with an "if" condition above it to be the opposite of. Add a condition, or remove the else actions.`);
@@ -1478,7 +1496,7 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
 // compiler.js's own comments (costReductionTodoLines/
 // generateAdvancedOptionsNotes/generateCardSource) for the full honesty
 // trail on what each one actually compiles to.
-function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, gameplayTagsInUse) {
+function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse) {
   const opts = card.advancedOptions;
   if (opts === undefined) return;
   if (!opts || typeof opts !== 'object') { errors.push(`${p}.advancedOptions must be an object if present.`); return; }
@@ -1558,7 +1576,7 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
   // validateEffects wholesale rather than a second hand-rolled block
   // validator — same rules, just a wider allowed-trigger list than before.
   if (opts.whileInHand !== undefined) {
-    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
     // [Round 90] `pile` — which real pile (Hand/Discard/Draw/Exhaust) this
     // entry's Pile.Type check compiles to (see compiler.js:pileTypeExpr).
     // Optional — undefined defaults to 'Hand' both here and in the actual
@@ -1608,6 +1626,11 @@ function validateCharacterPackage(pkg) {
   // front" convention cardIds/relicIds/mechanicIds already follow.
   const afflictionIds = new Set((Array.isArray(pkg.afflictions) ? pkg.afflictions : []).map(a => a && a.id).filter(Boolean));
   const enchantmentIds = new Set((Array.isArray(pkg.enchantments) ? pkg.enchantments : []).map(e => e && e.id).filter(Boolean));
+  // [Round 286] Only REAL (compileReal:true) pets are valid SummonPet
+  // targets — a data-capture-only pet has no generated class for
+  // ctx.petClassById to resolve (see compiler.js:generateProject), same
+  // "only what actually compiles" convention as everywhere else here.
+  const petIds = new Set((Array.isArray(pkg.pets) ? pkg.pets : []).filter(pet => pet && pet.compileReal).map(pet => pet.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
   // built up front (before any effect blocks are validated) so a
   // PlayedCardHasTag condition on ANY card/relic/mechanic can be
@@ -2067,8 +2090,8 @@ function validateCharacterPackage(pkg) {
     if (card.baseCardTag !== undefined && !CARD_TAGS.includes(card.baseCardTag)) {
       errors.push(`${p}.baseCardTag "${card.baseCardTag}" is not one of: ${CARD_TAGS.join(', ')}.`);
     }
-    validateEffects(card.effects || [], p, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
-    validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, gameplayTagsInUse);
+    validateEffects(card.effects || [], p, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+    validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse);
     // card.upgrades[] — one entry per unlocked upgrade tier (index 0 =
     // Card+, 1 = Card++, ... up to MAX_UPGRADE_TIERS). A `null` entry means
     // that tier exists (its tab was added in the editor) but still mirrors
@@ -2090,7 +2113,7 @@ function validateCharacterPackage(pkg) {
           if (tier === null || tier === undefined) return; // not-yet-diverged placeholder — nothing to check
           if (typeof tier !== 'object') { errors.push(`${p}.upgrades[${i}] must be an object or null.`); return; }
           if (tier.effects) {
-            validateEffects(tier.effects, `${p}.upgrades[${i}]`, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+            validateEffects(tier.effects, `${p}.upgrades[${i}]`, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
           }
         });
       }
@@ -2134,7 +2157,7 @@ function validateCharacterPackage(pkg) {
     if (!relic || typeof relic !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(relic.name)) errors.push(`${p}.name must be a non-empty string.`);
     if (!RELIC_RARITIES.includes(relic.rarity)) errors.push(`${p}.rarity "${relic.rarity}" is not one of: ${RELIC_RARITIES.join(', ')}.`);
-    validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'relic', gameplayTagsInUse });
+    validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'relic', gameplayTagsInUse });
     validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse);
     // [Round 217] autoClaimShopInventory compiles to a real, dedicated
     // AfterRoomEntered override (backend/compiler.js:
@@ -2183,17 +2206,21 @@ function validateCharacterPackage(pkg) {
       errors.push(`${p}.instanceType must be one of "merge", "separate", or "separatePerApplier".`);
     }
     if (mech.effects !== undefined) {
-      validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'mechanic', gameplayTagsInUse });
+      validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'mechanic', gameplayTagsInUse });
     }
     validateModifiers(mech.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse);
   });
 
   // --- pets / orbs — Tyler's "add a section to the page to create custom
   // pets as well as orbs" ask.
-  // Pets: STILL data-capture only — see schema/character.schema.json's
-  // `pets` description and compiler.js:buildPetsReadme for why (real base
-  // class confirmed, real attachment mechanism (PlayerCmd.AddPet) not
-  // yet). Validated only for basic shape sanity.
+  // Pets: [Round 286] a pet can now compile for real (compileReal:true) —
+  // see schema/character.schema.json's `pet` description and
+  // compiler.js:generatePetSource/generatePetPositionSupportFile for the
+  // full evidence trail (PlayerCmd.AddPet<T>, BaseLib.Abstracts.
+  // CustomMonsterModel). Every pet still gets the original shape-only bar
+  // below; a real one additionally needs minInitialHp/maxInitialHp, same
+  // "only validate what actually compiles" convention as everywhere else
+  // in this file. compileReal false/absent stays exactly as before.
   // Orbs: UPGRADED this round — passiveValue/evokeValue DO compile now
   // (see compiler.js:generateOrbSource/Orb.cs.template), so they get real
   // numeric validation, same bar action.amount and every other real
@@ -2208,6 +2235,23 @@ function validateCharacterPackage(pkg) {
     const p = `pets[${i}]`;
     if (!pet || typeof pet !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(pet.name)) errors.push(`${p}.name must be a non-empty string.`);
+    if (pet.compileReal !== undefined && typeof pet.compileReal !== 'boolean') {
+      errors.push(`${p}.compileReal must be a boolean.`);
+    }
+    if (pet.isHealthBarVisible !== undefined && typeof pet.isHealthBarVisible !== 'boolean') {
+      errors.push(`${p}.isHealthBarVisible must be a boolean.`);
+    }
+    if (pet.compileReal) {
+      if (typeof pet.minInitialHp !== 'number' || !Number.isFinite(pet.minInitialHp) || pet.minInitialHp < 1) {
+        errors.push(`${p}.minInitialHp must be a positive number when compileReal is true.`);
+      }
+      if (typeof pet.maxInitialHp !== 'number' || !Number.isFinite(pet.maxInitialHp) || pet.maxInitialHp < 1) {
+        errors.push(`${p}.maxInitialHp must be a positive number when compileReal is true.`);
+      }
+      if (typeof pet.minInitialHp === 'number' && typeof pet.maxInitialHp === 'number' && pet.maxInitialHp < pet.minInitialHp) {
+        errors.push(`${p}.maxInitialHp must be >= minInitialHp.`);
+      }
+    }
   });
 
   // Enchantments/Afflictions — Round 95, Tyler: "Enchantments/Afflictions
@@ -2253,7 +2297,7 @@ function validateCharacterPackage(pkg) {
     // an Enchantment's own OnPlay removing itself). entityKind: 'enchantment'
     // (not 'card') deliberately keeps the X-cost-eligibility check off --
     // Enchantments have no energy cost of their own.
-    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
     // [Round 200 -- "make this section fully functional"] whilePile's
     // trigger vocabulary was wrong: EnchantmentModel/AfflictionModel are
     // NOT CustomCardModel, so they can't reach CARD_TRIGGER_HOOKS-sourced
@@ -2267,13 +2311,13 @@ function validateCharacterPackage(pkg) {
     // block (see generateEnchantmentSource's combinedTriggerEffects), an
     // invalid trigger id here would fail at C# compile time in the export,
     // not just be silently wrong.
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
     // [Round 200] Enchantments' own new "Additional Triggers" list (see
     // generateEnchantmentSource's combinedTriggerEffects) -- same real
     // hook vocabulary and validation shape as Afflictions' effects[]
     // below (added round 199) and Relics/Mechanics' own effects[].
     if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
-    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
   });
   // Afflictions — Round 196 upgrade: AfflictionModel is a real, separate
   // base-game class from EnchantmentModel (see compiler.js:generateAfflictionSource
@@ -2349,11 +2393,11 @@ function validateCharacterPackage(pkg) {
     // generateAfflictionSource filters onPlay.effects down to
     // trigger === 'OnPlay' only, so that's the only allowed trigger here
     // too. entityKind: 'affliction' keeps X-cost-eligibility off.
-    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
     // [Round 200] Same vocabulary fix as Enchantments' whilePile above --
     // AfflictionModel can't reach CARD_TRIGGER_HOOKS-sourced triggers
     // either. See that comment for the full rationale.
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
     // [Round 199] "build out the full affliction section" -- Afflictions'
     // additional-triggers list, same real hook vocabulary (HOOK_TRIGGERS)
     // Relics/Mechanics already validate their own effects[] against (see
@@ -2362,7 +2406,7 @@ function validateCharacterPackage(pkg) {
     // SEPARATE array from onPlay.effects above (which keeps its own
     // dedicated, OnPlay-only validation unchanged).
     if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
-    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
   });
 
   orbs.forEach((orb, i) => {

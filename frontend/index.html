@@ -3345,10 +3345,11 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">
-        A companion creature fighting alongside you — like Osty. <strong>Not yet supported in the compiled mod.</strong>
-        Every character so far has one fixed companion, and there's currently no way for a mod to add an
-        additional one or replace it — unlike Orbs below. What you enter here is saved with your character as
-        a design note, ready for whenever this becomes possible; it doesn't affect gameplay yet.
+        A companion creature fighting alongside you — separate from Osty, your one fixed built-in companion.
+        Toggle "Compile this pet for real" in a pet's editor to have Forge generate an actual summonable
+        companion (real stats and visuals, persists in combat) — then use a "Summon Pet" action in any effect
+        list to bring it out. Static pet only for now: no custom turn behavior/AI yet, it just stands there.
+        Leave the toggle off to keep an entry as a design note only, saved with your character but not compiled.
       </div>
       <div class="grid-cards" id="pets-grid"></div>
     </div>
@@ -3998,7 +3999,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -4097,6 +4098,10 @@ const ACTION_TYPE_GROUPS = [
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
   { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards'] },
+  // [Round 286] Its own group rather than folded into Misc -- summoning a
+  // companion is a distinct enough concept, and only ever offers real
+  // (compileReal) pets as options (see the SummonPet picker case below).
+  { label: 'Pets', color: '#5fa88a', types: ['SummonPet'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -4131,6 +4136,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ClearAfflictionFromPile: 'clear remove affliction from pile hand draw discard exhaust other cards',
   SwapDrawDiscard: 'swap draw discard pile',
   TransformDeckCards: 'transform deck cards into',
+  SummonPet: 'summon pet companion monster',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -4432,7 +4438,7 @@ const STATUS_DESCRIPTIONS = {
 // compiler.js:validTargetsForAction (imported into validate.js) rejects
 // outright at generate/download time -- caught by round 199's own
 // pipeline test.
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -10557,6 +10563,13 @@ function describeAction(act){
       const dstName = (state.cards.find(c=>c.id===act.becomesCardId) || {}).name || 'another card';
       return `Transform every ${srcName} in your deck into ${dstName}`;
     }
+    // [Round 286] Same plain-sentence convention as every case above --
+    // see compiler.js's actionToCSharp SummonPet case for the full
+    // evidence trail.
+    case 'SummonPet': {
+      const petName = (state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet';
+      return `Summon ${petName}`;
+    }
     default: return '';
   }
 }
@@ -13687,6 +13700,17 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.enchantmentRef;
   }
+  // [Round 286] SummonPet's own entity picker -- same self-healing shape
+  // as AfflictCard/EnchantCard above, but only offers REAL (compileReal)
+  // pets -- a design-note-only pet has no generated class to summon.
+  if(act.type === 'SummonPet'){
+    const realPets = state.pets.filter(pet=>pet.compileReal);
+    if(realPets.length && (!act.petRef || !realPets.find(pet=>pet.id===act.petRef))){
+      act.petRef = realPets[0].id;
+    }
+  } else {
+    delete act.petRef;
+  }
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
   // entries already use, defaults to "Hand" (matching Reckless.cs's own
@@ -14230,6 +14254,18 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Transform every</span> ${tdcSourceOptions} <span class="cond-word">in your deck into</span> ${tdcTargetOptions}<span class="cond-word">.</span>`;
       break;
     }
+    // [Round 286] SummonPet -- picker dropdown modeled directly on
+    // AfflictCard/EnchantCard's own above, but only ever lists REAL
+    // (compileReal) pets -- a design-note-only pet has nothing for this
+    // to summon.
+    case 'SummonPet': {
+      const realPetsForPicker = state.pets.filter(pet=>pet.compileReal);
+      const petOptions = realPetsForPicker.length
+        ? `<select class="a-pet-ref">${realPetsForPicker.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a pet first and turn on "Compile this pet for real")</span>`;
+      sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -14334,7 +14370,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.mode; delete act.statusEntries; delete act.drawNextTurn;
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
-    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable;
+    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
@@ -14407,6 +14443,11 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(afflictionRefSelect) afflictionRefSelect.onchange = e=> act.afflictionRef = e.target.value;
   const enchantmentRefSelect = row.querySelector('.a-enchantment-ref');
   if(enchantmentRefSelect) enchantmentRefSelect.onchange = e=> act.enchantmentRef = e.target.value;
+  // [Round 286] SummonPet's own entity-picker select -- same "no
+  // re-render needed" shape as afflictionRefSelect/enchantmentRefSelect
+  // above.
+  const petRefSelect = row.querySelector('.a-pet-ref');
+  if(petRefSelect) petRefSelect.onchange = e=> act.petRef = e.target.value;
   // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
   // needed, same as destinationSelect/costScopeSelect above.
   const pileSelect = row.querySelector('.a-pile');
@@ -16450,7 +16491,7 @@ function renderPets(){
   state.pets.forEach(p=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">pet — not yet compiled</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${p.compileReal ? 'pet — summonable' : 'pet — design note only'}</div>`;
     t.onclick = ()=> openPetEditor(p.id);
     petGrid.appendChild(t);
   });
@@ -16458,7 +16499,7 @@ function renderPets(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const p = { id: uid('pet'), name:'New Pet', description:'', abilityText:'' };
+    const p = { id: uid('pet'), name:'New Pet', description:'', abilityText:'', compileReal:false, minInitialHp:10, maxInitialHp:10 };
     state.pets.push(p);
     save(); renderPets();
     openPetEditor(p.id);
@@ -16466,30 +16507,61 @@ function renderPets(){
   petGrid.appendChild(addTile);
   document.getElementById('pet-count').textContent = `${state.pets.length} pet${state.pets.length===1?'':'s'}`;
 }
+// [Round 286] "Compile this pet for real" toggle — Tyler's go-ahead ("ok,
+// i think we are ready to move on to pets"), scoped to a STATIC pet
+// (real stats/visuals, summons and persists, no custom move/AI authoring
+// yet) with the positioning Harmony patch built now too — see
+// claude/round286-pets-real-static-summon-research.md for the full IL
+// evidence trail behind every field below. Migration for pets saved
+// before this round: compileReal/minInitialHp/maxInitialHp/
+// isHealthBarVisible simply won't exist yet, same "undefined reads as
+// false/default" convention as every other boolean toggle in this file —
+// no explicit migration needed since backend/validate.js only requires
+// minInitialHp/maxInitialHp when compileReal is actually true.
 function openPetEditor(petId){
   const p = state.pets.find(x=>x.id===petId);
   openModal(`
     <div class="modal-head"><h3>Edit Pet</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <div class="panel-desc" style="margin-top:0; color:var(--danger-bright)">
-        Not yet supported in the compiled mod — see the Pets section description for why. Saved here as a design
-        note, ready for whenever this becomes possible.
-      </div>
       <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
       <label>Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
-      <label>What it does (freeform — no wired effects yet)</label>
+      <label>What it does (freeform — for your own notes; not wired to any real behavior)</label>
       <textarea id="p-ability">${escapeHtml(p.abilityText||'')}</textarea>
+      <div class="tagline" style="margin-top:14px">
+        <input type="checkbox" id="p-compile-real" ${p.compileReal ? 'checked' : ''}>
+        <label for="p-compile-real" style="margin:0" title="When on, Forge generates a real, summonable companion (a MonsterModel subclass) instead of just a design note. Static pet only for now — it has real stats and visuals, and actually persists in combat, but no custom turn behavior/AI yet (it just sits there). Use a 'Summon Pet' action (in any effect list) to bring it out.">Compile this pet for real</label>
+      </div>
+      <div id="p-real-fields" style="display:${p.compileReal ? '' : 'none'}">
+        <div class="row">
+          <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
+          <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
+        </div>
+        <div class="tagline" style="margin-top:10px">
+          <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
+          <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
+        </div>
+        <div class="panel-desc" style="margin-top:10px">
+          No custom art or turn behavior yet — this pet uses the game's own placeholder visuals and just stands there each turn. Summon it with a "Summon Pet" action in any effect list.
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-pet">Delete</button>
       <button id="save-pet">Done</button>
     </div>
   `);
+  document.getElementById('p-compile-real').onchange = (e)=>{
+    document.getElementById('p-real-fields').style.display = e.target.checked ? '' : 'none';
+  };
   document.getElementById('delete-pet').onclick = ()=>{ state.pets = state.pets.filter(x=>x.id!==petId); save(); renderPets(); closeModal(); };
   document.getElementById('save-pet').onclick = ()=>{
     p.name = document.getElementById('p-name').value;
     p.description = document.getElementById('p-desc').value;
     p.abilityText = document.getElementById('p-ability').value;
+    p.compileReal = document.getElementById('p-compile-real').checked;
+    p.minInitialHp = Math.max(1, Math.floor(parseFloat(document.getElementById('p-min-hp').value)) || 1);
+    p.maxInitialHp = Math.max(p.minInitialHp, Math.floor(parseFloat(document.getElementById('p-max-hp').value)) || p.minInitialHp);
+    p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;
     save(); renderPets(); closeModal();
   };
 }

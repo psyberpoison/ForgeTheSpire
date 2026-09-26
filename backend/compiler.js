@@ -619,6 +619,11 @@ const PLAYER_ONLY_ACTIONS = [
   // "no real Creature-target concept" bucket as ClearAfflictionFromPile
   // right above -- see actionToCSharp's own cases for the full evidence.
   'SwapDrawDiscard', 'TransformDeckCards',
+  // [Round 286] "SummonPet" -- PlayerCmd.AddPet<T>(Player) takes a Player,
+  // not a Creature; summoning a companion has no "summon it onto an enemy"
+  // concept, same bucket as CreateCard/DrawCard/etc. See its own
+  // actionToCSharp case for the full evidence trail.
+  'SummonPet',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -2094,6 +2099,29 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         ? `        MegaCrit.Sts2.Core.Commands.OrbCmd.RemoveSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via direct sts2.dll IL read, round 160] see compiler.js's own comment on this case`
         : `        await MegaCrit.Sts2.Core.Commands.OrbCmd.AddSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Orbit" card's gainOrbSlots effect, round 59]`;
     }
+    case 'SummonPet': {
+      // [Round 286 — VERIFIED via direct IL disassembly of sts2.dll AND
+      // real, shipped, working usage in TheTrainerNewCharacter.dll's own
+      // Squirtle.OnPlay — see claude/round286-pets-real-static-summon-
+      // research.md for the full evidence trail]
+      // MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<T>(Player) where
+      // T : MonsterModel is real, public, static, generic, async — it
+      // creates a brand-new pet Creature of species T and binds it to the
+      // given player. Squirtle's own real card calls this directly,
+      // unconditionally, every time it's played (no revive-if-out check
+      // in the one real confirmed example), so this deliberately does the
+      // same rather than inventing unconfirmed merge/revive behavior.
+      // `petRef` selects which of this character's own real (compileReal)
+      // pets to summon, resolved via ctx.petClassById the same way
+      // cardRef/relicRef/tokenRef resolve through their own *ClassById
+      // maps elsewhere in this file. Player resolved via
+      // resolvePlayerExpr(ctx), same as every other PLAYER_ONLY_ACTIONS
+      // entry (GainOrbSlots/ModifyEnergy/etc, right above).
+      const petCls = ctx.petClassById && ctx.petClassById.get(action.petRef);
+      if (!petCls) return `        ForgeActions.Todo("SummonPet(no pet selected or pet not found: ${action.petRef || ''})");`;
+      const summonPlayerExpr = resolvePlayerExpr(ctx);
+      return `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<${petCls}>(${summonPlayerExpr}); // [VERIFIED via decompiling TheTrainerNewCharacter.dll — Squirtle.OnPlay's real AddPet<T> call, round 286]`;
+    }
     case 'ModifyCost': {
       // [Round 193] Tyler: "instead of energy reduction while left in
       // hand ... can we add an effect to our existing effect list that
@@ -2790,7 +2818,7 @@ function cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, ctxOverride
   // the one consumer so far, and resolvePlayerExpr's comment for the
   // broader "fgPlayer is always bound" argument this flag makes explicit
   // rather than assumed per-call-site.
-  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded: the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for one.
+  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded: the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for one.
   const baseEffects = (card.effects || []).filter(e => e.trigger === trigger);
   const baseBody = baseEffects.length ? effectsToCSharp(baseEffects, ctx) : null;
   if (!resolvedTiers.length) return baseBody;
@@ -4598,7 +4626,7 @@ ${passthrough}
     // that assumes fgPlayer is always in scope (CardsPlayedThisTurn/
     // AttacksPlayedThisTurn) needs to know per-hook whether it really is —
     // see those cases' own comment for why.
-    const modCtx = { cardPlayBound: false, fgPlayerBound: !!hook.playerExpr, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
+    const modCtx = { cardPlayBound: false, fgPlayerBound: !!hook.playerExpr, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
     const condExpr = (mod.conditions && mod.conditions.length)
       ? mod.conditions.map(c => conditionToCSharp(c, modCtx)).join(' && ')
       : 'true';
@@ -5033,7 +5061,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // whole method body is just the Todo() fallback and neither is
     // invoked. So every reachable call passes through this ctx with
     // fgPlayer already unconditionally bound.
-    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', hookCardExpr: hook.cardParamExpr || null, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
+    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', hookCardExpr: hook.cardParamExpr || null, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
     // Round 19 added a THIRD real shape beyond "both bound"/"neither bound"
     // — 22 of the 39 new hooks expose exactly ONE real Creature (playerExpr
     // set, targetExpr null: e.g. AfterGoldGained's bare `Player player`,
@@ -5986,7 +6014,7 @@ function generateCardSource(card, namespace, poolClassName, cardArtOverride, ref
         const whileInHandLines = whileInHandMergeLines(
           whileInHandEffects.filter(e => e.trigger === trigger),
           trigger,
-          { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
+          { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
         );
         const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         return `
@@ -6032,7 +6060,7 @@ ${triggerBody}
         const whileInHandLines = whileInHandMergeLines(
           whileInHandEffects.filter(e => e.trigger === trigger),
           trigger,
-          { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
+          { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }
         );
         const triggerBody = [cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, { cardPlayBound: false, targetMayBeNull: false }), whileInHandLines, costLines.join('\n')].filter(Boolean).join('\n') || '        // no effects defined';
         const petLine = hook.petExpr ? `        var fgPet = ${hook.petExpr}; // [VERIFIED via decompiling TheBurdenedNewCharacter.dll's DiscardStatusPower v5 + direct sts2.dll read of CardModel.Owner/Player.Osty]\n` : '';
@@ -6077,7 +6105,7 @@ ${costLines.length ? costLines.join('\n') + '\n' : ''}        await Task.Complet
       if (!entries.length) return null;
       const hook = TRIGGER_HOOKS[triggerId];
       const guard = PILE_TRIGGER_OWNER_GUARD[triggerId];
-      const ctx = { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
+      const ctx = { cardPlayBound: false, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
       const indent = s => s.split('\n').map(l => `    ${l}`).join('\n');
       const perEntryBlocks = entries.map(e => {
         const body = effectsToCSharp([e], ctx) || '        // no effects defined';
@@ -7090,7 +7118,7 @@ ${checks.join('\n')}
   // existing ctx.thisIsCard-gated Todo() stubs instead of emitting
   // `this`-referencing code that would target the wrong object.
   const onPlayEffects = (Array.isArray(op.effects) ? op.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
-  const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
+  const onPlayCtx = { cardPlayBound: true, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: false, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
   // [Round 200 -- "make this section fully functional"] "Additional
@@ -7301,7 +7329,7 @@ ${checks.join('\n')}
   // EndTurn, etc.) correctly falls to its next, more conservative
   // fallback instead of emitting a compile-breaking `cardPlay` reference.
   const onPlayEffects = ((affliction.onPlay && Array.isArray(affliction.onPlay.effects)) ? affliction.onPlay.effects : []).filter(eff => eff && eff.trigger === 'OnPlay');
-  const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, affectedCardIsThisCard: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
+  const onPlayCtx = { cardPlayBound: false, thisIsCard: false, fgPlayerBound: true, targetMayBeNull: true, affectedCardIsThisCard: true, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById };
   const onPlayBody = onPlayEffects.length ? effectsToCSharp(onPlayEffects, onPlayCtx) : '        // no OnPlay effects defined';
 
   // [Round 199 -- "build out the full affliction section"] Additional
@@ -7413,17 +7441,23 @@ function buildManifestJson(characterPackage, modId, gameVersion) {
 // export even though it doesn't compile yet.
 function buildPetsReadme(pets) {
   const lines = [];
-  lines.push('# Pets — captured, not yet compiled');
+  // [Round 286] This file now only lists pets NOT set to compile for real
+  // (pet.compileReal !== true) — a real pet gets an actual MonsterModel
+  // subclass under Pets/ instead (see generatePetSource/generateProject's
+  // petClassById), so listing it here too would be stale/misleading. A
+  // real mechanism for a mod to summon its own custom companion IS now
+  // confirmed and wired up — see claude/round286-pets-real-static-summon-
+  // research.md for the full evidence trail (PlayerCmd.AddPet<T>,
+  // BaseLib.Abstracts.CustomMonsterModel) — this file is only for entries
+  // still left as design notes by choice.
+  lines.push('# Pets — design notes (not compiled)');
   lines.push('');
-  lines.push('Every STS2 character reflected so far has ONE fixed companion (`Player.Osty` —');
+  lines.push('Every STS2 character also has ONE fixed companion (`Player.Osty` —');
   lines.push('[VERIFIED via reflect-baselib round 5]) that already exists on the base game\'s');
-  lines.push('`Player` type. No reflect-baselib round has found any real, confirmed (or even');
-  lines.push('plausibly-guessable) mechanism for a mod to define an ADDITIONAL or REPLACEMENT');
-  lines.push('pet/companion of its own — unlike Orbs (see Orbs/README.md), there isn\'t even a');
-  lines.push('real namespace/folder convention pointing at one existing anywhere. The pet(s)');
-  lines.push('below are saved as a design doc so they\'re ready the moment a future');
-  lines.push('reflect-baselib round confirms a real mechanism — this file is not read by the');
-  lines.push('compiled mod at runtime.');
+  lines.push('`Player` type, separate from anything below. The pet(s) below are captured as');
+  lines.push('flavor/design notes only — toggle "Compile this pet for real" in the editor to');
+  lines.push('have Forge generate an actual summonable companion (Pets/*.cs) instead. This');
+  lines.push('file is not read by the compiled mod at runtime.');
   lines.push('');
   pets.forEach(p => {
     lines.push(`## ${p.name || 'Untitled'}`);
@@ -7432,6 +7466,158 @@ function buildPetsReadme(pets) {
     if (p.abilityText) { lines.push('**What it does:** ' + p.abilityText); lines.push(''); }
   });
   return lines.join('\n');
+}
+
+// [Round 286 — VERIFIED via direct IL disassembly of sts2.dll and
+// BaseLib.dll, cross-referenced against TheTrainerNewCharacter.dll's own
+// real, shipped SquirtlePet — full evidence trail in
+// claude/round286-pets-real-static-summon-research.md] MonsterModel has
+// exactly 3 genuinely abstract members: MinInitialHp, MaxInitialHp, and
+// GenerateMoveStateMachine() — every other override point
+// (IsHealthBarVisible, VisualsPath, etc) has a real, safe virtual
+// default. This is deliberately a STATIC pet (no custom move/AI
+// authoring yet, per Tyler's own scope pick this round):
+// GenerateMoveStateMachine() always emits the real "NOTHING_MOVE"
+// do-nothing loop SquirtlePet itself uses when idle — confirmed
+// byte-for-byte via IL, including the no-op `_ => Task.CompletedTask`
+// onPerform lambda and the empty `Array.Empty<AbstractIntent>()` — and no
+// CreateCustomVisuals() override is generated at all. That's confirmed
+// SAFE, not a shortcut: BaseLib.Abstracts.CreateVisuals::CustomCreateVisuals
+// (a real Harmony Prefix on MonsterModel.CreateVisuals, full body
+// disassembled) falls through to the engine's own convention-path scene
+// loading — and its further CreateFallbackVisuals() built-in placeholder
+// on any failure — whenever CreateCustomVisuals() returns null, which is
+// CustomMonsterModel's own base default. Custom pet art is real future
+// scope, not something this round is blocked on.
+function generatePetSource(pet, namespace) {
+  const className = pascalCase(pet.name) + 'Pet';
+  const minHp = Number.isFinite(pet.minInitialHp) ? Math.max(1, Math.floor(pet.minInitialHp)) : 1;
+  const maxHp = Number.isFinite(pet.maxInitialHp) ? Math.max(minHp, Math.floor(pet.maxInitialHp)) : minHp;
+  // IsHealthBarVisible's real base default is `true` ([VERIFIED] direct
+  // IL read of sts2.dll) -- only emit an override when explicitly turned
+  // off, same "don't emit what the base class already does" convention
+  // stayVisibleAtZero/instanceType overrides use elsewhere in this file.
+  const healthBarOverride = pet.isHealthBarVisible === false
+    ? `\n    public override bool IsHealthBarVisible => false; // [VERIFIED — round 286] base default is true (direct sts2.dll IL read); only emitted when explicitly turned off`
+    : '';
+  return `using System;
+using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
+using MegaCrit.Sts2.Core.MonsterMoves.Intents;
+
+namespace ${namespace}.Pets;
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+// [Round 286] Static pet (no custom move/AI authoring yet) -- see
+// generatePetSource's own header comment in compiler.js for the full
+// evidence trail. global::${namespace}.IModPet is the marker interface
+// ForgePetPositionSupport.cs's Harmony patch uses to find this
+// character's own pets on screen -- see that file's own header comment.
+public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${namespace}.IModPet
+{
+    public override int MinInitialHp => ${minHp};
+    public override int MaxInitialHp => ${maxHp};${healthBarOverride}
+
+    // [VERIFIED — round 286, direct IL disassembly of TheTrainerNewCharacter.dll's
+    // real SquirtlePet::GenerateMoveStateMachine] A single self-looping,
+    // zero-intent, no-op move -- the real "does nothing all combat"
+    // pattern, ported verbatim, not adapted.
+    protected override MonsterMoveStateMachine GenerateMoveStateMachine()
+    {
+        var nothingMove = new MoveState("NOTHING_MOVE", _ => Task.CompletedTask, Array.Empty<AbstractIntent>());
+        nothingMove.FollowUpState = nothingMove;
+        return new MonsterMoveStateMachine(new MonsterState[] { nothingMove }, nothingMove);
+    }
+}
+`;
+}
+
+// [Round 286 — VERIFIED via direct IL disassembly of
+// TheTrainerNewCharacter.dll's real, shipped
+// TheTrainerNewCharacter.Patches.ModPetPositionPatch::Postfix — full body
+// decompiled, not just the [HarmonyPatch] attribute (that much was already
+// confirmed round 60). Only writes a file at all when this character has
+// at least one real (compileReal) pet. Faithfully ports the real logic:
+// finds every ally Creature that is one of THIS character's own pets
+// (via the IModPet marker interface, defined here) belonging to the local
+// viewer's own player, and lines them up starting at the owner's own
+// on-screen position plus NCreature.GetOstyOffsetFromPlayer() -- each
+// subsequent pet offset further right by the PREVIOUS pet's own visual
+// bounds width * scale + 20px, exactly matching the real disassembled
+// math. Already handles multiple simultaneous pets for one owner for
+// free, since that's what the real patch itself does -- no extra design
+// needed for round 61's old "multiple pets" open question. `owner ==
+// null || !LocalContext.IsMe(owner)` is ported unchanged too -- only the
+// local viewer's own pets get repositioned, same as the real mod.
+function generatePetPositionSupportFile(realPets, namespace) {
+  if (!realPets || !realPets.length) return null;
+
+  return `using HarmonyLib;
+using Godot;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Nodes.Combat;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Context;
+using System;
+using System.Collections.Generic;
+
+namespace ${namespace};
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+//
+// [Round 286] See generatePetPositionSupportFile's own header comment in
+// compiler.js for the full evidence trail -- this is a faithful port of
+// TheTrainerNewCharacter.dll's own real, shipped
+// ModPetPositionPatch::Postfix, generalized to this character's own real
+// pets via the IModPet marker interface below. ModEntry.cs already
+// bootstraps \`new Harmony(...).PatchAll()\`, which picks up this
+// [HarmonyPatch] class automatically -- no extra wiring needed.
+public interface IModPet { }
+
+[HarmonyPatch(typeof(NCombatRoom), "AddCreature")]
+internal static class ForgePetPositionPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix(NCombatRoom __instance, Creature creature)
+    {
+        if (!(creature?.Monster is IModPet)) return;
+        var owner = creature.PetOwner;
+        if (owner == null || !LocalContext.IsMe(owner)) return;
+
+        var ownerNode = __instance.GetCreatureNode(owner.Creature);
+        if (ownerNode == null) return;
+
+        var ownerPets = new List<Creature>();
+        foreach (var ally in creature.CombatState.Allies)
+        {
+            if (ally?.Monster is IModPet && ally.PetOwner == owner)
+                ownerPets.Add(ally);
+        }
+        if (ownerPets.Count == 0) return;
+
+        try
+        {
+            var offset = NCreature.GetOstyOffsetFromPlayer();
+            float x = ownerNode.Position.X + offset.X;
+            float y = ownerNode.Position.Y + offset.Y;
+
+            foreach (var pet in ownerPets)
+            {
+                var petNode = __instance.GetCreatureNode(pet);
+                if (petNode == null) continue;
+                petNode.Position = new Vector2(x, y);
+                x += petNode.Visuals.Bounds.Size.X * petNode.Visuals.Scale.X + 20f;
+                petNode.ToggleIsInteractable(pet.Monster.IsHealthBarVisible);
+            }
+        }
+        catch (Exception e)
+        {
+            GD.PrintErr("[Forge] pet position: " + e);
+        }
+    }
+}
+`;
 }
 
 // [Round 95] Shared by both Enchantments/README.md and Afflictions/
@@ -9803,6 +9989,16 @@ function generateProject(characterPackage, outDir, opts = {}) {
     write('Generated/ForgeDebuffMultiplierSupport.cs', debuffMultiplierSupportSrc);
   }
   const enchantmentClassById = new Map((characterPackage.enchantments || []).map(e => [e.id, `global::${namespace}.Enchantments.${pascalCase(e.name)}Enchantment`]));
+  // [Round 286] Same fully-qualified map-by-id convention as
+  // afflictionClassById/enchantmentClassById right above (SummonPet, like
+  // AfflictCard/EnchantCard, can be authored from ANY effect list, not
+  // just a card's own — a relic/mechanic hook has no `using
+  // {{namespace}}.Pets;` of its own either). Only pets with
+  // compileReal:true get a real class — every other pet entry is simply
+  // absent from this map, so ctx.petClassById.get(id) is undefined for
+  // them, matching the "no pet selected or pet not found" Todo fallback
+  // in actionToCSharp's SummonPet case.
+  const petClassById = new Map((characterPackage.pets || []).filter(p => p.compileReal).map(p => [p.id, `global::${namespace}.Pets.${pascalCase(p.name)}Pet`]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
 
@@ -10054,22 +10250,31 @@ function generateProject(characterPackage, outDir, opts = {}) {
   write('Relics/_Namespace.cs', `namespace ${namespace}.Relics;\n`);
   write('Powers/_Namespace.cs', `namespace ${namespace}.Powers;\n`);
 
-  // Pets — Tyler's "add a section to the page to create custom pets" ask.
-  // STILL written as README.md, NOT .cs — see buildPetsReadme below for
-  // the full evidence review on why. reflect-baselib rounds 11/12 DID
-  // confirm the real base class Tyler's own working pets use
-  // (CustomMonsterModel, via TheTrainerNewCharacter.Monsters.*Pet) and
-  // its 3 real abstract members (MinInitialHp/MaxInitialHp/
-  // IsHealthBarVisible, confirmed consistently across all 9 real Pokemon
-  // pets) — but NOT the real signature of PlayerCmd.AddPet, the call that
-  // actually attaches a pet to a run. Generating a compiling Monster class
-  // with no confirmed way to ever attach it to a character would be a
-  // silent dead end, not a real feature, so this stays a design doc until
-  // a future round closes that gap. A .md file is invisible to MSBuild's
-  // default `**/*.cs` glob, so this can NEVER break a real build no
-  // matter what Tyler types in.
-  if ((characterPackage.pets || []).length) {
-    write('Pets/README.md', buildPetsReadme(characterPackage.pets));
+  // Pets — Tyler's "add a section to the page to create custom pets" ask,
+  // originally captured only as README.md (see buildPetsReadme above for
+  // that history). [Round 286] Now split two ways: a pet with
+  // compileReal:true gets a real Pets/*.cs MonsterModel subclass (below,
+  // via petClassById/generatePetSource — full evidence trail in
+  // claude/round286-pets-real-static-summon-research.md); every other
+  // pet still only gets a README entry, same as before. A .md file is
+  // invisible to MSBuild's default `**/*.cs` glob, so a design-note-only
+  // pet can never break a real build no matter what Tyler types in.
+  const designNotePets = (characterPackage.pets || []).filter(p => !p.compileReal);
+  if (designNotePets.length) {
+    write('Pets/README.md', buildPetsReadme(designNotePets));
+  }
+  const realPets = (characterPackage.pets || []).filter(p => p.compileReal);
+  realPets.forEach(pet => {
+    write(`Pets/${pascalCase(pet.name)}Pet.cs`, generatePetSource(pet, namespace));
+  });
+  // [Round 286] IModPet marker interface + the ported real Harmony
+  // positioning patch (TheTrainerNewCharacter.Patches.ModPetPositionPatch,
+  // full body disassembled and faithfully translated — see
+  // generatePetPositionSupportFile's own header comment) — only written
+  // when at least one real pet exists in this project.
+  const petPositionSupportSrc = generatePetPositionSupportFile(realPets, namespace);
+  if (petPositionSupportSrc) {
+    write('Generated/ForgePetPositionSupport.cs', petPositionSupportSrc);
   }
 
   // Enchantments — Round 95, Tyler: "Enchantments/Afflictions need their
@@ -10083,7 +10288,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // real .cs file, same "per-entity .cs file + one README" pattern Orbs
   // already uses just above.
   for (const enchantment of characterPackage.enchantments || []) {
-    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById }, { characterPackage, writeBinary, modIdLower: modId.toLowerCase() });
+    const enchSrc = generateEnchantmentSource(enchantment, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById }, { characterPackage, writeBinary, modIdLower: modId.toLowerCase() });
     write(`Enchantments/${pascalCase(enchantment.name)}Enchantment.cs`, enchSrc);
   }
   if ((characterPackage.enchantments || []).length) {
@@ -10096,7 +10301,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // generateAfflictionSource's own comment for the full evidence trail).
   // Tyler: "afflictions are temporary enchantments."
   for (const affliction of characterPackage.afflictions || []) {
-    const afflSrc = generateAfflictionSource(affliction, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
+    const afflSrc = generateAfflictionSource(affliction, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById });
     write(`Afflictions/${pascalCase(affliction.name)}Affliction.cs`, afflSrc);
   }
   if ((characterPackage.afflictions || []).length) {
@@ -10139,7 +10344,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
       if (!cardArtHeaderAdded) { artReport.push('', '**Card art:**'); cardArtHeaderAdded = true; }
       artReport.push(cardArtReportLine);
     }
-    const src = generateCardSource(card, namespace, cardPoolClassName, cardArtOverride, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById });
+    const src = generateCardSource(card, namespace, cardPoolClassName, cardArtOverride, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById });
     write(`Cards/${pascalCase(card.name)}Card.cs`, src);
   }
   if (characterPackage.cards.length && !cardArtHeaderAdded) {
@@ -10158,7 +10363,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
       if (!relicIconHeaderAdded) { artReport.push('', '**Relic icons:**'); relicIconHeaderAdded = true; }
       artReport.push(relicIconReportLine);
     }
-    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById }, relicIconOverride);
+    const src = generateRelicSource(relic, namespace, relicPoolClassName, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById }, relicIconOverride);
     write(`Relics/${pascalCase(relic.name)}Relic.cs`, src);
   }
 
@@ -10173,7 +10378,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
       if (!mechIconHeaderAdded) { artReport.push('', '**Mechanic icons:**'); mechIconHeaderAdded = true; }
       artReport.push(mechIconReportLine);
     }
-    const src = generateMechanicSource(mechanic, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById }, mechIconOverride);
+    const src = generateMechanicSource(mechanic, namespace, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById }, mechIconOverride);
     write(`Powers/${pascalCase(mechanic.name)}Power.cs`, src);
   }
 
