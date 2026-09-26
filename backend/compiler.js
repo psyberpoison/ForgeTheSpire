@@ -2111,8 +2111,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // unconditionally, every time it's played (no revive-if-out check
       // in the one real confirmed example), so this deliberately does the
       // same rather than inventing unconfirmed merge/revive behavior.
-      // `petRef` selects which of this character's own real (compileReal)
-      // pets to summon, resolved via ctx.petClassById the same way
+      // `petRef` selects which of this character's own pets to summon,
+      // resolved via ctx.petClassById the same way
       // cardRef/relicRef/tokenRef resolve through their own *ClassById
       // maps elsewhere in this file. Player resolved via
       // resolvePlayerExpr(ctx), same as every other PLAYER_ONLY_ACTIONS
@@ -7432,41 +7432,15 @@ function buildManifestJson(characterPackage, modId, gameVersion) {
 }
 
 // Writes the full generated project into outDir. Returns { written, modId, modName }.
-// Pets/Orbs README builders — see generateProject's call sites above for
-// why these are markdown, not C#. Both follow the exact same shape: a
-// short evidence-review header (copied from the frontend's section-pets/
-// section-orbs panel-desc, so the story is consistent wherever Tyler reads
-// it) followed by one Markdown section per captured entity, dumping every
-// field Tyler entered so nothing typed into either editor is ever lost on
-// export even though it doesn't compile yet.
-function buildPetsReadme(pets) {
-  const lines = [];
-  // [Round 286] This file now only lists pets NOT set to compile for real
-  // (pet.compileReal !== true) — a real pet gets an actual MonsterModel
-  // subclass under Pets/ instead (see generatePetSource/generateProject's
-  // petClassById), so listing it here too would be stale/misleading. A
-  // real mechanism for a mod to summon its own custom companion IS now
-  // confirmed and wired up — see claude/round286-pets-real-static-summon-
-  // research.md for the full evidence trail (PlayerCmd.AddPet<T>,
-  // BaseLib.Abstracts.CustomMonsterModel) — this file is only for entries
-  // still left as design notes by choice.
-  lines.push('# Pets — design notes (not compiled)');
-  lines.push('');
-  lines.push('Every STS2 character also has ONE fixed companion (`Player.Osty` —');
-  lines.push('[VERIFIED via reflect-baselib round 5]) that already exists on the base game\'s');
-  lines.push('`Player` type, separate from anything below. The pet(s) below are captured as');
-  lines.push('flavor/design notes only — toggle "Compile this pet for real" in the editor to');
-  lines.push('have Forge generate an actual summonable companion (Pets/*.cs) instead. This');
-  lines.push('file is not read by the compiled mod at runtime.');
-  lines.push('');
-  pets.forEach(p => {
-    lines.push(`## ${p.name || 'Untitled'}`);
-    lines.push('');
-    if (p.description) { lines.push(p.description); lines.push(''); }
-    if (p.abilityText) { lines.push('**What it does:** ' + p.abilityText); lines.push(''); }
-  });
-  return lines.join('\n');
-}
+// [Round 289] This file used to also define buildPetsReadme(pets) here,
+// a markdown-dump fallback for pets not opted into real compilation.
+// Tyler: "remove the check box. if they want to not see the pet in game,
+// they just have to not summon it" — retired along with the compileReal
+// flag, since every pet now always compiles to a real Pets/*.cs
+// MonsterModel subclass via generatePetSource below; there's no
+// design-note-only pet left to write a README for. (buildOrbsReadme,
+// further below, is unrelated and still in use — Orbs' passiveText/
+// evokeText genuinely have no compiled equivalent yet.)
 
 // [Round 286 — VERIFIED via direct IL disassembly of sts2.dll and
 // BaseLib.dll, cross-referenced against TheTrainerNewCharacter.dll's own
@@ -7538,7 +7512,7 @@ public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${name
 // TheTrainerNewCharacter.Patches.ModPetPositionPatch::Postfix — full body
 // decompiled, not just the [HarmonyPatch] attribute (that much was already
 // confirmed round 60). Only writes a file at all when this character has
-// at least one real (compileReal) pet. Faithfully ports the real logic:
+// at least one pet defined. Faithfully ports the real logic:
 // finds every ally Creature that is one of THIS character's own pets
 // (via the IModPet marker interface, defined here) belonging to the local
 // viewer's own player, and lines them up starting at the owner's own
@@ -7550,8 +7524,8 @@ public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${name
 // needed for round 61's old "multiple pets" open question. `owner ==
 // null || !LocalContext.IsMe(owner)` is ported unchanged too -- only the
 // local viewer's own pets get repositioned, same as the real mod.
-function generatePetPositionSupportFile(realPets, namespace) {
-  if (!realPets || !realPets.length) return null;
+function generatePetPositionSupportFile(pets, namespace) {
+  if (!pets || !pets.length) return null;
 
   return `using HarmonyLib;
 using Godot;
@@ -9993,12 +9967,15 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // afflictionClassById/enchantmentClassById right above (SummonPet, like
   // AfflictCard/EnchantCard, can be authored from ANY effect list, not
   // just a card's own — a relic/mechanic hook has no `using
-  // {{namespace}}.Pets;` of its own either). Only pets with
-  // compileReal:true get a real class — every other pet entry is simply
-  // absent from this map, so ctx.petClassById.get(id) is undefined for
-  // them, matching the "no pet selected or pet not found" Todo fallback
-  // in actionToCSharp's SummonPet case.
-  const petClassById = new Map((characterPackage.pets || []).filter(p => p.compileReal).map(p => [p.id, `global::${namespace}.Pets.${pascalCase(p.name)}Pet`]));
+  // {{namespace}}.Pets;` of its own either). [Round 289] Every pet now
+  // gets a real class — the earlier compileReal opt-in filter is retired
+  // (Tyler: "remove the check box. if they want to not see the pet in
+  // game, they just have to not summon it"). A pet id with no matching
+  // entry (e.g. a stale/removed reference) is still absent from this map,
+  // so ctx.petClassById.get(id) is undefined for it, matching the "no pet
+  // selected or pet not found" Todo fallback in actionToCSharp's
+  // SummonPet case.
+  const petClassById = new Map((characterPackage.pets || []).map(p => [p.id, `global::${namespace}.Pets.${pascalCase(p.name)}Pet`]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
 
@@ -10250,29 +10227,26 @@ function generateProject(characterPackage, outDir, opts = {}) {
   write('Relics/_Namespace.cs', `namespace ${namespace}.Relics;\n`);
   write('Powers/_Namespace.cs', `namespace ${namespace}.Powers;\n`);
 
-  // Pets — Tyler's "add a section to the page to create custom pets" ask,
-  // originally captured only as README.md (see buildPetsReadme above for
-  // that history). [Round 286] Now split two ways: a pet with
-  // compileReal:true gets a real Pets/*.cs MonsterModel subclass (below,
-  // via petClassById/generatePetSource — full evidence trail in
-  // claude/round286-pets-real-static-summon-research.md); every other
-  // pet still only gets a README entry, same as before. A .md file is
-  // invisible to MSBuild's default `**/*.cs` glob, so a design-note-only
-  // pet can never break a real build no matter what Tyler types in.
-  const designNotePets = (characterPackage.pets || []).filter(p => !p.compileReal);
-  if (designNotePets.length) {
-    write('Pets/README.md', buildPetsReadme(designNotePets));
-  }
-  const realPets = (characterPackage.pets || []).filter(p => p.compileReal);
-  realPets.forEach(pet => {
+  // Pets — Tyler's "add a section to the page to create custom pets" ask.
+  // [Round 286] Every pet gets a real Pets/*.cs MonsterModel subclass, via
+  // petClassById/generatePetSource — full evidence trail in
+  // claude/round286-pets-real-static-summon-research.md. [Round 289]
+  // Tyler: "remove the check box. if they want to not see the pet in
+  // game, they just have to not summon it" — the earlier compileReal
+  // opt-in split (a design-note-only Pets/README.md path for entries not
+  // flagged real) is retired; a pet simply never referenced by a
+  // SummonPet action is an unused generated class, same as any other
+  // never-instantiated model, and never appears in-game.
+  const pets = characterPackage.pets || [];
+  pets.forEach(pet => {
     write(`Pets/${pascalCase(pet.name)}Pet.cs`, generatePetSource(pet, namespace));
   });
   // [Round 286] IModPet marker interface + the ported real Harmony
   // positioning patch (TheTrainerNewCharacter.Patches.ModPetPositionPatch,
   // full body disassembled and faithfully translated — see
   // generatePetPositionSupportFile's own header comment) — only written
-  // when at least one real pet exists in this project.
-  const petPositionSupportSrc = generatePetPositionSupportFile(realPets, namespace);
+  // when at least one pet exists in this project.
+  const petPositionSupportSrc = generatePetPositionSupportFile(pets, namespace);
   if (petPositionSupportSrc) {
     write('Generated/ForgePetPositionSupport.cs', petPositionSupportSrc);
   }

@@ -3346,10 +3346,10 @@
     <div class="panel-body">
       <div class="panel-desc">
         A companion creature fighting alongside you — separate from Osty, your one fixed built-in companion.
-        Toggle "Compile this pet for real" in a pet's editor to have Forge generate an actual summonable
-        companion (real stats and visuals, persists in combat) — then use a "Summon Pet" action in any effect
-        list to bring it out. Static pet only for now: no custom turn behavior/AI yet, it just stands there.
-        Leave the toggle off to keep an entry as a design note only, saved with your character but not compiled.
+        Every pet you define here generates a real, summonable companion (real stats and visuals, persists in
+        combat) — use a "Summon Pet" action in any effect list to bring it out. Static pet only for now: no
+        custom turn behavior/AI yet, it just stands there. A pet you never summon anywhere simply never
+        appears in-game, so there's no need to remove it to keep it out of a build.
       </div>
       <div class="grid-cards" id="pets-grid"></div>
     </div>
@@ -4099,8 +4099,8 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
   { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
-  // companion is a distinct enough concept, and only ever offers real
-  // (compileReal) pets as options (see the SummonPet picker case below).
+  // companion is a distinct enough concept (see the SummonPet picker case
+  // below).
   { label: 'Pets', color: '#5fa88a', types: ['SummonPet'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
@@ -13701,12 +13701,11 @@ function ensureActionRefDefaults(act){
     delete act.enchantmentRef;
   }
   // [Round 286] SummonPet's own entity picker -- same self-healing shape
-  // as AfflictCard/EnchantCard above, but only offers REAL (compileReal)
-  // pets -- a design-note-only pet has no generated class to summon.
+  // as AfflictCard/EnchantCard above. [Round 289] Every defined pet is a
+  // valid target now -- the earlier compileReal opt-in filter is retired.
   if(act.type === 'SummonPet'){
-    const realPets = state.pets.filter(pet=>pet.compileReal);
-    if(realPets.length && (!act.petRef || !realPets.find(pet=>pet.id===act.petRef))){
-      act.petRef = realPets[0].id;
+    if(state.pets.length && (!act.petRef || !state.pets.find(pet=>pet.id===act.petRef))){
+      act.petRef = state.pets[0].id;
     }
   } else {
     delete act.petRef;
@@ -14255,14 +14254,13 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       break;
     }
     // [Round 286] SummonPet -- picker dropdown modeled directly on
-    // AfflictCard/EnchantCard's own above, but only ever lists REAL
-    // (compileReal) pets -- a design-note-only pet has nothing for this
-    // to summon.
+    // AfflictCard/EnchantCard's own above. [Round 289] Lists every
+    // defined pet -- the earlier "REAL (compileReal) pets only" filter is
+    // retired.
     case 'SummonPet': {
-      const realPetsForPicker = state.pets.filter(pet=>pet.compileReal);
-      const petOptions = realPetsForPicker.length
-        ? `<select class="a-pet-ref">${realPetsForPicker.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
-        : `<span class="cond-word hint-small">(create a pet first and turn on "Compile this pet for real")</span>`;
+      const petOptions = state.pets.length
+        ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a pet first)</span>`;
       sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions}<span class="cond-word">.</span>`;
       break;
     }
@@ -16477,21 +16475,31 @@ function openMechEditor(mechId){
 }
 
 /* ---------- PETS ---------- */
-// Data-capture only — see section-pets' panel-desc for the full evidence
-// review (no confirmed, or even plausibly-guessable, real mechanism for a
-// mod to define a custom pet/companion; Player.Osty is the one confirmed
-// "pet" concept and it's fixed/built-in, not mod-creatable). Deliberately
-// NOT given a trigger/condition/action effects list like Mechanics/Relics
-// above — there's no reflected hook signature of any kind to wire one to,
-// so offering that editor would imply a working mechanism that doesn't
-// exist. Just name/description/abilityText — a design doc, honestly.
+// [Round 286] Every pet compiles to a real, summonable companion (a
+// BaseLib.Abstracts.CustomMonsterModel subclass) — see
+// claude/round286-pets-real-static-summon-research.md for the full IL
+// evidence trail behind minInitialHp/maxInitialHp/isHealthBarVisible
+// below. Static pet only for now: real stats/visuals, summons and
+// persists in combat, but no custom turn behavior/AI yet (it just sits
+// there) and no custom art (uses the game's own placeholder visuals).
+// [Round 289] Tyler: "remove the check box. if they want to not see the
+// pet in game, they just have to not summon it" — the earlier
+// "Compile this pet for real" opt-in toggle is retired; every pet always
+// gets a generated class, and the only way to keep one out of a build is
+// to never reference it from a Summon Pet action. Migration for pets
+// saved before round 286: minInitialHp/maxInitialHp won't exist yet —
+// the editor's value="" fallback below defaults them to 10/10 on next
+// save, and backend/validate.js requires them unconditionally now.
 const petGrid = document.getElementById('pets-grid');
 function renderPets(){
   petGrid.innerHTML = '';
   state.pets.forEach(p=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${p.compileReal ? 'pet — summonable' : 'pet — design note only'}</div>`;
+    const hpMeta = Number.isFinite(p.minInitialHp) && Number.isFinite(p.maxInitialHp)
+      ? `${p.minInitialHp}–${p.maxInitialHp} HP`
+      : 'pet';
+    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${hpMeta}</div>`;
     t.onclick = ()=> openPetEditor(p.id);
     petGrid.appendChild(t);
   });
@@ -16499,7 +16507,7 @@ function renderPets(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const p = { id: uid('pet'), name:'New Pet', description:'', abilityText:'', compileReal:false, minInitialHp:10, maxInitialHp:10 };
+    const p = { id: uid('pet'), name:'New Pet', description:'', abilityText:'', minInitialHp:10, maxInitialHp:10 };
     state.pets.push(p);
     save(); renderPets();
     openPetEditor(p.id);
@@ -16507,17 +16515,6 @@ function renderPets(){
   petGrid.appendChild(addTile);
   document.getElementById('pet-count').textContent = `${state.pets.length} pet${state.pets.length===1?'':'s'}`;
 }
-// [Round 286] "Compile this pet for real" toggle — Tyler's go-ahead ("ok,
-// i think we are ready to move on to pets"), scoped to a STATIC pet
-// (real stats/visuals, summons and persists, no custom move/AI authoring
-// yet) with the positioning Harmony patch built now too — see
-// claude/round286-pets-real-static-summon-research.md for the full IL
-// evidence trail behind every field below. Migration for pets saved
-// before this round: compileReal/minInitialHp/maxInitialHp/
-// isHealthBarVisible simply won't exist yet, same "undefined reads as
-// false/default" convention as every other boolean toggle in this file —
-// no explicit migration needed since backend/validate.js only requires
-// minInitialHp/maxInitialHp when compileReal is actually true.
 function openPetEditor(petId){
   const p = state.pets.find(x=>x.id===petId);
   openModal(`
@@ -16527,22 +16524,16 @@ function openPetEditor(petId){
       <label>Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
       <label>What it does (freeform — for your own notes; not wired to any real behavior)</label>
       <textarea id="p-ability">${escapeHtml(p.abilityText||'')}</textarea>
-      <div class="tagline" style="margin-top:14px">
-        <input type="checkbox" id="p-compile-real" ${p.compileReal ? 'checked' : ''}>
-        <label for="p-compile-real" style="margin:0" title="When on, Forge generates a real, summonable companion (a MonsterModel subclass) instead of just a design note. Static pet only for now — it has real stats and visuals, and actually persists in combat, but no custom turn behavior/AI yet (it just sits there). Use a 'Summon Pet' action (in any effect list) to bring it out.">Compile this pet for real</label>
+      <div class="row" style="margin-top:14px">
+        <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
+        <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
       </div>
-      <div id="p-real-fields" style="display:${p.compileReal ? '' : 'none'}">
-        <div class="row">
-          <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
-          <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
-        </div>
-        <div class="tagline" style="margin-top:10px">
-          <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
-          <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
-        </div>
-        <div class="panel-desc" style="margin-top:10px">
-          No custom art or turn behavior yet — this pet uses the game's own placeholder visuals and just stands there each turn. Summon it with a "Summon Pet" action in any effect list.
-        </div>
+      <div class="tagline" style="margin-top:10px">
+        <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
+        <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
+      </div>
+      <div class="panel-desc" style="margin-top:10px">
+        No custom art or turn behavior yet — this pet uses the game's own placeholder visuals and just stands there each turn. Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
       </div>
     </div>
     <div class="modal-foot">
@@ -16550,15 +16541,11 @@ function openPetEditor(petId){
       <button id="save-pet">Done</button>
     </div>
   `);
-  document.getElementById('p-compile-real').onchange = (e)=>{
-    document.getElementById('p-real-fields').style.display = e.target.checked ? '' : 'none';
-  };
   document.getElementById('delete-pet').onclick = ()=>{ state.pets = state.pets.filter(x=>x.id!==petId); save(); renderPets(); closeModal(); };
   document.getElementById('save-pet').onclick = ()=>{
     p.name = document.getElementById('p-name').value;
     p.description = document.getElementById('p-desc').value;
     p.abilityText = document.getElementById('p-ability').value;
-    p.compileReal = document.getElementById('p-compile-real').checked;
     p.minInitialHp = Math.max(1, Math.floor(parseFloat(document.getElementById('p-min-hp').value)) || 1);
     p.maxInitialHp = Math.max(p.minInitialHp, Math.floor(parseFloat(document.getElementById('p-max-hp').value)) || p.minInitialHp);
     p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;

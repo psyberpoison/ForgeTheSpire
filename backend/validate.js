@@ -942,16 +942,16 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
     }
     // [Round 286] petRef -- SummonPet only, same "reject an empty pick
-    // with a friendlier message, reject a stale/unknown/not-real id
-    // otherwise" shape as afflictionRef right above. petIds only contains
-    // REAL (compileReal:true) pets -- a data-capture-only pet is a valid
-    // pets[] entry but not a valid SummonPet target, same as it not
-    // getting a class in compiler.js's petClassById.
+    // with a friendlier message, reject a stale/unknown id otherwise"
+    // shape as afflictionRef right above. [Round 289] petIds now contains
+    // every defined pet -- the earlier compileReal opt-in filter is
+    // retired (Tyler: "remove the check box. if they want to not see the
+    // pet in game, they just have to not summon it").
     if (act.type === 'SummonPet') {
       if (act.petRef === '' || act.petRef === undefined) {
-        errors.push(`${p}: action "SummonPet" needs a pet selected — pick one from the dropdown, or add a pet first and turn on "Compile this pet for real" if none exist yet (Pets section).`);
+        errors.push(`${p}: action "SummonPet" needs a pet selected — pick one from the dropdown, or add a pet first if none exist yet (Pets section).`);
       } else if (!petIds.has(act.petRef)) {
-        errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined real (compileReal) pet id.`);
+        errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined pet id.`);
       }
     } else if (act.petRef !== undefined) {
       errors.push(`${p}: petRef is only meaningful on "SummonPet" — action type is "${act.type}".`);
@@ -1637,11 +1637,12 @@ function validateCharacterPackage(pkg) {
   // front" convention cardIds/relicIds/mechanicIds already follow.
   const afflictionIds = new Set((Array.isArray(pkg.afflictions) ? pkg.afflictions : []).map(a => a && a.id).filter(Boolean));
   const enchantmentIds = new Set((Array.isArray(pkg.enchantments) ? pkg.enchantments : []).map(e => e && e.id).filter(Boolean));
-  // [Round 286] Only REAL (compileReal:true) pets are valid SummonPet
-  // targets — a data-capture-only pet has no generated class for
-  // ctx.petClassById to resolve (see compiler.js:generateProject), same
-  // "only what actually compiles" convention as everywhere else here.
-  const petIds = new Set((Array.isArray(pkg.pets) ? pkg.pets : []).filter(pet => pet && pet.compileReal).map(pet => pet.id).filter(Boolean));
+  // [Round 286] Every pet is a valid SummonPet target — each one gets a
+  // real generated class (see compiler.js:generateProject/petClassById).
+  // [Round 289] The earlier compileReal opt-in filter here is retired —
+  // Tyler: "remove the check box. if they want to not see the pet in
+  // game, they just have to not summon it".
+  const petIds = new Set((Array.isArray(pkg.pets) ? pkg.pets : []).map(pet => pet && pet.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
   // built up front (before any effect blocks are validated) so a
   // PlayedCardHasTag condition on ANY card/relic/mechanic can be
@@ -2224,14 +2225,15 @@ function validateCharacterPackage(pkg) {
 
   // --- pets / orbs — Tyler's "add a section to the page to create custom
   // pets as well as orbs" ask.
-  // Pets: [Round 286] a pet can now compile for real (compileReal:true) —
-  // see schema/character.schema.json's `pet` description and
+  // Pets: [Round 286] every pet compiles for real — see
+  // schema/character.schema.json's `pet` description and
   // compiler.js:generatePetSource/generatePetPositionSupportFile for the
   // full evidence trail (PlayerCmd.AddPet<T>, BaseLib.Abstracts.
-  // CustomMonsterModel). Every pet still gets the original shape-only bar
-  // below; a real one additionally needs minInitialHp/maxInitialHp, same
-  // "only validate what actually compiles" convention as everywhere else
-  // in this file. compileReal false/absent stays exactly as before.
+  // CustomMonsterModel). [Round 289] Tyler: "remove the check box. if
+  // they want to not see the pet in game, they just have to not summon
+  // it" — the earlier compileReal opt-in flag is retired, so
+  // minInitialHp/maxInitialHp are now always required, not gated behind
+  // it.
   // Orbs: UPGRADED this round — passiveValue/evokeValue DO compile now
   // (see compiler.js:generateOrbSource/Orb.cs.template), so they get real
   // numeric validation, same bar action.amount and every other real
@@ -2246,22 +2248,17 @@ function validateCharacterPackage(pkg) {
     const p = `pets[${i}]`;
     if (!pet || typeof pet !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(pet.name)) errors.push(`${p}.name must be a non-empty string.`);
-    if (pet.compileReal !== undefined && typeof pet.compileReal !== 'boolean') {
-      errors.push(`${p}.compileReal must be a boolean.`);
-    }
     if (pet.isHealthBarVisible !== undefined && typeof pet.isHealthBarVisible !== 'boolean') {
       errors.push(`${p}.isHealthBarVisible must be a boolean.`);
     }
-    if (pet.compileReal) {
-      if (typeof pet.minInitialHp !== 'number' || !Number.isFinite(pet.minInitialHp) || pet.minInitialHp < 1) {
-        errors.push(`${p}.minInitialHp must be a positive number when compileReal is true.`);
-      }
-      if (typeof pet.maxInitialHp !== 'number' || !Number.isFinite(pet.maxInitialHp) || pet.maxInitialHp < 1) {
-        errors.push(`${p}.maxInitialHp must be a positive number when compileReal is true.`);
-      }
-      if (typeof pet.minInitialHp === 'number' && typeof pet.maxInitialHp === 'number' && pet.maxInitialHp < pet.minInitialHp) {
-        errors.push(`${p}.maxInitialHp must be >= minInitialHp.`);
-      }
+    if (typeof pet.minInitialHp !== 'number' || !Number.isFinite(pet.minInitialHp) || pet.minInitialHp < 1) {
+      errors.push(`${p}.minInitialHp must be a positive number.`);
+    }
+    if (typeof pet.maxInitialHp !== 'number' || !Number.isFinite(pet.maxInitialHp) || pet.maxInitialHp < 1) {
+      errors.push(`${p}.maxInitialHp must be a positive number.`);
+    }
+    if (typeof pet.minInitialHp === 'number' && typeof pet.maxInitialHp === 'number' && pet.maxInitialHp < pet.minInitialHp) {
+      errors.push(`${p}.maxInitialHp must be >= minInitialHp.`);
     }
   });
 
