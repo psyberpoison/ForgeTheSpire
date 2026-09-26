@@ -200,6 +200,17 @@ const ACTION_TYPES = [
   // real CardCmd.ClearAffliction/PileTypeExtensions.GetPile evidence
   // (directly evidenced by Afflictions/Reckless.cs's own real OnPlay).
   'ClearAfflictionFromPile',
+  // [2026-09-23] BUG FIX: SwapDrawDiscard/TransformDeckCards were added to
+  // compiler.js's own ACTION_TYPES (see that file's comment on this same
+  // pair, right above its own 'SwapDrawDiscard', 'TransformDeckCards'
+  // entries) and to PLAYER_ONLY_ACTIONS, plus a full TransformDeckCards
+  // field-validation block further down in this file -- but never added
+  // to THIS array, which gates "is this type valid at all" before any of
+  // that other code runs. Any character using either action type failed
+  // validation with a false "not one of: ..." error despite being fully
+  // supported everywhere else. Flagged during round 287's Pets work,
+  // fixed here.
+  'SwapDrawDiscard', 'TransformDeckCards',
   // [Round 286] "SummonPet" -- see compiler.js's actionToCSharp
   // "SummonPet" case for the real PlayerCmd.AddPet<T> evidence trail.
   'SummonPet',
