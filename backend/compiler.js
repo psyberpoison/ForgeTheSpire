@@ -10012,8 +10012,35 @@ const PET_ART_PREFIX = 'images/packed/pets/';
 // (rather than inlined into writePetArt, the write-PNG-then-splice-override
 // shape every other art field above uses) purely because this override is
 // long enough to read better on its own.
-function generatePetArtOverride(rel, heightPx) {
+function generatePetArtOverride(rel, heightPx, groundOffsetPx) {
   const heightLiteral = `${heightPx}f`;
+  // [Round 296 — Tyler: "if i want a pet to fly, i should be able to adjust
+  // its offset to the ground"] `groundOffsetPx` is NOT decompiled game
+  // behavior the way heightPx's formulas are -- see pet.groundOffset's own
+  // schema description for why (the reference mod has no flying pets, so
+  // there's no real "float height" constant to port). It's a plain additive
+  // Vector2 translation layered on top of the already-VERIFIED formulas
+  // below: ordinary Godot node positioning, applied to the Visuals node
+  // (so the sprite moves) and to all 3 required marker nodes (so the
+  // pet's hitbox/VFX-anchor/intent-icon rise together with it, rather than
+  // staying pinned to the ground while only the art floats). Omitted/0
+  // collapses every line below back to the exact original expressions
+  // (`-drawH`, `-drawH / 2f`, `-drawH - 40f`, no visuals.Position line at
+  // all) -- byte-identical generated code to before this field existed.
+  const offsetPx = (typeof groundOffsetPx === 'number' && Number.isFinite(groundOffsetPx)) ? groundOffsetPx : 0;
+  const hasOffset = offsetPx !== 0;
+  const offsetLiteral = `${offsetPx}f`;
+  // NOTE the space before `${offsetLiteral}` below: without it, a negative
+  // offsetPx (offsetLiteral = e.g. "-30f") would concatenate into "--30f" --
+  // C#'s decrement operator token, a real compile error, not just an ugly
+  // double-negative. The `-drawH - ${offsetLiteral}` expressions further
+  // down already have this same space (from " - ") and don't share the bug.
+  const visualsOffsetLine = hasOffset
+    ? `\n        visuals.Position = new Vector2(0, - ${offsetLiteral}); // [Round 296] ground offset -- see pet.groundOffset's schema description\n`
+    : '';
+  const boundsY = hasOffset ? `-drawH - ${offsetLiteral}` : `-drawH`;
+  const centerY = hasOffset ? `-drawH / 2f - ${offsetLiteral}` : `-drawH / 2f`;
+  const intentY = hasOffset ? `-drawH - 40f - ${offsetLiteral}` : `-drawH - 40f`;
   return `
 
     // [Round 294 — VERIFIED via direct IL decompilation of TheTrainerNewCharacter's
@@ -10037,7 +10064,7 @@ function generatePetArtOverride(rel, heightPx) {
         visuals.UniqueNameInOwner = true;
         cv.AddChild(visuals);
         visuals.Owner = cv;
-
+${visualsOffsetLine}
         float drawH = ${heightLiteral}, drawW = ${heightLiteral};
         var tex = ResourceLoader.Exists("res://${rel}")
             ? ResourceLoader.Load<Texture2D>("res://${rel}", null, ResourceLoader.CacheMode.Reuse)
@@ -10063,7 +10090,7 @@ function generatePetArtOverride(rel, heightPx) {
         bounds.Name = "Bounds";
         bounds.UniqueNameInOwner = true;
         bounds.Size = new Vector2(drawW, drawH);
-        bounds.Position = new Vector2(-drawW / 2f, -drawH);
+        bounds.Position = new Vector2(-drawW / 2f, ${boundsY});
         bounds.MouseFilter = Control.MouseFilterEnum.Ignore;
         cv.AddChild(bounds);
         bounds.Owner = cv;
@@ -10071,14 +10098,14 @@ function generatePetArtOverride(rel, heightPx) {
         var centerPos = new Marker2D();
         centerPos.Name = "CenterPos";
         centerPos.UniqueNameInOwner = true;
-        centerPos.Position = new Vector2(0, -drawH / 2f);
+        centerPos.Position = new Vector2(0, ${centerY});
         cv.AddChild(centerPos);
         centerPos.Owner = cv;
 
         var intentPos = new Marker2D();
         intentPos.Name = "IntentPos";
         intentPos.UniqueNameInOwner = true;
-        intentPos.Position = new Vector2(0, -drawH - 40f);
+        intentPos.Position = new Vector2(0, ${intentY});
         cv.AddChild(intentPos);
         intentPos.Owner = cv;
 
@@ -10101,9 +10128,20 @@ function writePetArt(pet, className, characterPackage, modIdLower, writeBinary) 
   // "absent field defaults sensibly" convention used throughout this file.
   const heightPx = (typeof pet.onScreenHeight === 'number' && Number.isFinite(pet.onScreenHeight) && pet.onScreenHeight > 0) ? pet.onScreenHeight : 250;
 
+  // [Round 296] pet.groundOffset — see that field's own schema description
+  // (and generatePetArtOverride's own comment) for the full rationale.
+  // Falls back to 0 (the original, unchanged, feet-on-the-ground placement)
+  // whenever unset/invalid, same convention onScreenHeight uses above.
+  const groundOffsetPx = (typeof pet.groundOffset === 'number' && Number.isFinite(pet.groundOffset)) ? pet.groundOffset : 0;
+
   const rel = `${PET_ART_PREFIX}${modIdLower}_${className.toLowerCase()}.png`;
   writeBinary(`pack/${rel}`, dataUrlToBuffer(url));
-  return { override: generatePetArtOverride(rel, heightPx), reportLine: `- ${pet.name}: pet art exported to \`${rel}\`, \`CreateCustomVisuals()\` override added (static, feet-anchored, scaled to ${heightPx}px on-screen height). [VERIFIED]` };
+  const placementNote = groundOffsetPx > 0
+    ? `floating ${groundOffsetPx}px above the ground`
+    : groundOffsetPx < 0
+      ? `sunk ${-groundOffsetPx}px into the ground`
+      : 'feet-anchored';
+  return { override: generatePetArtOverride(rel, heightPx, groundOffsetPx), reportLine: `- ${pet.name}: pet art exported to \`${rel}\`, \`CreateCustomVisuals()\` override added (static, ${placementNote}, scaled to ${heightPx}px on-screen height). [VERIFIED]` };
 }
 
 // [Round 203 — Tyler: "change the name of lore to 'Chronicles'. Chronicles

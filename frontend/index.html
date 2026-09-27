@@ -16729,6 +16729,9 @@ function openPetEditor(petId){
 
           <label style="margin-top:14px" title="[Round 295] How tall this pet renders in combat. [VERIFIED via decompiling &quot;The Trainer - New Character&quot;, claude/round290-pets-v2-real-source-research.md §1] 250 is the real game's own confirmed default (its Sprite2D scale AND its Bounds/CenterPos/IntentPos marker offsets are all computed from this one value). Only visible in-game once Art above is uploaded.">On-screen height (px)</label>
           <input type="number" id="p-onscreen-height" min="1" step="1" style="max-width:140px" value="${Number.isFinite(p.onScreenHeight) ? p.onScreenHeight : 250}">
+
+          <label style="margin-top:14px" title="[Round 296] Lifts this pet above its normal ground-level placement — positive floats it, negative sinks it into the ground, 0 is the original grounded placement. Unlike On-screen height, this isn't something the decompiled reference mod does (no pets there fly) — it's Forge's own addition: a plain positional offset applied to the pet's sprite and its Bounds/CenterPos/IntentPos marker nodes together, so a flying pet's hitbox and intent icon rise with it instead of staying pinned to the floor. Only visible in-game once Art above is uploaded.">Ground offset (px) <span class="dim-hint">(0 = grounded, + floats, − sinks)</span></label>
+          <input type="number" id="p-ground-offset" step="1" style="max-width:140px" value="${Number.isFinite(p.groundOffset) ? p.groundOffset : 0}">
         </div>
       </div>
     </div>
@@ -16749,6 +16752,7 @@ function openPetEditor(petId){
   const artClear = document.getElementById('pet-art-clear');
   const artError = document.getElementById('pet-art-error');
   const heightInput = document.getElementById('p-onscreen-height');
+  const groundOffsetInput = document.getElementById('p-ground-offset');
   const sizePetImg = document.getElementById('pet-size-pet-img');
   const sizePetPlaceholder = document.getElementById('pet-size-pet-placeholder');
 
@@ -16769,26 +16773,40 @@ function openPetEditor(petId){
   // 512px reference legitimately overflows the box — `overflow:hidden` on
   // the container crops it symmetrically, which is the honest signal that
   // this pet is bigger than a person, not a bug to hide.
+  // [Round 296] Ground offset also gets reflected in this same ruler, using
+  // the identical heightPx/reference ratio the real Vector2 offset in
+  // generatePetArtOverride uses (see that function's own comment) — set as
+  // `bottom` rather than `height`, since offset moves the pet up/down
+  // within the box without changing its size. A large positive offset can
+  // legitimately push the image above the box's top edge; `overflow:hidden`
+  // on the container crops it, same honest "this is bigger/higher than the
+  // box can show" signal the height ruler already uses for an oversized pet.
   function refreshPetSizePreview(){
     const raw = parseFloat(heightInput.value);
     const heightPx = Number.isFinite(raw) && raw > 0 ? raw : 250;
     const displayPx = Math.max(2, (heightPx / PET_SIZE_PREVIEW_REFERENCE_HEIGHT) * PET_SIZE_PREVIEW_BOX);
+    const offsetRaw = parseFloat(groundOffsetInput.value);
+    const offsetPx = Number.isFinite(offsetRaw) ? offsetRaw : 0;
+    const displayOffsetPx = (offsetPx / PET_SIZE_PREVIEW_REFERENCE_HEIGHT) * PET_SIZE_PREVIEW_BOX;
     const url = pendingPetArtDataUrl !== undefined
       ? pendingPetArtDataUrl
       : findAssetDataUrl(p.artAssetRef, 'petArt');
     if(url){
       sizePetImg.src = url;
       sizePetImg.style.height = displayPx + 'px';
+      sizePetImg.style.bottom = displayOffsetPx + 'px';
       sizePetImg.style.display = '';
       sizePetPlaceholder.style.display = 'none';
     } else {
       sizePetImg.style.display = 'none';
       sizePetImg.removeAttribute('src');
       sizePetPlaceholder.style.height = displayPx + 'px';
+      sizePetPlaceholder.style.bottom = displayOffsetPx + 'px';
       sizePetPlaceholder.style.display = '';
     }
   }
   heightInput.addEventListener('input', refreshPetSizePreview);
+  groundOffsetInput.addEventListener('input', refreshPetSizePreview);
 
   function refreshPetArtPreview(){
     const url = pendingPetArtDataUrl !== undefined
@@ -16863,6 +16881,13 @@ function openPetEditor(petId){
     // real 250 default), same "omit rather than store garbage" convention.
     const heightRaw = parseFloat(document.getElementById('p-onscreen-height').value);
     if (Number.isFinite(heightRaw) && heightRaw > 0) { p.onScreenHeight = heightRaw; } else { delete p.onScreenHeight; }
+    // [Round 296] groundOffset — see that field's own schema description.
+    // Unlike onScreenHeight, 0 is a legitimate (and the default) value, not
+    // an error state, so it's simply omitted rather than stored — omission
+    // and an explicit 0 produce identical generated code either way
+    // (backend/compiler.js:writePetArt's own fallback).
+    const groundOffsetRaw = parseFloat(document.getElementById('p-ground-offset').value);
+    if (Number.isFinite(groundOffsetRaw) && groundOffsetRaw !== 0) { p.groundOffset = groundOffsetRaw; } else { delete p.groundOffset; }
     if(pendingPetArtDataUrl !== undefined){
       p.artAssetRef = commitAsset(pendingPetArtDataUrl, p.artAssetRef, 'petArt');
     }

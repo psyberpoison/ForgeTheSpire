@@ -2289,6 +2289,15 @@ function validateCharacterPackage(pkg) {
     if (pet.onScreenHeight !== undefined && (typeof pet.onScreenHeight !== 'number' || !Number.isFinite(pet.onScreenHeight) || pet.onScreenHeight <= 0)) {
       errors.push(`${p}.onScreenHeight must be a positive number if present (omit it to use the default 250px).`);
     }
+    // [Round 296] "Ground offset" (Tyler: "if i want a pet to fly, i should
+    // be able to adjust its offset to the ground") — see pet.groundOffset's
+    // own schema description for the full rationale. Unlike onScreenHeight,
+    // negative and zero are both legitimate (0 = grounded/unchanged,
+    // negative = sunk into the ground), so this only rejects non-finite
+    // values, not non-positive ones.
+    if (pet.groundOffset !== undefined && (typeof pet.groundOffset !== 'number' || !Number.isFinite(pet.groundOffset))) {
+      errors.push(`${p}.groundOffset must be a number if present (omit it or use 0 for normal ground-level placement).`);
+    }
   });
 
   // Enchantments/Afflictions — Round 95, Tyler: "Enchantments/Afflictions
