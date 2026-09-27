@@ -2243,9 +2243,15 @@ function validateCharacterPackage(pkg) {
   // full evidence trail (PlayerCmd.AddPet<T>, BaseLib.Abstracts.
   // CustomMonsterModel). [Round 289] Tyler: "remove the check box. if
   // they want to not see the pet in game, they just have to not summon
-  // it" — the earlier compileReal opt-in flag is retired, so
-  // minInitialHp/maxInitialHp are now always required, not gated behind
-  // it.
+  // it" — the earlier compileReal opt-in flag is retired.
+  // [Round 298] Tyler: "i dont want to confuse the user of the app by
+  // adding fields that dont actually matter. what happens if we just pass
+  // both of those values as some ambiguous number in the back end and
+  // hide them from the editor?" — minInitialHp/maxInitialHp are no longer
+  // user-supplied or validated at all (see PET_PLACEHOLDER_INITIAL_HP's
+  // own comment in backend/compiler.js:generatePetSource for the full
+  // rationale); any stray old value left over in a package saved before
+  // this round is simply ignored, not rejected.
   // Orbs: UPGRADED this round — passiveValue/evokeValue DO compile now
   // (see compiler.js:generateOrbSource/Orb.cs.template), so they get real
   // numeric validation, same bar action.amount and every other real
@@ -2262,15 +2268,6 @@ function validateCharacterPackage(pkg) {
     if (!isNonEmptyString(pet.name)) errors.push(`${p}.name must be a non-empty string.`);
     if (pet.isHealthBarVisible !== undefined && typeof pet.isHealthBarVisible !== 'boolean') {
       errors.push(`${p}.isHealthBarVisible must be a boolean.`);
-    }
-    if (typeof pet.minInitialHp !== 'number' || !Number.isFinite(pet.minInitialHp) || pet.minInitialHp < 1) {
-      errors.push(`${p}.minInitialHp must be a positive number.`);
-    }
-    if (typeof pet.maxInitialHp !== 'number' || !Number.isFinite(pet.maxInitialHp) || pet.maxInitialHp < 1) {
-      errors.push(`${p}.maxInitialHp must be a positive number.`);
-    }
-    if (typeof pet.minInitialHp === 'number' && typeof pet.maxInitialHp === 'number' && pet.maxInitialHp < pet.minInitialHp) {
-      errors.push(`${p}.maxInitialHp must be >= minInitialHp.`);
     }
     // [Round 293] "Takes hits for you" / "Leaves after N turns" — see
     // pet.takesHitsForYou/pet.leavesAfterTurns' own schema descriptions for

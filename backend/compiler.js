@@ -2161,9 +2161,10 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // real via that same decompile. `amount` (new this round, see the
       // `amount` schema field's own round-293 note) is the HP the pet
       // gains/starts with/is healed to — read off THIS action, not the
-      // pet's own fixed minInitialHp/maxInitialHp (those only govern a
-      // pet's very first randomized roll if one is ever added by anything
-      // OTHER than this summon pattern).
+      // pet's own class-level MinInitialHp/MaxInitialHp overrides (round
+      // 298 retired user control of those entirely once this branch's own
+      // SetMaxHp/Heal calls, below, were confirmed to always run first —
+      // see PET_PLACEHOLDER_INITIAL_HP's own comment in generatePetSource).
       //
       // Also ports a real, hard-won ordering-bug fix from that same
       // decompile: AddPet's internal CreatureCmd.Add asks
@@ -7597,10 +7598,28 @@ function buildManifestJson(characterPackage, modId, gameVersion) {
 // on any failure — whenever CreateCustomVisuals() returns null, which is
 // CustomMonsterModel's own base default. Custom pet art is real future
 // scope, not something this round is blocked on.
+// [Round 298 — Tyler: "i dont want to confuse the user of the app by
+// adding fields that dont actually matter. what happens if we just pass
+// both of those values as some ambiguous number in the back end and hide
+// them from the editor?"] MinInitialHp/MaxInitialHp are still genuinely
+// REQUIRED overrides (round 286's abstract-member finding above hasn't
+// changed) — but round 293's SummonPet codegen (see that action's own
+// case in actionToCSharp, and the `amount` schema field's own round-293
+// paragraph) means every real Forge pet gets a `CreatureCmd.SetMaxHp` +
+// `CreatureCmd.Heal` call, driven by the SUMMON ACTION's own `amount`,
+// immediately after creation/growth/revival — awaited in the same
+// synchronous action block, before control ever returns anywhere this
+// class's own Min/Max-driven random roll could be observed. That roll is
+// therefore provably invisible in every real Forge-generated pet's actual
+// gameplay path, which made asking the user to configure it pure noise —
+// a real field with no real effect is worse than no field at all. One
+// fixed placeholder now satisfies both required overrides; nothing about
+// the 3-way SummonPet branch changes, since it never read these two
+// fields in the first place.
+const PET_PLACEHOLDER_INITIAL_HP = 1;
+
 function generatePetSource(pet, namespace, visualsOverride) {
   const className = pascalCase(pet.name) + 'Pet';
-  const minHp = Number.isFinite(pet.minInitialHp) ? Math.max(1, Math.floor(pet.minInitialHp)) : 1;
-  const maxHp = Number.isFinite(pet.maxInitialHp) ? Math.max(minHp, Math.floor(pet.maxInitialHp)) : minHp;
   // IsHealthBarVisible's real base default is `true` ([VERIFIED] direct
   // IL read of sts2.dll) -- only emit an override when explicitly turned
   // off, same "don't emit what the base class already does" convention
@@ -7660,8 +7679,8 @@ namespace ${namespace}.Pets;
 // character's own pets on screen -- see that file's own header comment.
 public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${namespace}.IModPet
 {
-    public override int MinInitialHp => ${minHp};
-    public override int MaxInitialHp => ${maxHp};${healthBarOverride}
+    public override int MinInitialHp => ${PET_PLACEHOLDER_INITIAL_HP}; // [Round 298] see PET_PLACEHOLDER_INITIAL_HP's own comment — real value comes from the SummonPet action's own amount, never this roll
+    public override int MaxInitialHp => ${PET_PLACEHOLDER_INITIAL_HP};${healthBarOverride}
 
     // [VERIFIED — round 286, direct IL disassembly of TheTrainerNewCharacter.dll's
     // real SquirtlePet::GenerateMoveStateMachine] A single self-looping,
