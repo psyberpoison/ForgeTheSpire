@@ -1146,17 +1146,13 @@
         "id",
         "name"
       ],
-      "description": "See the top-level `pets` property above for the full evidence review. As of round 286, every pet compiles to a real MonsterModel subclass (see minInitialHp/maxInitialHp/isHealthBarVisible below); round 289 removed the earlier compileReal opt-in flag \u2014 there is no design-note-only pet anymore, and a pet not referenced by any SummonPet action simply never gets summoned. Round 295 (Tyler: \"remove 'what it does' and add the ability to change the height of the pet\") retired the old freeform `abilityText` field entirely (it was never wired to anything real \u2014 see artAssetRef/onScreenHeight below for the fields that replaced its spot in the editor) and added `onScreenHeight`.",
+      "description": "See the top-level `pets` property above for the full evidence review. As of round 286, every pet compiles to a real MonsterModel subclass (see minInitialHp/maxInitialHp/isHealthBarVisible below); round 289 removed the earlier compileReal opt-in flag \u2014 there is no design-note-only pet anymore, and a pet not referenced by any SummonPet action simply never gets summoned. Round 295 (Tyler: \"remove 'what it does' and add the ability to change the height of the pet\") retired the old freeform `abilityText` field entirely (it was never wired to anything real \u2014 see artAssetRef/onScreenHeight below for the fields that replaced its spot in the editor) and added `onScreenHeight`. Round 297 (Tyler: \"i dont think the game pulls a pet description anywhere, lets remove that box\") retired the `description` field the same way \u2014 confirmed backend/compiler.js:generatePetSource never read it (no LocTable entry, no in-game tooltip, not even shown on the pet's own tile in Forge's UI), so it was a pure editor scratch-note with nothing downstream. Removed entirely rather than kept-but-unused, same call round 295 made for abilityText.",
       "properties": {
         "id": {
           "type": "string"
         },
         "name": {
           "type": "string"
-        },
-        "description": {
-          "type": "string",
-          "description": "Flavor text."
         },
         "minInitialHp": {
           "type": "integer",

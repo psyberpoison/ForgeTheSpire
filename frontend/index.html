@@ -16650,7 +16650,7 @@ function renderPets(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const p = { id: uid('pet'), name:'New Pet', description:'', minInitialHp:10, maxInitialHp:10 };
+    const p = { id: uid('pet'), name:'New Pet', minInitialHp:10, maxInitialHp:10 };
     state.pets.push(p);
     save(); renderPets();
     openPetEditor(p.id);
@@ -16671,7 +16671,6 @@ function openPetEditor(petId){
       <div style="display:flex; gap:24px; align-items:stretch;">
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
-          <label style="margin-top:14px">Description / flavor text</label><textarea id="p-desc" style="flex:1; min-height:80px;">${escapeHtml(p.description||'')}</textarea>
           <div class="row" style="margin-top:14px">
             <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
             <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
@@ -16877,7 +16876,6 @@ function openPetEditor(petId){
   };
   document.getElementById('save-pet').onclick = ()=>{
     p.name = document.getElementById('p-name').value;
-    p.description = document.getElementById('p-desc').value;
     p.minInitialHp = Math.max(1, Math.floor(parseFloat(document.getElementById('p-min-hp').value)) || 1);
     p.maxInitialHp = Math.max(p.minInitialHp, Math.floor(parseFloat(document.getElementById('p-max-hp').value)) || p.minInitialHp);
     p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;
