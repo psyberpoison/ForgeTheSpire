@@ -8340,6 +8340,17 @@ const RELIC_ICON_WIDTH = 256, RELIC_ICON_HEIGHT = 256;
 // backend/compiler.js's generateMechanicSource/writeMechanicIcon for the
 // real CustomPackedIconPath/ICustomPower evidence trail this feeds.
 const MECHANIC_ICON_WIDTH = 256, MECHANIC_ICON_HEIGHT = 256;
+// [Round 294] Pet art — a single full-body creature sprite, same concept as
+// character.bodySpriteAssetRef (BODY_SPRITE_WIDTH/HEIGHT), not a small UI
+// icon like relic/mechanic icons above — so it shares that field's exact
+// 512x512 square canvas convention rather than getting its own arbitrary
+// size. backend/compiler.js's generated CreateCustomVisuals() override
+// (writePetArt/generatePetArtOverride) scales purely by the exported PNG's
+// own height (matching the real, confirmed reference mod's mechanism — see
+// pet.artAssetRef's own schema description), so this exact pixel size isn't
+// load-bearing the way relic icons' 256x256 is — it's chosen for authoring
+// consistency with Body sprite, not because the real game requires it.
+const PET_ART_WIDTH = 512, PET_ART_HEIGHT = 512;
 
 const chronicleGrid = document.getElementById('chronicles-grid');
 
@@ -8451,6 +8462,7 @@ function openChronicleEditor(chronicleId){
 let pendingEpochPortraitDataUrl = undefined;
 let pendingRelicIconDataUrl = undefined;
 let pendingMechIconDataUrl = undefined;
+let pendingPetArtDataUrl = undefined;
 
 function openEpochEditor(chronicleId, epochId){
   const c = state.character.chronicles.find(x=>x.id===chronicleId);
@@ -16550,39 +16562,116 @@ function renderPets(){
 }
 function openPetEditor(petId){
   const p = state.pets.find(x=>x.id===petId);
+  // [Round 294] pendingPetArtDataUrl reset on every open — same 3-state
+  // convention (undefined = no change, null = explicitly cleared, a data:
+  // URL = a fresh upload pending commit on Save) pendingRelicIconDataUrl/
+  // pendingMechIconDataUrl already use just above.
+  pendingPetArtDataUrl = undefined;
   openModal(`
     <div class="modal-head"><h3>Edit Pet</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
-      <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
-      <label>Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
-      <label>What it does (freeform — for your own notes; not wired to any real behavior)</label>
-      <textarea id="p-ability">${escapeHtml(p.abilityText||'')}</textarea>
-      <div class="row" style="margin-top:14px">
-        <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
-        <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
-      </div>
-      <div class="tagline" style="margin-top:10px">
-        <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
-        <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
-      </div>
-      <div class="tagline" style="margin-top:10px">
-        <input type="checkbox" id="p-takes-hits" ${p.takesHitsForYou ? 'checked' : ''}>
-        <label for="p-takes-hits" style="margin:0" title="Redirects unblocked attacks aimed at you onto this pet instead, while it's alive. [Round 293] Ported from a real, compiled reference mod's own VenusaurSoakPower — see claude/round290-pets-v2-real-source-research.md §2.">Takes hits for you</label>
-      </div>
-      <div style="margin-top:10px">
-        <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
-        <input type="number" id="p-leaves-after-turns" min="1" step="1" value="${Number.isInteger(p.leavesAfterTurns) ? p.leavesAfterTurns : ''}" placeholder="stays whole fight">
-      </div>
-      <div class="panel-desc" style="margin-top:10px">
-        No custom art or turn behavior yet — this pet uses the game's own placeholder visuals and just stands there each turn. Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
+      <div style="display:flex; gap:24px; align-items:stretch;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
+          <label style="margin-top:14px">Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
+          <label style="margin-top:14px">What it does (freeform — for your own notes; not wired to any real behavior)</label>
+          <textarea id="p-ability">${escapeHtml(p.abilityText||'')}</textarea>
+          <div class="row" style="margin-top:14px">
+            <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
+            <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
+          </div>
+          <div class="tagline" style="margin-top:10px">
+            <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
+            <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
+          </div>
+          <div class="tagline" style="margin-top:10px">
+            <input type="checkbox" id="p-takes-hits" ${p.takesHitsForYou ? 'checked' : ''}>
+            <label for="p-takes-hits" style="margin:0" title="Redirects unblocked attacks aimed at you onto this pet instead, while it's alive. [Round 293] Ported from a real, compiled reference mod's own VenusaurSoakPower — see claude/round290-pets-v2-real-source-research.md §2.">Takes hits for you</label>
+          </div>
+          <div style="margin-top:10px">
+            <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
+            <input type="number" id="p-leaves-after-turns" min="1" step="1" value="${Number.isInteger(p.leavesAfterTurns) ? p.leavesAfterTurns : ''}" placeholder="stays whole fight">
+          </div>
+          <div class="panel-desc" style="margin-top:10px">
+            No custom turn behavior yet — this pet just stands there each turn (no move/AI authoring). Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
+          </div>
+        </div>
+        <div style="flex:0 0 160px;">
+          <label>Art <span class="dim-hint">(optional, ${PET_ART_WIDTH}&times;${PET_ART_HEIGHT}px)</span></label>
+          <div class="art-preview-frame" id="pet-art-frame" style="aspect-ratio:${PET_ART_WIDTH}/${PET_ART_HEIGHT}; max-width:160px; cursor:pointer;">
+            <img id="pet-art-img" style="display:none">
+            <div class="art-placeholder" id="pet-art-placeholder">Click to upload (optional)</div>
+            <div class="art-click-hint">Click to change</div>
+            <div class="art-icon-overlay">
+              <button class="ghost icon-btn icon-btn-danger" id="pet-art-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              </button>
+            </div>
+          </div>
+          <input type="file" class="art-upload-input" id="pet-art-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <div class="art-field-error" id="pet-art-error"></div>
+          <div class="hint-small" style="margin-top:6px">No art uploaded uses the game's own placeholder visuals. Static only — no animation yet.</div>
+        </div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-pet">Delete</button>
       <button id="save-pet">Done</button>
     </div>
-  `);
-  document.getElementById('delete-pet').onclick = ()=>{ state.pets = state.pets.filter(x=>x.id!==petId); save(); renderPets(); closeModal(); };
+  `, { wide: true });
+
+  // Art preview/upload — same readFileAsDataUrl + resizeDataUrlToExact +
+  // commitAsset pattern openRelicEditor's icon field uses (see that
+  // editor's own comment), wired by hand here for the same reason (this
+  // modal is generated per-pet).
+  const artFrame = document.getElementById('pet-art-frame');
+  const artImg = document.getElementById('pet-art-img');
+  const artPh = document.getElementById('pet-art-placeholder');
+  const artUpload = document.getElementById('pet-art-upload');
+  const artClear = document.getElementById('pet-art-clear');
+  const artError = document.getElementById('pet-art-error');
+
+  function refreshPetArtPreview(){
+    const url = pendingPetArtDataUrl !== undefined
+      ? pendingPetArtDataUrl
+      : findAssetDataUrl(p.artAssetRef, 'petArt');
+    if(url){ artImg.src = url; artImg.style.display = ''; artPh.style.display = 'none'; artClear.style.display = ''; }
+    else { artImg.style.display = 'none'; artImg.removeAttribute('src'); artPh.style.display = ''; artClear.style.display = 'none'; }
+  }
+  refreshPetArtPreview();
+  artFrame.addEventListener('click', ()=> artUpload.click());
+  artUpload.addEventListener('change', ev=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    artError.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, PET_ART_WIDTH, PET_ART_HEIGHT)).then(result=>{
+      if(result.resized){
+        artError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${PET_ART_WIDTH}×${PET_ART_HEIGHT}px.`;
+        artError.classList.add('art-field-note');
+        artError.style.display = 'block';
+      } else {
+        artError.classList.remove('art-field-note');
+      }
+      pendingPetArtDataUrl = result.dataUrl;
+      refreshPetArtPreview();
+    }).catch(err=>{
+      artError.classList.remove('art-field-note');
+      artError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+      artError.style.display = 'block';
+      artUpload.value = '';
+    });
+  });
+  artClear.onclick = (ev)=>{
+    ev.stopPropagation();
+    pendingPetArtDataUrl = null;
+    refreshPetArtPreview();
+  };
+
+  document.getElementById('delete-pet').onclick = ()=>{
+    if(p.artAssetRef) state.assets = state.assets.filter(a=>a.id!==p.artAssetRef);
+    state.pets = state.pets.filter(x=>x.id!==petId);
+    save(); renderPets(); closeModal();
+  };
   document.getElementById('save-pet').onclick = ()=>{
     p.name = document.getElementById('p-name').value;
     p.description = document.getElementById('p-desc').value;
@@ -16593,6 +16682,9 @@ function openPetEditor(petId){
     p.takesHitsForYou = document.getElementById('p-takes-hits').checked;
     const leavesRaw = Math.floor(parseFloat(document.getElementById('p-leaves-after-turns').value));
     if (Number.isFinite(leavesRaw) && leavesRaw >= 1) { p.leavesAfterTurns = leavesRaw; } else { delete p.leavesAfterTurns; }
+    if(pendingPetArtDataUrl !== undefined){
+      p.artAssetRef = commitAsset(pendingPetArtDataUrl, p.artAssetRef, 'petArt');
+    }
     save(); renderPets(); closeModal();
   };
 }

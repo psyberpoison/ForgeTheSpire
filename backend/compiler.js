@@ -7597,7 +7597,7 @@ function buildManifestJson(characterPackage, modId, gameVersion) {
 // on any failure — whenever CreateCustomVisuals() returns null, which is
 // CustomMonsterModel's own base default. Custom pet art is real future
 // scope, not something this round is blocked on.
-function generatePetSource(pet, namespace) {
+function generatePetSource(pet, namespace, visualsOverride) {
   const className = pascalCase(pet.name) + 'Pet';
   const minHp = Number.isFinite(pet.minInitialHp) ? Math.max(1, Math.floor(pet.minInitialHp)) : 1;
   const maxHp = Number.isFinite(pet.maxInitialHp) ? Math.max(minHp, Math.floor(pet.maxInitialHp)) : minHp;
@@ -7638,11 +7638,17 @@ function generatePetSource(pet, namespace) {
         }
     }`
     : '';
+  // [Round 294] Godot types (Node2D/Sprite2D/Control/Marker2D/Vector2/
+  // Texture2D/ResourceLoader) are only referenced by the spliced
+  // CreateCustomVisuals() override below, so this `using` is only added
+  // when a pet actually has uploaded art -- same "only emit what's used"
+  // convention healthBarOverride/turnsLimitMember already follow.
+  const godotUsing = visualsOverride ? `\nusing Godot;` : '';
   return `using System;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
-using MegaCrit.Sts2.Core.MonsterMoves.Intents;
+using MegaCrit.Sts2.Core.MonsterMoves.Intents;${godotUsing}
 
 namespace ${namespace}.Pets;
 
@@ -7666,7 +7672,7 @@ public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${name
         var nothingMove = new MoveState("NOTHING_MOVE", _ => Task.CompletedTask, Array.Empty<AbstractIntent>());
         nothingMove.FollowUpState = nothingMove;
         return new MonsterMoveStateMachine(new MonsterState[] { nothingMove }, nothingMove);
-    }${turnsLimitMember}
+    }${turnsLimitMember}${visualsOverride || ''}
 }
 `;
 }
@@ -9979,6 +9985,120 @@ function writeMechanicIcon(mechanic, characterPackage, modIdLower, writeBinary) 
   return { override, reportLine: `- ${mechanic.name}: mechanic icon exported to \`${rel}\`, \`CustomPackedIconPath\` override added. [VERIFIED]` };
 }
 
+// [Round 294 — Tyler: "lets give the pet editor the wide area box, and add
+// the image uploader field"] Pet art -> CreateCustomVisuals() override.
+// [VERIFIED via direct IL decompilation of TheTrainerNewCharacter's real,
+// shipped SquirtlePet::CreateCustomVisuals(), full body disassembled in
+// claude/round290-pets-v2-real-source-research.md §1] Unlike relic/mechanic
+// icons above (a single virtual icon-PATH property, so writeRelicIcon/
+// writeMechanicIcon only ever splice one override line), MonsterModel has
+// no equivalent simple icon-path getter -- a pet's art requires a real,
+// full CreateCustomVisuals() scene-construction override, same shape as
+// generatePoseSheetVisuals' character-level version further up this file,
+// but pet-specific: NO AnimationPlayer/AnimationLibrary (round 291 confirmed
+// real pet/creature animation needs a Spine skeleton export Forge has no
+// pipeline for -- this is one fixed resting texture, not a per-state swap),
+// and only the 3 marker nodes MonsterModel's own NCreatureVisuals._Ready()
+// requires (Bounds/CenterPos/IntentPos) -- NOT OrbPos/TalkPos, which are
+// character-only UI anchors round290's decompile never shows a pet building.
+//
+// Naming convention is FLAT (no nested modId/id folder, unlike relic/card
+// art) -- confirmed directly off the real decompiled resource path:
+// `res://images/packed/pets/{modid-lowercase}_{PetClassName-lowercase}.png`.
+const PET_ART_PREFIX = 'images/packed/pets/';
+
+// Builds the CreateCustomVisuals() override body itself, given the res://
+// path already written by writePetArt below. Kept as its own function
+// (rather than inlined into writePetArt, the write-PNG-then-splice-override
+// shape every other art field above uses) purely because this override is
+// long enough to read better on its own.
+function generatePetArtOverride(rel) {
+  return `
+
+    // [Round 294 — VERIFIED via direct IL decompilation of TheTrainerNewCharacter's
+    // real, shipped SquirtlePet::CreateCustomVisuals(), claude/round290-pets-v2-real-source-research.md §1]
+    // Returning null here falls back to MonsterModel.VisualsPath
+    // ("creature_visuals/<id>"), which doesn't exist for a mod monster and
+    // renders as a giant red ERROR placeholder (harness-verified) -- so this
+    // always returns a real node once art is uploaded. A single feet-anchored
+    // Sprite2D, scaled to a fixed 250px on-screen height (this project's own
+    // confirmed real default; no user-facing on-screen-height field yet, so
+    // it's the hardcoded confirmed value rather than a guess) -- no
+    // AnimationPlayer, unlike the character's own generatePoseSheetVisuals,
+    // since round 291 confirmed real pet animation needs a Spine skeleton
+    // export Forge has no pipeline for.
+    public override MegaCrit.Sts2.Core.Nodes.Combat.NCreatureVisuals? CreateCustomVisuals()
+    {
+        var cv = new MegaCrit.Sts2.Core.Nodes.Combat.NCreatureVisuals();
+
+        var visuals = new Node2D();
+        visuals.Name = "Visuals";
+        visuals.UniqueNameInOwner = true;
+        cv.AddChild(visuals);
+        visuals.Owner = cv;
+
+        float drawH = 250f, drawW = 250f;
+        var tex = ResourceLoader.Exists("res://${rel}")
+            ? ResourceLoader.Load<Texture2D>("res://${rel}", null, ResourceLoader.CacheMode.Reuse)
+            : null;
+        if (tex != null)
+        {
+            var sprite = new Sprite2D();
+            sprite.Name = "Sprite";
+            sprite.Texture = tex;
+            float scale = 250f / tex.GetHeight();
+            drawW = tex.GetWidth() * scale;
+            sprite.Position = new Vector2(0, -(tex.GetHeight() * scale) / 2f); // feet-anchored
+            sprite.Scale = new Vector2(scale, scale);
+            visuals.AddChild(sprite);
+            sprite.Owner = cv;
+        }
+
+        // NCreatureVisuals._Ready REQUIRES these three markers by exact
+        // unique name -- without them the game logs "Node not found" for
+        // each on every summon, and any VFX aimed at the pet has nowhere to
+        // spawn. [VERIFIED — harness-tested against the real installed game]
+        var bounds = new Control();
+        bounds.Name = "Bounds";
+        bounds.UniqueNameInOwner = true;
+        bounds.Size = new Vector2(drawW, drawH);
+        bounds.Position = new Vector2(-drawW / 2f, -drawH);
+        bounds.MouseFilter = Control.MouseFilterEnum.Ignore;
+        cv.AddChild(bounds);
+        bounds.Owner = cv;
+
+        var centerPos = new Marker2D();
+        centerPos.Name = "CenterPos";
+        centerPos.UniqueNameInOwner = true;
+        centerPos.Position = new Vector2(0, -drawH / 2f);
+        cv.AddChild(centerPos);
+        centerPos.Owner = cv;
+
+        var intentPos = new Marker2D();
+        intentPos.Name = "IntentPos";
+        intentPos.UniqueNameInOwner = true;
+        intentPos.Position = new Vector2(0, -drawH - 40f);
+        cv.AddChild(intentPos);
+        intentPos.Owner = cv;
+
+        return cv;
+    }`;
+}
+
+// Write-PNG-then-splice-override, same shape as writeCardArt/writeRelicIcon/
+// writeMechanicIcon above. `className` is the pet's already-computed
+// generated class name (e.g. "BulbasaurPet") -- passed in rather than
+// recomputed here so the exported PNG's filename can never drift from the
+// actual generated class name it's meant to match.
+function writePetArt(pet, className, characterPackage, modIdLower, writeBinary) {
+  const url = findAssetDataUrl(characterPackage, pet.artAssetRef, 'petArt');
+  if (!url) return { override: '', reportLine: null };
+
+  const rel = `${PET_ART_PREFIX}${modIdLower}_${className.toLowerCase()}.png`;
+  writeBinary(`pack/${rel}`, dataUrlToBuffer(url));
+  return { override: generatePetArtOverride(rel), reportLine: `- ${pet.name}: pet art exported to \`${rel}\`, \`CreateCustomVisuals()\` override added (static, feet-anchored, scaled to 250px on-screen height). [VERIFIED]` };
+}
+
 // [Round 203 — Tyler: "change the name of lore to 'Chronicles'. Chronicles
 // are a collection of items called 'Epochs'."] MegaCrit.Sts2.Core.Timeline.
 // EpochEra — [VERIFIED via direct fields_dump2.py read of the real
@@ -10547,8 +10667,21 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // SummonPet action is an unused generated class, same as any other
   // never-instantiated model, and never appears in-game.
   const pets = characterPackage.pets || [];
+  let petArtHeaderAdded = false;
   pets.forEach(pet => {
-    write(`Pets/${pascalCase(pet.name)}Pet.cs`, generatePetSource(pet, namespace));
+    const petClassName = `${pascalCase(pet.name)}Pet`;
+    // Pet art — see writePetArt's own header comment for the full evidence
+    // trail. Same write-PNG-then-splice-override shape as writeCardArt/
+    // writeRelicIcon/writeMechanicIcon above, but the override is a full
+    // CreateCustomVisuals() method (there's no simpler icon-path property
+    // on MonsterModel), so it's spliced into generatePetSource's own
+    // template output rather than a template's own {{iconOverride}} slot.
+    const { override: petArtOverride, reportLine: petArtReportLine } = writePetArt(pet, petClassName, characterPackage, modId.toLowerCase(), writeBinary);
+    if (petArtReportLine) {
+      if (!petArtHeaderAdded) { artReport.push('', '**Pet art:**'); petArtHeaderAdded = true; }
+      artReport.push(petArtReportLine);
+    }
+    write(`Pets/${petClassName}.cs`, generatePetSource(pet, namespace, petArtOverride));
     // [Round 293] "Takes hits for you" — only written for a pet that
     // actually sets it, see generatePetSoakPowerSource's own header
     // comment for the full evidence trail.
