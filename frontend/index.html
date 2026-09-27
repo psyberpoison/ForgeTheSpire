@@ -6289,6 +6289,80 @@ function resizeDataUrlToExact(dataUrl, width, height){
   });
 }
 
+// [Round 295 follow-up] Tyler, after asking why a pet set to the full
+// 512px reference height still rendered shorter than the size-preview
+// silhouette: "auto-trim on upload." Crops an image down to the tightest
+// bounding box of its own non-transparent pixels — used by the pet art
+// upload flow (openPetEditor) BEFORE resizeDataUrlToExact, so transparent
+// padding baked into a source image (common for icon-style art where the
+// creature doesn't bleed to the canvas edges) never counts toward
+// pet.onScreenHeight's real, compiled scaling. This is NOT just an editor-
+// preview fix — round 290's confirmed real CreateCustomVisuals() formula
+// scales by the exported texture's FULL height (`heightPx / tex.GetHeight()`),
+// padding included, so trimming here changes what's actually packed into
+// the compiled mod, matching the configured height for real in a run, not
+// only in this tool's own size-preview ruler.
+// Alpha > 0 counts as "content" — a literal reading of "non-transparent,"
+// no fuzz threshold for anti-aliased edges. Resolves the ORIGINAL dataUrl
+// unchanged (trimmed:false) in the two cases where trimming would either
+// do nothing or actively make things worse: an image that's already
+// edge-to-edge on every side (genuinely nothing to trim), or one that's
+// fully transparent (no content to anchor a crop to at all — trimming
+// that away would leave a pet with literally no art, which is worse than
+// leaving whatever padding is there).
+function trimTransparentPadding(dataUrl){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        for(let y = 0; y < h; y++){
+          const rowStart = y * w * 4;
+          for(let x = 0; x < w; x++){
+            if(data[rowStart + x * 4 + 3] > 0){
+              if(x < minX) minX = x;
+              if(x > maxX) maxX = x;
+              if(y < minY) minY = y;
+              if(y > maxY) maxY = y;
+            }
+          }
+        }
+        if(maxX < minX || maxY < minY){
+          resolve({ dataUrl, trimmed: false }); // fully transparent
+          return;
+        }
+        const trimW = maxX - minX + 1, trimH = maxY - minY + 1;
+        if(minX === 0 && minY === 0 && trimW === w && trimH === h){
+          resolve({ dataUrl, trimmed: false }); // already edge-to-edge
+          return;
+        }
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = trimW; cropCanvas.height = trimH;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.clearRect(0, 0, trimW, trimH);
+        cropCtx.drawImage(canvas, minX, minY, trimW, trimH, 0, 0, trimW, trimH);
+        resolve({
+          dataUrl: cropCanvas.toDataURL('image/png'),
+          trimmed: true,
+          fromWidth: w, fromHeight: h,
+          toWidth: trimW, toHeight: trimH,
+        });
+      }catch(err){
+        console.error('[trimTransparentPadding] trim failed:', err);
+        reject(new Error("Couldn't inspect that image for trimming (" + (err && err.message ? err.message : 'unknown error') + ") — try a different PNG/JPEG/WebP."));
+      }
+    };
+    img.onerror = ()=> reject(new Error("Couldn't read that image file — try a different PNG/JPEG/WebP."));
+    img.src = dataUrl;
+  });
+}
+
 /* ---- generic single-image art field wiring ----
    Reused for every fixed-dimension character art slot (Body
    sprite, HUD icon, Select screen art, Select screen background,
@@ -16726,26 +16800,41 @@ function openPetEditor(petId){
   }
   refreshPetArtPreview();
   artFrame.addEventListener('click', ()=> artUpload.click());
+  // [Round 295 follow-up] Trim transparent padding BEFORE the existing
+  // stretch-to-512x512 resize — see trimTransparentPadding's own header
+  // comment for why this matters for real (not just editor-preview)
+  // accuracy. Both steps can produce their own note; shown together when
+  // both fire so nothing about the upload happens silently.
   artUpload.addEventListener('change', ev=>{
     const file = ev.target.files[0];
     if(!file) return;
     artError.style.display = 'none';
-    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, PET_ART_WIDTH, PET_ART_HEIGHT)).then(result=>{
-      if(result.resized){
-        artError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${PET_ART_WIDTH}×${PET_ART_HEIGHT}px.`;
-        artError.classList.add('art-field-note');
-        artError.style.display = 'block';
-      } else {
+    readFileAsDataUrl(file)
+      .then(dataUrl=> trimTransparentPadding(dataUrl))
+      .then(trimResult=> resizeDataUrlToExact(trimResult.dataUrl, PET_ART_WIDTH, PET_ART_HEIGHT).then(resizeResult=> ({ trimResult, resizeResult })))
+      .then(({ trimResult, resizeResult })=>{
+        const notes = [];
+        if(trimResult.trimmed){
+          notes.push(`Trimmed transparent padding: ${trimResult.fromWidth}×${trimResult.fromHeight}px → ${trimResult.toWidth}×${trimResult.toHeight}px, so on-screen height matches the creature itself, not blank space around it.`);
+        }
+        if(resizeResult.resized){
+          notes.push(`Resized to ${PET_ART_WIDTH}×${PET_ART_HEIGHT}px.`);
+        }
+        if(notes.length){
+          artError.textContent = notes.join(' ');
+          artError.classList.add('art-field-note');
+          artError.style.display = 'block';
+        } else {
+          artError.classList.remove('art-field-note');
+        }
+        pendingPetArtDataUrl = resizeResult.dataUrl;
+        refreshPetArtPreview();
+      }).catch(err=>{
         artError.classList.remove('art-field-note');
-      }
-      pendingPetArtDataUrl = result.dataUrl;
-      refreshPetArtPreview();
-    }).catch(err=>{
-      artError.classList.remove('art-field-note');
-      artError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
-      artError.style.display = 'block';
-      artUpload.value = '';
-    });
+        artError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+        artError.style.display = 'block';
+        artUpload.value = '';
+      });
   });
   artClear.onclick = (ev)=>{
     ev.stopPropagation();
