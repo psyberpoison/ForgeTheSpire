@@ -176,6 +176,18 @@ function mechanicClassName(statusRef) {
   return cls;
 }
 
+// [Round 293] Same module-level pattern as currentMechanicClassById above —
+// maps a pet id to its FULL schema object (not just a class name, which
+// petClassById already provides), set by generateProject() before any
+// action codegen runs. SummonPet's 3-way stacking/revival codegen and
+// PetAttack's own case (actionToCSharp) need to read a referenced pet's own
+// takesHitsForYou/leavesAfterTurns flags — threading a whole extra map
+// through every one of refMaps' ~10 call sites (the way petClassById
+// itself is threaded) would be a much bigger diff for the same "safe
+// because generateProject runs a single character synchronously per call"
+// reasoning currentMechanicClassById already relies on.
+let currentPetById = new Map();
+
 // [Round 139] Same module-level pattern as currentMechanicClassById above,
 // set by generateProject() before any card source is generated — the set
 // of this character's own custom keyword words (see character.cardKeywords
@@ -1061,6 +1073,19 @@ function resolveDamageSourceArgs(ctx) {
   // could).
   if (!ctx.cardPlayBound) return 'fgPlayer, null, null';
   return ctx.thisIsCard ? 'fgPlayer, this, cardPlay' : 'fgPlayer, cardPlay.Card, cardPlay';
+}
+
+// [Round 293] "PetAttack"'s own counterpart to resolveDamageSourceArgs
+// above — same exact card/cardPlay resolution (see that function's own
+// comment for the full evidence trail), just without the leading `dealer`
+// arg: ForgePetAttackSupport.Create(decimal, Creature, CardModel?,
+// CardPlay?) doesn't take a dealer (the pet itself is the attacker, set
+// via reflectively overwriting AttackCommand.Attacker — see
+// generatePetAttackSupportFile's own header comment), unlike ForgeActions.
+// DealDamage/DealDamageAllEnemies which do.
+function resolvePetAttackCardArgs(ctx) {
+  if (!ctx.cardPlayBound) return 'null, null';
+  return ctx.thisIsCard ? 'this, cardPlay' : 'cardPlay.Card, cardPlay';
 }
 
 // NOTE: the old perEntryAmount(action, amountsMap, key) helper that used
@@ -2107,20 +2132,129 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<T>(Player) where
       // T : MonsterModel is real, public, static, generic, async — it
       // creates a brand-new pet Creature of species T and binds it to the
-      // given player. Squirtle's own real card calls this directly,
-      // unconditionally, every time it's played (no revive-if-out check
-      // in the one real confirmed example), so this deliberately does the
-      // same rather than inventing unconfirmed merge/revive behavior.
-      // `petRef` selects which of this character's own pets to summon,
-      // resolved via ctx.petClassById the same way
+      // given player. `petRef` selects which of this character's own pets
+      // to summon, resolved via ctx.petClassById the same way
       // cardRef/relicRef/tokenRef resolve through their own *ClassById
       // maps elsewhere in this file. Player resolved via
       // resolvePlayerExpr(ctx), same as every other PLAYER_ONLY_ACTIONS
       // entry (GainOrbSlots/ModifyEnergy/etc, right above).
+      //
+      // [Round 293 — SUPERSEDES round 286's unconditional single-shot call
+      // above — VERIFIED via decompiling Tyler's own uploaded "The Trainer
+      // - New Character" source, claude/round290-pets-v2-real-source-
+      // research.md §4] Round 286's one real confirmed example (Squirtle)
+      // never needed a revive/stack path because it was never re-played
+      // after its pet died — a fuller reference (this same tool's own
+      // OWN real, shipped output, one build newer) shows the actual
+      // pattern every real summon-granting card uses is a 3-way branch,
+      // not an unconditional AddPet<T>: (1) if this pet is already out and
+      // alive, ADD to its current max HP via CreatureCmd.GainMaxHp rather
+      // than replacing it; (2) if a dead corpse of this pet already exists
+      // in combat (only possible when this pet's own takesHitsForYou power
+      // kept it there — see that field's own schema description), revive
+      // it back into play via PlayerCombatState.AddPetInternal; (3)
+      // otherwise, PlayerCmd.AddPet<T> creates it for the first time. Every
+      // one of these three real APIs (Creature.IsAlive, CreatureCmd.
+      // GainMaxHp(Creature, decimal), PlayerCombatState.AddPetInternal
+      // (Creature), CreatureCmd.SetMaxHp(Creature, decimal),
+      // CreatureCmd.Heal(Creature, decimal, bool reviving)) is confirmed
+      // real via that same decompile. `amount` (new this round, see the
+      // `amount` schema field's own round-293 note) is the HP the pet
+      // gains/starts with/is healed to — read off THIS action, not the
+      // pet's own fixed minInitialHp/maxInitialHp (those only govern a
+      // pet's very first randomized roll if one is ever added by anything
+      // OTHER than this summon pattern).
+      //
+      // Also ports a real, hard-won ordering-bug fix from that same
+      // decompile: AddPet's internal CreatureCmd.Add asks
+      // NCreature.ToggleIsInteractable(Monster.IsHealthBarVisible) BEFORE
+      // SetMaxHp/Heal run — a pet whose IsHealthBarVisible reads
+      // Creature.IsAlive (needed for the takesHitsForYou corpse-hiding
+      // behavior) gets asked that question while its CurrentHp is still 0,
+      // answers "not visible" once, and is never re-asked. Their fix,
+      // ported verbatim: re-trigger the toggle manually right after HP is
+      // actually set.
       const petCls = ctx.petClassById && ctx.petClassById.get(action.petRef);
-      if (!petCls) return `        ForgeActions.Todo("SummonPet(no pet selected or pet not found: ${action.petRef || ''})");`;
+      const pet = currentPetById.get(action.petRef);
+      if (!petCls || !pet) return `        ForgeActions.Todo("SummonPet(no pet selected or pet not found: ${action.petRef || ''})");`;
       const summonPlayerExpr = resolvePlayerExpr(ctx);
-      return `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<${petCls}>(${summonPlayerExpr}); // [VERIFIED via decompiling TheTrainerNewCharacter.dll — Squirtle.OnPlay's real AddPet<T> call, round 286]`;
+      const amountExpr = resolveAmountExpr(action);
+      // takesHitsForYou's own generated support power (generatePetSoakPowerSource)
+      // lives beside the pet class, named by stripping the "Pet" suffix off
+      // petCls (always present by construction — see petClassById's own
+      // map) and appending "SoakPower" instead — avoids threading yet
+      // another *ClassById map through every ctx-construction call site
+      // for a name that's always mechanically derivable from petCls.
+      const soakCls = petCls.replace(/Pet$/, 'SoakPower');
+      const soakApplyLine = pet.takesHitsForYou
+        ? `\n                    ForgeActions.ApplyStatus<${soakCls}>(fgSummonedPet, 1); // [Round 293] see pet.takesHitsForYou's own schema description — applied once, only on a genuinely fresh summon (a revived/stacked pet already carries it)`
+        : '';
+      const turnsResetLine = (Number.isInteger(pet.leavesAfterTurns) && pet.leavesAfterTurns > 0)
+        ? `\n            ((${petCls})fgSummonedPet.Monster).TurnsRemaining = ${pet.leavesAfterTurns}; // [Round 293] refresh the "leaves after N turns" timer on every summon — matches the reference mod's own re-summon behavior`
+        : '';
+      return `        {
+            var fgSummonOwner = ${summonPlayerExpr};
+            var fgExistingPet = fgSummonOwner.Creature.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgSummonOwner);
+            MegaCrit.Sts2.Core.Entities.Creatures.Creature fgSummonedPet;
+            if (fgExistingPet != null && fgExistingPet.IsAlive)
+            {
+                await MegaCrit.Sts2.Core.Commands.CreatureCmd.GainMaxHp(fgExistingPet, ${amountExpr});
+                fgSummonedPet = fgExistingPet;
+            }
+            else
+            {
+                var fgPetReviving = fgExistingPet != null; // non-null here means a dead corpse kept in combat by this pet's own takesHitsForYou power
+                if (fgPetReviving)
+                {
+                    fgSummonOwner.PlayerCombatState.AddPetInternal(fgExistingPet);
+                    fgSummonedPet = fgExistingPet;
+                }
+                else
+                {
+                    fgSummonedPet = await MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<${petCls}>(fgSummonOwner);${soakApplyLine}
+                }
+                await MegaCrit.Sts2.Core.Commands.CreatureCmd.SetMaxHp(fgSummonedPet, ${amountExpr});
+                await MegaCrit.Sts2.Core.Commands.CreatureCmd.Heal(fgSummonedPet, ${amountExpr}, fgPetReviving);
+            }
+            // [VERIFIED via decompiling "The Trainer - New Character", round290 §4] AddPet's own internal ToggleIsInteractable call fires before HP is actually set — re-trigger now that it's real.
+            MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance?.GetCreatureNode(fgSummonedPet)?.ToggleIsInteractable(fgSummonedPet.Monster.IsHealthBarVisible);${turnsResetLine}
+        }`;
+    }
+    case 'PetAttack': {
+      // [Round 293 — new action type, sibling to SummonPet — VERIFIED via
+      // decompiling Tyler's own uploaded "The Trainer - New Character"
+      // source, claude/round290-pets-v2-real-source-research.md §1] Real
+      // token attack cards find their own species' living pet off
+      // fgPlayer's own CombatState.Allies, then build a card-sourced,
+      // pet-attributed AttackCommand via a small generated support class
+      // (generatePetAttackSupportFile/ForgePetAttackSupport.cs) — needed
+      // because AttackCommand.FromOsty rejects non-Osty custom pets and
+      // AttackCommand.FromMonster targets players and drops the card
+      // source, so the only way to get both a card source AND a
+      // pet-attributed attacker is the real, public AttackCommand.FromCard
+      // plus reflectively overwriting the private Attacker property via
+      // Harmony AccessTools.PropertySetter (see that file's own header
+      // comment for the full evidence trail). `targetExpr` here is already
+      // fully resolved by the shared SingleEnemy/AllEnemies/Self/
+      // RandomEnemy machinery above (PetAttack isn't in
+      // allEnemiesHandledInline, so AllEnemies/RandomEnemy are handled by
+      // the generic wrapper a few lines up, exactly like every other
+      // non-DealDamage/ModifyStatus action type).
+      const petCls = ctx.petClassById && ctx.petClassById.get(action.petRef);
+      if (!petCls) return `        ForgeActions.Todo("PetAttack(no pet selected or pet not found: ${action.petRef || ''})");`;
+      const petCardArgs = resolvePetAttackCardArgs(ctx);
+      const amountExpr = resolveAmountExpr(action);
+      return `        {
+            var fgAttackingPet = fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgPlayer.Player); // [VERIFIED via decompiling "The Trainer - New Character" — real token attack cards find their own pet this same way, round290 §1]
+            if (fgAttackingPet != null && fgAttackingPet.IsAlive)
+            {
+                MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance?.GetCreatureNode(fgAttackingPet)?.SetAnimationTrigger("Attack"); // [KNOWN GAP — see pet.takesHitsForYou's sibling round-291/292 finding] a real, but currently Spine-only, no-op for a plain-sprite pet; kept for parity with the reference mod, becomes real once a future round wires a real AnimationPlayer trigger here.
+                await ForgePetAttackSupport.Create(${amountExpr}, fgAttackingPet, ${petCardArgs}) // short name — every generated file this can appear in already has "using {{namespace}}.Generated;" (see Card/Relic/Power/Affliction/Enchantment.cs.template), same convention as every bare ForgeActions.* call
+                    .Targeting(${targetExpr})
+                    .WithHitCount(1)
+                    .Execute(choiceContext);
+            }
+        }`;
     }
     case 'ModifyCost': {
       // [Round 193] Tyler: "instead of energy reduction while left in
@@ -7474,6 +7608,36 @@ function generatePetSource(pet, namespace) {
   const healthBarOverride = pet.isHealthBarVisible === false
     ? `\n    public override bool IsHealthBarVisible => false; // [VERIFIED — round 286] base default is true (direct sts2.dll IL read); only emitted when explicitly turned off`
     : '';
+  // [Round 293] "Leaves after N turns" — see pet.leavesAfterTurns' own
+  // schema description for the full evidence trail. Only emitted when set;
+  // omitted/null means the pet stays for the whole fight, unchanged prior
+  // behavior (same "don't emit what isn't configured" convention as
+  // healthBarOverride above).
+  const hasTurnsLimit = Number.isInteger(pet.leavesAfterTurns) && pet.leavesAfterTurns > 0;
+  const turnsLimitMember = hasTurnsLimit
+    ? `
+
+    // [Round 293 — VERIFIED via decompiling "The Trainer - New Character",
+    // claude/round290-pets-v2-real-source-research.md §3] TurnsRemaining is
+    // a plain settable property (the SummonPet action's own codegen resets
+    // it back to this value on every summon, refreshing the timer on
+    // re-summon); AfterSideTurnEnd is a real virtual MonsterModel hook
+    // (fires once per side per turn end); CreatureCmd.Escape is a real,
+    // distinct exit from any Kill/damage-death path — no on-kill
+    // triggers/rewards fire.
+    public int TurnsRemaining { get; set; } = ${pet.leavesAfterTurns};
+
+    public override async System.Threading.Tasks.Task AfterSideTurnEnd(MegaCrit.Sts2.Core.GameActions.Multiplayer.PlayerChoiceContext choiceContext, MegaCrit.Sts2.Core.Combat.CombatSide side, System.Collections.Generic.IEnumerable<MegaCrit.Sts2.Core.Entities.Creatures.Creature> participants)
+    {
+        if (side != MegaCrit.Sts2.Core.Combat.CombatSide.Player) return;
+        if (base.Creature == null || !base.Creature.IsAlive) return;
+        TurnsRemaining--;
+        if (TurnsRemaining <= 0)
+        {
+            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Escape(base.Creature);
+        }
+    }`
+    : '';
   return `using System;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Models;
@@ -7502,9 +7666,152 @@ public class ${className} : BaseLib.Abstracts.CustomMonsterModel, global::${name
         var nothingMove = new MoveState("NOTHING_MOVE", _ => Task.CompletedTask, Array.Empty<AbstractIntent>());
         nothingMove.FollowUpState = nothingMove;
         return new MonsterMoveStateMachine(new MonsterState[] { nothingMove }, nothingMove);
+    }${turnsLimitMember}
+}
+`;
+}
+
+// [Round 293] "Takes hits for you" — see pet.takesHitsForYou's own schema
+// description for the full evidence trail. [VERIFIED via decompiling
+// Tyler's own uploaded "The Trainer - New Character" source, claude/
+// round290-pets-v2-real-source-research.md §2] Only called (from
+// generateProject's Pets loop) when a pet actually sets takesHitsForYou —
+// same "only emit what's used" convention as generatePetPositionSupportFile.
+// A real, generated PowerModel subclass (NOT a Harmony patch, unlike
+// ForgePetPositionSupport.cs/ForgeDebuffMultiplierSupport.cs) — applied
+// directly to the pet's own Creature via the existing, generic, [VERIFIED]
+// ForgeActions.ApplyStatus<T>() helper (same call every custom mechanic
+// already uses), which only needs a public parameterless constructor —
+// satisfied here the same way every Powers/XxxPower.cs class already
+// satisfies it (see Power.cs.template's own CustomPowerModel base).
+function generatePetSoakPowerSource(pet, namespace) {
+  const className = pascalCase(pet.name) + 'SoakPower';
+  return `using BaseLib.Abstracts;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.ValueProps;
+
+namespace ${namespace}.Pets;
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+//
+// [Round 293] Ported from the reference mod's own real, compiled
+// VenusaurSoakPower.cs (see generatePetSoakPowerSource's own header
+// comment in compiler.js for the full evidence trail). Applied once, only
+// on a genuinely fresh summon, via the SummonPet action's own codegen.
+public sealed class ${className} : CustomPowerModel
+{
+    public override PowerType Type => PowerType.Buff;
+    public override PowerStackType StackType => PowerStackType.None; // a binary toggle, never stacks
+
+    public override bool ShouldReceiveCombatHooks => true;
+
+    // Redirects an unblocked, powered attack aimed at this pet's OWNER onto
+    // the pet itself instead. Real, confirmed signature -- matches this
+    // project's own MODIFIER_HOOKS.ModifyUnblockedDamageTarget entry
+    // (backend/compiler.js), cross-checked against the reference mod's own
+    // real, compiled VenusaurSoakPower.
+    public override Creature ModifyUnblockedDamageTarget(Creature target, decimal amount, ValueProp props, Creature dealer)
+    {
+        if (target != base.Owner.PetOwner?.Creature) return target;
+        if (base.Owner.IsDead) return target;
+        if (!ValuePropExtensions.IsPoweredAttack(props)) return target;
+        return base.Owner;
+    }
+
+    // Keeps this pet as a corpse (rather than removed from combat) once it
+    // dies, so a later SummonPet action can revive it -- see that action's
+    // own 3-way stacking/revival codegen.
+    public override bool ShouldAllowHitting(Creature creature) => creature.IsAlive;
+    public override bool ShouldCreatureBeRemovedFromCombatAfterDeath(Creature creature) => creature != base.Owner;
+    public override bool ShouldPowerBeRemovedAfterOwnerDeath() => false; // [VERIFIED via decompiling the reference mod's real VenusaurSoakPower] keeps this power itself alive on the pet's own corpse
+}
+`;
+}
+
+// [Round 293] "PetAttack" action type — see the actionsArray `type` enum's
+// own round-293 paragraph (schema/character.schema.json) and
+// actionToCSharp's own "PetAttack" case for the full evidence trail. Only
+// writes a file at all when at least one PetAttack action is actually used
+// anywhere in the package (packageUsesActionType below) — same "only emit
+// what's used" convention as ForgePetPositionSupport.cs/
+// ForgeDebuffMultiplierSupport.cs.
+function generatePetAttackSupportFile(characterPackage, namespace) {
+  if (!packageUsesActionType(characterPackage, 'PetAttack')) return null;
+  return `using HarmonyLib;
+using MegaCrit.Sts2.Core.Commands.Builders;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Models;
+
+namespace ${namespace}.Generated;
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+//
+// [Round 293] Ported from the reference mod's own real, compiled
+// PetAttackSupport.cs (see generatePetAttackSupportFile's own header
+// comment in compiler.js for the full evidence trail). AttackCommand.
+// FromOsty rejects any non-Osty custom pet, and AttackCommand.FromMonster
+// targets players and loses the card source -- so the only way to get a
+// card-sourced, pet-attributed attack is the real, public
+// AttackCommand.FromCard, plus reflectively overwriting the private
+// Attacker property via Harmony AccessTools.PropertySetter (already a
+// dependency for ForgePetPositionSupport.cs).
+internal static class ForgePetAttackSupport
+{
+    private static readonly System.Action<AttackCommand, Creature> SetAttacker =
+        (System.Action<AttackCommand, Creature>)AccessTools.PropertySetter(typeof(AttackCommand), "Attacker")
+            .CreateDelegate(typeof(System.Action<AttackCommand, Creature>));
+
+    public static AttackCommand Create(decimal damage, Creature pet, CardModel? card, CardPlay? cardPlay) =>
+        Configure(new AttackCommand(damage), pet, card, cardPlay);
+
+    private static AttackCommand Configure(AttackCommand command, Creature pet, CardModel? card, CardPlay? cardPlay)
+    {
+        command.FromCard(card, cardPlay);
+        SetAttacker(command, pet);
+        return command.WithNoAttackerAnim();
     }
 }
 `;
+}
+
+// [Round 293] Mirrors validate.js's own enumeration of every place an
+// action list can live in a character package (validateEffects/
+// validateActions' call sites there) -- kept in sync deliberately, same
+// "single source of truth, don't let two copies drift" discipline as
+// ACTION_TYPES/PLAYER_ONLY_ACTIONS/SELF_ONLY_ACTIONS. Used to decide
+// whether a support file for one specific action `type` needs to be
+// written at all (today: just PetAttack/ForgePetAttackSupport.cs), without
+// guessing via a blunter check like "does this package have any pets".
+function packageUsesActionType(characterPackage, actionType) {
+  const containsType = (actions) => {
+    if (!Array.isArray(actions)) return false;
+    return actions.some(act => {
+      if (!act) return false;
+      if (act.type === actionType) return true;
+      return !!(act.followUp && Array.isArray(act.followUp.actions) && containsType(act.followUp.actions));
+    });
+  };
+  const effectLists = [];
+  (characterPackage.cards || []).forEach(card => {
+    if (Array.isArray(card.effects)) effectLists.push(card.effects);
+    if (card.advancedOptions && Array.isArray(card.advancedOptions.whileInHand)) effectLists.push(card.advancedOptions.whileInHand);
+    (card.upgrades || []).forEach(tier => { if (Array.isArray(tier.effects)) effectLists.push(tier.effects); });
+  });
+  (characterPackage.relics || []).forEach(r => { if (Array.isArray(r.effects)) effectLists.push(r.effects); });
+  (characterPackage.mechanics || []).forEach(m => { if (Array.isArray(m.effects)) effectLists.push(m.effects); });
+  (characterPackage.enchantments || []).forEach(e => {
+    if (e.onPlay && Array.isArray(e.onPlay.effects)) effectLists.push(e.onPlay.effects);
+    if (e.whilePile && Array.isArray(e.whilePile.effects)) effectLists.push(e.whilePile.effects);
+    if (Array.isArray(e.effects)) effectLists.push(e.effects);
+  });
+  (characterPackage.afflictions || []).forEach(a => {
+    if (a.onPlay && Array.isArray(a.onPlay.effects)) effectLists.push(a.onPlay.effects);
+    if (a.whilePile && Array.isArray(a.whilePile.effects)) effectLists.push(a.whilePile.effects);
+    if (Array.isArray(a.effects)) effectLists.push(a.effects);
+  });
+  return effectLists.some(effects => (effects || []).some(eff => containsType(eff.actions) || containsType(eff.elseActions)));
 }
 
 // [Round 286 — VERIFIED via direct IL disassembly of
@@ -9976,6 +10283,8 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // selected or pet not found" Todo fallback in actionToCSharp's
   // SummonPet case.
   const petClassById = new Map((characterPackage.pets || []).map(p => [p.id, `global::${namespace}.Pets.${pascalCase(p.name)}Pet`]));
+  // [Round 293] See currentPetById's own module-level comment above.
+  currentPetById = new Map((characterPackage.pets || []).map(p => [p.id, p]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
 
@@ -10240,6 +10549,12 @@ function generateProject(characterPackage, outDir, opts = {}) {
   const pets = characterPackage.pets || [];
   pets.forEach(pet => {
     write(`Pets/${pascalCase(pet.name)}Pet.cs`, generatePetSource(pet, namespace));
+    // [Round 293] "Takes hits for you" — only written for a pet that
+    // actually sets it, see generatePetSoakPowerSource's own header
+    // comment for the full evidence trail.
+    if (pet.takesHitsForYou) {
+      write(`Pets/${pascalCase(pet.name)}SoakPower.cs`, generatePetSoakPowerSource(pet, namespace));
+    }
   });
   // [Round 286] IModPet marker interface + the ported real Harmony
   // positioning patch (TheTrainerNewCharacter.Patches.ModPetPositionPatch,
@@ -10249,6 +10564,14 @@ function generateProject(characterPackage, outDir, opts = {}) {
   const petPositionSupportSrc = generatePetPositionSupportFile(pets, namespace);
   if (petPositionSupportSrc) {
     write('Generated/ForgePetPositionSupport.cs', petPositionSupportSrc);
+  }
+  // [Round 293] "PetAttack" action type — only written when at least one
+  // PetAttack action is actually used anywhere in the package, see
+  // generatePetAttackSupportFile's own header comment for the full
+  // evidence trail.
+  const petAttackSupportSrc = generatePetAttackSupportFile(characterPackage, namespace);
+  if (petAttackSupportSrc) {
+    write('Generated/ForgePetAttackSupport.cs', petAttackSupportSrc);
   }
 
   // Enchantments — Round 95, Tyler: "Enchantments/Afflictions need their

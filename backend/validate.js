@@ -213,7 +213,10 @@ const ACTION_TYPES = [
   'SwapDrawDiscard', 'TransformDeckCards',
   // [Round 286] "SummonPet" -- see compiler.js's actionToCSharp
   // "SummonPet" case for the real PlayerCmd.AddPet<T> evidence trail.
-  'SummonPet',
+  // [Round 293] "PetAttack" -- new sibling action type, see compiler.js's
+  // actionToCSharp "PetAttack" case for the real ForgePetAttackSupport
+  // evidence trail.
+  'SummonPet', 'PetAttack',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -719,6 +722,13 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // Add+single-target and Remove (any target) don't reference
       // choiceContext at all, so only this one combination is blocked.
       errors.push(`${p}: action "ModifyStatus" (Add) can't target "AllEnemies" on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the all-enemies status call needs (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Target "Self" instead, or move this effect to a trigger that exposes one.`);
+    } else if (act.type === 'PetAttack' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 293] Same NO_CHOICE_CONTEXT_HOOK_TRIGGERS gap as DealDamage
+      // above -- PetAttack's own codegen (compiler.js's actionToCSharp)
+      // unconditionally ends in `.Execute(choiceContext)`, on every target,
+      // not just AllEnemies -- so it's gated the same way as DealDamage
+      // rather than ModifyStatus's narrower AllEnemies-only case.
+      errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
     }
     if (act.amount !== undefined && typeof act.amount !== 'number') errors.push(`${p}.amount must be a number.`);
     // amountIsX / hitCount / hitCountIsX — [VERIFIED via decompiling
@@ -946,15 +956,17 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // shape as afflictionRef right above. [Round 289] petIds now contains
     // every defined pet -- the earlier compileReal opt-in filter is
     // retired (Tyler: "remove the check box. if they want to not see the
-    // pet in game, they just have to not summon it").
-    if (act.type === 'SummonPet') {
+    // pet in game, they just have to not summon it"). [Round 293] widened
+    // to "PetAttack" too -- see compiler.js's actionToCSharp "PetAttack"
+    // case for the real ForgePetAttackSupport.Create call this drives.
+    if (act.type === 'SummonPet' || act.type === 'PetAttack') {
       if (act.petRef === '' || act.petRef === undefined) {
-        errors.push(`${p}: action "SummonPet" needs a pet selected — pick one from the dropdown, or add a pet first if none exist yet (Pets section).`);
+        errors.push(`${p}: action "${act.type}" needs a pet selected — pick one from the dropdown, or add a pet first if none exist yet (Pets section).`);
       } else if (!petIds.has(act.petRef)) {
         errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined pet id.`);
       }
     } else if (act.petRef !== undefined) {
-      errors.push(`${p}: petRef is only meaningful on "SummonPet" — action type is "${act.type}".`);
+      errors.push(`${p}: petRef is only meaningful on "SummonPet"/"PetAttack" — action type is "${act.type}".`);
     }
     // [Round 199] pile -- ClearAfflictionFromPile only, same "must be one
     // of PILE_TYPES, or omitted (defaults to Hand)" shape whileInHand's
@@ -2259,6 +2271,15 @@ function validateCharacterPackage(pkg) {
     }
     if (typeof pet.minInitialHp === 'number' && typeof pet.maxInitialHp === 'number' && pet.maxInitialHp < pet.minInitialHp) {
       errors.push(`${p}.maxInitialHp must be >= minInitialHp.`);
+    }
+    // [Round 293] "Takes hits for you" / "Leaves after N turns" — see
+    // pet.takesHitsForYou/pet.leavesAfterTurns' own schema descriptions for
+    // the full evidence trail.
+    if (pet.takesHitsForYou !== undefined && typeof pet.takesHitsForYou !== 'boolean') {
+      errors.push(`${p}.takesHitsForYou must be a boolean.`);
+    }
+    if (pet.leavesAfterTurns !== undefined && (typeof pet.leavesAfterTurns !== 'number' || !Number.isInteger(pet.leavesAfterTurns) || pet.leavesAfterTurns < 1)) {
+      errors.push(`${p}.leavesAfterTurns must be a positive whole number if present (omit it to have this pet stay for the whole fight).`);
     }
   });
 

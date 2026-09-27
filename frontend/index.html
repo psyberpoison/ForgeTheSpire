@@ -3819,7 +3819,7 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(!CARD_PLAY_BOUND_TRIGGERS.has(trigger)){
     for(const t of CARD_PLAY_BOUND_ONLY_ACTION_TYPES) hidden.add(t);
   }
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) hidden.add('DealDamage');
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -3999,7 +3999,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack"];
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -4100,8 +4100,9 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
-  // below).
-  { label: 'Pets', color: '#5fa88a', types: ['SummonPet'] },
+  // below). [Round 293] "PetAttack" joins it -- same pet-focused concept,
+  // sibling action.
+  { label: 'Pets', color: '#5fa88a', types: ['SummonPet', 'PetAttack'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -4137,6 +4138,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   SwapDrawDiscard: 'swap draw discard pile',
   TransformDeckCards: 'transform deck cards into',
   SummonPet: 'summon pet companion monster',
+  PetAttack: 'pet attack damage companion monster',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -10565,10 +10567,21 @@ function describeAction(act){
     }
     // [Round 286] Same plain-sentence convention as every case above --
     // see compiler.js's actionToCSharp SummonPet case for the full
-    // evidence trail.
+    // evidence trail. [Round 293] `amount` (new this round) now drives a
+    // real 3-way stacking/revival/fresh-create branch server-side -- the
+    // preview describes the common "fresh summon" phrasing since that's
+    // what an author actually reads this as, with a stacking note appended
+    // to explain the same amount also applies if it's already out.
     case 'SummonPet': {
       const petName = (state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet';
-      return `Summon ${petName}`;
+      return `Summon ${petName} with ${n} HP (or, if it's already out, add ${n} max HP to it instead)`;
+    }
+    // [Round 293] New action type, sibling to SummonPet -- see
+    // compiler.js's actionToCSharp PetAttack case for the full evidence
+    // trail.
+    case 'PetAttack': {
+      const petName = (state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet';
+      return `Have ${petName} attack ${targetPhrase} for ${n} damage`;
     }
     default: return '';
   }
@@ -13191,7 +13204,11 @@ function actionModePair(type){ return ACTION_MODE_PAIRS[type] || null; }
 // check, not folded into this list). Mirrors schema/character.schema.json's
 // own `amount` description.
 function actionNeedsAmount(type){
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard'].includes(type);
+  // [Round 293] "SummonPet" (HP the pet gains/stacks to — drives the real
+  // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
+  // damage the pet deals) both read the shared `amount` field directly,
+  // same as DealDamage/GainBlock/ModifyHp above.
+  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -13703,7 +13720,8 @@ function ensureActionRefDefaults(act){
   // [Round 286] SummonPet's own entity picker -- same self-healing shape
   // as AfflictCard/EnchantCard above. [Round 289] Every defined pet is a
   // valid target now -- the earlier compileReal opt-in filter is retired.
-  if(act.type === 'SummonPet'){
+  // [Round 293] Widened to "PetAttack" too -- same picker, same self-heal.
+  if(act.type === 'SummonPet' || act.type === 'PetAttack'){
     if(state.pets.length && (!act.petRef || !state.pets.find(pet=>pet.id===act.petRef))){
       act.petRef = state.pets[0].id;
     }
@@ -14256,12 +14274,25 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // [Round 286] SummonPet -- picker dropdown modeled directly on
     // AfflictCard/EnchantCard's own above. [Round 289] Lists every
     // defined pet -- the earlier "REAL (compileReal) pets only" filter is
-    // retired.
+    // retired. [Round 293] `amount` (new this round) now appears in the
+    // sentence too -- see compiler.js's actionToCSharp SummonPet case for
+    // the real 3-way stacking/revival branch this amount drives.
     case 'SummonPet': {
       const petOptions = state.pets.length
         ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create a pet first)</span>`;
-      sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions}<span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">HP (adds to its max HP instead if it's already out).</span>`;
+      break;
+    }
+    // [Round 293] New action type, sibling to SummonPet -- see
+    // compiler.js's actionToCSharp PetAttack case for the full evidence
+    // trail. Same picker shape as SummonPet above, plus the shared
+    // target/amount atoms every Creature-targeted action already uses.
+    case 'PetAttack': {
+      const petOptions = state.pets.length
+        ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a pet first)</span>`;
+      sentenceHtml = `<span class="cond-word">Have</span> ${petOptions}<span class="cond-word">attack</span>${targetHtml}<span class="cond-word">for</span>${amountHtml}${useXAmountHtml}<span class="cond-word">damage.</span>`;
       break;
     }
     default:
@@ -16499,7 +16530,9 @@ function renderPets(){
     const hpMeta = Number.isFinite(p.minInitialHp) && Number.isFinite(p.maxInitialHp)
       ? `${p.minInitialHp}–${p.maxInitialHp} HP`
       : 'pet';
-    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${hpMeta}</div>`;
+    const petBadges = [p.takesHitsForYou ? 'takes hits for you' : null, Number.isInteger(p.leavesAfterTurns) ? `leaves after ${p.leavesAfterTurns}t` : null].filter(Boolean);
+    const petMeta = petBadges.length ? `${hpMeta} · ${petBadges.join(' · ')}` : hpMeta;
+    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${petMeta}</div>`;
     t.onclick = ()=> openPetEditor(p.id);
     petGrid.appendChild(t);
   });
@@ -16532,6 +16565,14 @@ function openPetEditor(petId){
         <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
         <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
       </div>
+      <div class="tagline" style="margin-top:10px">
+        <input type="checkbox" id="p-takes-hits" ${p.takesHitsForYou ? 'checked' : ''}>
+        <label for="p-takes-hits" style="margin:0" title="Redirects unblocked attacks aimed at you onto this pet instead, while it's alive. [Round 293] Ported from a real, compiled reference mod's own VenusaurSoakPower — see claude/round290-pets-v2-real-source-research.md §2.">Takes hits for you</label>
+      </div>
+      <div style="margin-top:10px">
+        <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
+        <input type="number" id="p-leaves-after-turns" min="1" step="1" value="${Number.isInteger(p.leavesAfterTurns) ? p.leavesAfterTurns : ''}" placeholder="stays whole fight">
+      </div>
       <div class="panel-desc" style="margin-top:10px">
         No custom art or turn behavior yet — this pet uses the game's own placeholder visuals and just stands there each turn. Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
       </div>
@@ -16549,6 +16590,9 @@ function openPetEditor(petId){
     p.minInitialHp = Math.max(1, Math.floor(parseFloat(document.getElementById('p-min-hp').value)) || 1);
     p.maxInitialHp = Math.max(p.minInitialHp, Math.floor(parseFloat(document.getElementById('p-max-hp').value)) || p.minInitialHp);
     p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;
+    p.takesHitsForYou = document.getElementById('p-takes-hits').checked;
+    const leavesRaw = Math.floor(parseFloat(document.getElementById('p-leaves-after-turns').value));
+    if (Number.isFinite(leavesRaw) && leavesRaw >= 1) { p.leavesAfterTurns = leavesRaw; } else { delete p.leavesAfterTurns; }
     save(); renderPets(); closeModal();
   };
 }
