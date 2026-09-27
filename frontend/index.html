@@ -8358,12 +8358,23 @@ const PET_ART_WIDTH = 512, PET_ART_HEIGHT = 512;
 // authoring aid, not compiled/real game data — unlike PET_ART_WIDTH/HEIGHT
 // above, there's no evidence trail to cite here, it's just a visual ruler
 // so Tyler can eyeball a pet's onScreenHeight (schema/character.schema.json)
-// against a person-sized reference before compiling. PET_SIZE_PREVIEW_BOX_HEIGHT
-// is the on-screen CSS pixel height standing in for that 512px reference —
-// exactly half, so a pet's own onScreenHeight maps to the box via the same
-// simple *0.5 factor (see refreshPetSizePreview).
+// against a person-sized reference before compiling.
+// [Round 295 follow-up — Tyler: "the window goes too low, colliding with
+// the taskbar", "the pet ... just moves it up"] Box is a fixed SQUARE
+// (width == height), not the original tall-narrow rectangle: pet art is
+// always exported at a square PET_ART_WIDTH×PET_ART_HEIGHT canvas (see
+// above), so a square box is the only size that can show a pet at its
+// full configured height without the image's WIDTH (which grows in lock-
+// step with height, since the source is square) getting clipped by a
+// narrower box first — that box/img width mismatch was the real cause of
+// "doesn't reach full height, just moves up" (the image was being
+// squeezed narrower than its set height to respect a `max-width` cap,
+// which shrinks its rendered HEIGHT too since aspect ratio is preserved).
+// 150px (not 256) keeps the editor's whole right-hand column short enough
+// that the modal reliably fits on screen without the whole page needing
+// to scroll past the Done button.
 const PET_SIZE_PREVIEW_REFERENCE_HEIGHT = 512;
-const PET_SIZE_PREVIEW_BOX_HEIGHT = 256;
+const PET_SIZE_PREVIEW_BOX = 150;
 
 const chronicleGrid = document.getElementById('chronicles-grid');
 
@@ -16607,35 +16618,43 @@ function openPetEditor(petId){
             No custom turn behavior yet — this pet just stands there each turn (no move/AI authoring). Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
           </div>
         </div>
-        <div style="flex:0 0 160px;">
-          <label>Art <span class="dim-hint">(optional, ${PET_ART_WIDTH}&times;${PET_ART_HEIGHT}px)</span></label>
-          <div class="art-preview-frame" id="pet-art-frame" style="aspect-ratio:${PET_ART_WIDTH}/${PET_ART_HEIGHT}; max-width:160px; cursor:pointer;">
-            <img id="pet-art-img" style="display:none">
-            <div class="art-placeholder" id="pet-art-placeholder">Click to upload (optional)</div>
-            <div class="art-click-hint">Click to change</div>
-            <div class="art-icon-overlay">
-              <button class="ghost icon-btn icon-btn-danger" id="pet-art-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
-              </button>
+        <div style="flex:0 0 300px;">
+          <div style="display:flex; gap:12px; align-items:flex-start;">
+            <div style="flex:0 0 120px;">
+              <label>Art <span class="dim-hint">(optional)</span></label>
+              <div class="art-preview-frame" id="pet-art-frame" style="aspect-ratio:${PET_ART_WIDTH}/${PET_ART_HEIGHT}; max-width:120px; cursor:pointer;">
+                <img id="pet-art-img" style="display:none">
+                <div class="art-placeholder" id="pet-art-placeholder">Click to upload (optional)</div>
+                <div class="art-click-hint">Click to change</div>
+                <div class="art-icon-overlay">
+                  <button class="ghost icon-btn icon-btn-danger" id="pet-art-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+                  </button>
+                </div>
+              </div>
+              <input type="file" class="art-upload-input" id="pet-art-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+              <div class="art-field-error" id="pet-art-error"></div>
+            </div>
+            <div style="flex:0 0 ${PET_SIZE_PREVIEW_BOX}px;">
+              <label>Size preview</label>
+              <div id="pet-size-preview" style="position:relative; width:${PET_SIZE_PREVIEW_BOX}px; height:${PET_SIZE_PREVIEW_BOX}px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:rgba(127,127,127,0.06);">
+                <svg viewBox="0 0 100 200" preserveAspectRatio="xMidYMax meet" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); height:100%; width:auto; opacity:0.3; color:var(--text-dim, #888);">
+                  <circle cx="50" cy="18" r="15" fill="currentColor"></circle>
+                  <path d="M31 36 Q50 30 69 36 L65 106 L35 106 Z" fill="currentColor"></path>
+                  <path d="M29 38 L17 96 L27 99 L37 44 Z" fill="currentColor"></path>
+                  <path d="M71 38 L83 96 L73 99 L63 44 Z" fill="currentColor"></path>
+                  <path d="M35 106 L29 195 L46 195 L46 108 Z" fill="currentColor"></path>
+                  <path d="M65 106 L71 195 L54 195 L54 108 Z" fill="currentColor"></path>
+                </svg>
+                <img id="pet-size-pet-img" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); display:none;">
+                <div id="pet-size-pet-placeholder" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:55%; border-radius:45% 45% 30% 30%; background:var(--accent-bright, #4a9); opacity:0.5; display:none;"></div>
+              </div>
             </div>
           </div>
-          <input type="file" class="art-upload-input" id="pet-art-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
-          <div class="art-field-error" id="pet-art-error"></div>
-          <div class="hint-small" style="margin-top:6px">No art uploaded uses the game's own placeholder visuals. Static only — no animation yet.</div>
+          <div class="hint-small" style="margin-top:6px">No art uploaded uses the game's own placeholder visuals. Static only — no animation yet. Size preview is vs. a ${PET_SIZE_PREVIEW_REFERENCE_HEIGHT}px-tall character (silhouette) — editor-only, not compiled.</div>
 
           <label style="margin-top:14px" title="[Round 295] How tall this pet renders in combat. [VERIFIED via decompiling &quot;The Trainer - New Character&quot;, claude/round290-pets-v2-real-source-research.md §1] 250 is the real game's own confirmed default (its Sprite2D scale AND its Bounds/CenterPos/IntentPos marker offsets are all computed from this one value). Only visible in-game once Art above is uploaded.">On-screen height (px)</label>
-          <input type="number" id="p-onscreen-height" min="1" step="1" value="${Number.isFinite(p.onScreenHeight) ? p.onScreenHeight : 250}">
-
-          <label style="margin-top:14px">Size preview</label>
-          <div id="pet-size-preview" style="position:relative; height:${PET_SIZE_PREVIEW_BOX_HEIGHT}px; max-width:160px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:rgba(127,127,127,0.06);">
-            <svg viewBox="0 0 100 200" preserveAspectRatio="xMidYMax meet" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); height:100%; width:auto; opacity:0.3; color:var(--text-dim, #888);">
-              <circle cx="50" cy="28" r="22" fill="currentColor"></circle>
-              <path d="M18 200 L18 118 Q18 66 50 66 Q82 66 82 118 L82 200 Z" fill="currentColor"></path>
-            </svg>
-            <img id="pet-size-pet-img" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); display:none; max-width:92%; object-fit:contain;">
-            <div id="pet-size-pet-placeholder" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:55%; border-radius:45% 45% 30% 30%; background:var(--accent-bright, #4a9); opacity:0.5; display:none;"></div>
-          </div>
-          <div class="hint-small" style="margin-top:4px">vs. a ${PET_SIZE_PREVIEW_REFERENCE_HEIGHT}px-tall character (silhouette)</div>
+          <input type="number" id="p-onscreen-height" min="1" step="1" style="max-width:140px" value="${Number.isFinite(p.onScreenHeight) ? p.onScreenHeight : 250}">
         </div>
       </div>
     </div>
@@ -16660,17 +16679,26 @@ function openPetEditor(petId){
   const sizePetPlaceholder = document.getElementById('pet-size-pet-placeholder');
 
   // [Round 295] Live "how big is this next to a person" ruler — editor-only,
-  // see PET_SIZE_PREVIEW_REFERENCE_HEIGHT/PET_SIZE_PREVIEW_BOX_HEIGHT's own
+  // see PET_SIZE_PREVIEW_REFERENCE_HEIGHT/PET_SIZE_PREVIEW_BOX's own
   // comment for why this has no real evidence trail to cite (it's not
   // compiled data). Maps whatever's in the height field onto the fixed
   // silhouette box by the same simple ratio the real CreateCustomVisuals()
   // override itself will use once compiled (heightPx / reference), so this
   // preview stays honest about relative scale even though its own pixel
-  // sizes are display-only.
+  // sizes are display-only. Deliberately sets ONLY `height` (no width, no
+  // max-width) — the box is a square matching the pet art's own square
+  // export canvas (PET_ART_WIDTH/HEIGHT), so letting width follow the
+  // image's natural aspect ratio already lands it at the right size; a
+  // width cap here is what caused the original "doesn't reach full height"
+  // bug (capping width indirectly shrinks the height a browser computes
+  // for a fixed-aspect-ratio image). A pet configured taller than the
+  // 512px reference legitimately overflows the box — `overflow:hidden` on
+  // the container crops it symmetrically, which is the honest signal that
+  // this pet is bigger than a person, not a bug to hide.
   function refreshPetSizePreview(){
     const raw = parseFloat(heightInput.value);
     const heightPx = Number.isFinite(raw) && raw > 0 ? raw : 250;
-    const displayPx = Math.max(2, (heightPx / PET_SIZE_PREVIEW_REFERENCE_HEIGHT) * PET_SIZE_PREVIEW_BOX_HEIGHT);
+    const displayPx = Math.max(2, (heightPx / PET_SIZE_PREVIEW_REFERENCE_HEIGHT) * PET_SIZE_PREVIEW_BOX);
     const url = pendingPetArtDataUrl !== undefined
       ? pendingPetArtDataUrl
       : findAssetDataUrl(p.artAssetRef, 'petArt');
