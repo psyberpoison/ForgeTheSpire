@@ -1146,7 +1146,7 @@
         "id",
         "name"
       ],
-      "description": "See the top-level `pets` property above for the full evidence review. As of round 286, every pet compiles to a real MonsterModel subclass (see minInitialHp/maxInitialHp/isHealthBarVisible below); round 289 removed the earlier compileReal opt-in flag \u2014 there is no design-note-only pet anymore, and a pet not referenced by any SummonPet action simply never gets summoned.",
+      "description": "See the top-level `pets` property above for the full evidence review. As of round 286, every pet compiles to a real MonsterModel subclass (see minInitialHp/maxInitialHp/isHealthBarVisible below); round 289 removed the earlier compileReal opt-in flag \u2014 there is no design-note-only pet anymore, and a pet not referenced by any SummonPet action simply never gets summoned. Round 295 (Tyler: \"remove 'what it does' and add the ability to change the height of the pet\") retired the old freeform `abilityText` field entirely (it was never wired to anything real \u2014 see artAssetRef/onScreenHeight below for the fields that replaced its spot in the editor) and added `onScreenHeight`.",
       "properties": {
         "id": {
           "type": "string"
@@ -1157,10 +1157,6 @@
         "description": {
           "type": "string",
           "description": "Flavor text."
-        },
-        "abilityText": {
-          "type": "string",
-          "description": "Freeform description of what this pet does \u2014 NOT wired to any real trigger/condition/action system (unlike mechanic.effects/relic.effects/card.effects), since there's no reflected hook signature of any kind to wire it to."
         },
         "minInitialHp": {
           "type": "integer",
@@ -1189,7 +1185,13 @@
         },
         "artAssetRef": {
           "type": "string",
-          "description": "Round 294 \u2014 optional static pet art, referencing an entry in the top-level `assets` array (kind: \"petArt\"). [VERIFIED via direct IL decompilation of \"The Trainer - New Character\"'s real, shipped SquirtlePet::CreateCustomVisuals(), full body disassembled in claude/round290-pets-v2-real-source-research.md \u00a71] Unlike relic/mechanic icons (a single virtual icon-path property), a pet's art requires a real `CreateCustomVisuals()` override \u2014 there's no simpler override point on MonsterModel. Omitted/null: no override is generated at all, matching round 286's original v1 default (the game's own placeholder/fallback visuals, confirmed safe). When set, backend/compiler.js:writePetArt exports the PNG to `images/packed/pets/{modid-lowercase}_{PetClassName-lowercase}.png` (this exact flat, non-nested naming convention was read directly off the reference mod's own real resource path, unlike relic/card art's nested `<modid>/<id>.png` convention) and splices a real `CreateCustomVisuals()` override (backend/compiler.js:generatePetArtOverride) building the exact NCreatureVisuals scene the decompile showed: a single feet-anchored Sprite2D scaled to a fixed 250px on-screen height (this project's own confirmed real default \u2014 no user-facing on-screen-height field yet, so it's the hardcoded confirmed value rather than a guess) plus the 3 uniquely-named marker nodes (Bounds/CenterPos/IntentPos) NCreatureVisuals._Ready() requires by exact name (harness-verified: missing any of the three logs \"Node not found\" on every summon). No animation \u2014 round 291 confirmed real pet animation needs a Spine skeleton export Forge has no asset pipeline for, so this is one fixed resting texture, matching Tyler's own \"I can add static images\" scope pick, not per-state art (idle/attack/hit/death remain deferred, per claude/round293-pets-v2-logic-implementation.md's \"Round B\" note)."
+          "description": "Round 294 \u2014 optional static pet art, referencing an entry in the top-level `assets` array (kind: \"petArt\"). [VERIFIED via direct IL decompilation of \"The Trainer - New Character\"'s real, shipped SquirtlePet::CreateCustomVisuals(), full body disassembled in claude/round290-pets-v2-real-source-research.md \u00a71] Unlike relic/mechanic icons (a single virtual icon-path property), a pet's art requires a real `CreateCustomVisuals()` override \u2014 there's no simpler override point on MonsterModel. Omitted/null: no override is generated at all, matching round 286's original v1 default (the game's own placeholder/fallback visuals, confirmed safe). When set, backend/compiler.js:writePetArt exports the PNG to `images/packed/pets/{modid-lowercase}_{PetClassName-lowercase}.png` (this exact flat, non-nested naming convention was read directly off the reference mod's own real resource path, unlike relic/card art's nested `<modid>/<id>.png` convention) and splices a real `CreateCustomVisuals()` override (backend/compiler.js:generatePetArtOverride) building the exact NCreatureVisuals scene the decompile showed: a single feet-anchored Sprite2D scaled to this pet's own `onScreenHeight` (see that field below \u2014 round 295 made the round-290-confirmed 250px constant user-adjustable) plus the 3 uniquely-named marker nodes (Bounds/CenterPos/IntentPos) NCreatureVisuals._Ready() requires by exact name (harness-verified: missing any of the three logs \"Node not found\" on every summon). No animation \u2014 round 291 confirmed real pet animation needs a Spine skeleton export Forge has no asset pipeline for, so this is one fixed resting texture, matching Tyler's own \"I can add static images\" scope pick, not per-state art (idle/attack/hit/death remain deferred, per claude/round293-pets-v2-logic-implementation.md's \"Round B\" note)."
+        },
+        "onScreenHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 250,
+          "description": "Round 295 (Tyler: \"add the ability to change the height of the pet\") \u2014 how tall this pet renders in combat, in pixels. [VERIFIED via direct IL decompilation of \"The Trainer - New Character\"'s real, shipped SquirtlePet::CreateCustomVisuals(), claude/round290-pets-v2-real-source-research.md \u00a71] `250f` was found baked in as a literal constant driving both the Sprite2D's scale-to-height math AND the Bounds/CenterPos/IntentPos marker offsets (all computed FROM that one height value) \u2014 this field makes that same constant user-adjustable per pet instead of hardcoded. Optional; omitted/null falls back to that confirmed real default (250) \u2014 backend/compiler.js:writePetArt resolves the fallback, generatePetArtOverride threads whatever value results through every one of those same real, confirmed formulas unchanged. Only has any visible effect once artAssetRef (above) is also set \u2014 no CreateCustomVisuals() override is generated at all without uploaded art, so there's nothing for this height to scale."
         }
       }
     },

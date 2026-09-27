@@ -10012,7 +10012,8 @@ const PET_ART_PREFIX = 'images/packed/pets/';
 // (rather than inlined into writePetArt, the write-PNG-then-splice-override
 // shape every other art field above uses) purely because this override is
 // long enough to read better on its own.
-function generatePetArtOverride(rel) {
+function generatePetArtOverride(rel, heightPx) {
+  const heightLiteral = `${heightPx}f`;
   return `
 
     // [Round 294 — VERIFIED via direct IL decompilation of TheTrainerNewCharacter's
@@ -10021,9 +10022,9 @@ function generatePetArtOverride(rel) {
     // ("creature_visuals/<id>"), which doesn't exist for a mod monster and
     // renders as a giant red ERROR placeholder (harness-verified) -- so this
     // always returns a real node once art is uploaded. A single feet-anchored
-    // Sprite2D, scaled to a fixed 250px on-screen height (this project's own
-    // confirmed real default; no user-facing on-screen-height field yet, so
-    // it's the hardcoded confirmed value rather than a guess) -- no
+    // Sprite2D, scaled to this pet's own on-screen height (pet.onScreenHeight,
+    // default 250 -- [Round 295] this project's own confirmed real default,
+    // now user-adjustable per pet rather than a hardcoded constant) -- no
     // AnimationPlayer, unlike the character's own generatePoseSheetVisuals,
     // since round 291 confirmed real pet animation needs a Spine skeleton
     // export Forge has no pipeline for.
@@ -10037,7 +10038,7 @@ function generatePetArtOverride(rel) {
         cv.AddChild(visuals);
         visuals.Owner = cv;
 
-        float drawH = 250f, drawW = 250f;
+        float drawH = ${heightLiteral}, drawW = ${heightLiteral};
         var tex = ResourceLoader.Exists("res://${rel}")
             ? ResourceLoader.Load<Texture2D>("res://${rel}", null, ResourceLoader.CacheMode.Reuse)
             : null;
@@ -10046,7 +10047,7 @@ function generatePetArtOverride(rel) {
             var sprite = new Sprite2D();
             sprite.Name = "Sprite";
             sprite.Texture = tex;
-            float scale = 250f / tex.GetHeight();
+            float scale = ${heightLiteral} / tex.GetHeight();
             drawW = tex.GetWidth() * scale;
             sprite.Position = new Vector2(0, -(tex.GetHeight() * scale) / 2f); // feet-anchored
             sprite.Scale = new Vector2(scale, scale);
@@ -10094,9 +10095,15 @@ function writePetArt(pet, className, characterPackage, modIdLower, writeBinary) 
   const url = findAssetDataUrl(characterPackage, pet.artAssetRef, 'petArt');
   if (!url) return { override: '', reportLine: null };
 
+  // [Round 295] pet.onScreenHeight — see that field's own schema
+  // description for the full evidence trail. Falls back to round 290's
+  // own confirmed real 250 default whenever unset/invalid, same
+  // "absent field defaults sensibly" convention used throughout this file.
+  const heightPx = (typeof pet.onScreenHeight === 'number' && Number.isFinite(pet.onScreenHeight) && pet.onScreenHeight > 0) ? pet.onScreenHeight : 250;
+
   const rel = `${PET_ART_PREFIX}${modIdLower}_${className.toLowerCase()}.png`;
   writeBinary(`pack/${rel}`, dataUrlToBuffer(url));
-  return { override: generatePetArtOverride(rel), reportLine: `- ${pet.name}: pet art exported to \`${rel}\`, \`CreateCustomVisuals()\` override added (static, feet-anchored, scaled to 250px on-screen height). [VERIFIED]` };
+  return { override: generatePetArtOverride(rel, heightPx), reportLine: `- ${pet.name}: pet art exported to \`${rel}\`, \`CreateCustomVisuals()\` override added (static, feet-anchored, scaled to ${heightPx}px on-screen height). [VERIFIED]` };
 }
 
 // [Round 203 — Tyler: "change the name of lore to 'Chronicles'. Chronicles

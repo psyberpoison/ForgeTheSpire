@@ -8351,6 +8351,19 @@ const MECHANIC_ICON_WIDTH = 256, MECHANIC_ICON_HEIGHT = 256;
 // load-bearing the way relic icons' 256x256 is — it's chosen for authoring
 // consistency with Body sprite, not because the real game requires it.
 const PET_ART_WIDTH = 512, PET_ART_HEIGHT = 512;
+// [Round 295] Tyler: "add the ability to change the height of the pet" +
+// "show a 512px tall placeholder character silhouette behind the pet so
+// the player knows how large the pet is relative to a default character."
+// This reference height (and the silhouette itself) are an EDITOR-ONLY
+// authoring aid, not compiled/real game data — unlike PET_ART_WIDTH/HEIGHT
+// above, there's no evidence trail to cite here, it's just a visual ruler
+// so Tyler can eyeball a pet's onScreenHeight (schema/character.schema.json)
+// against a person-sized reference before compiling. PET_SIZE_PREVIEW_BOX_HEIGHT
+// is the on-screen CSS pixel height standing in for that 512px reference —
+// exactly half, so a pet's own onScreenHeight maps to the box via the same
+// simple *0.5 factor (see refreshPetSizePreview).
+const PET_SIZE_PREVIEW_REFERENCE_HEIGHT = 512;
+const PET_SIZE_PREVIEW_BOX_HEIGHT = 256;
 
 const chronicleGrid = document.getElementById('chronicles-grid');
 
@@ -16552,7 +16565,7 @@ function renderPets(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const p = { id: uid('pet'), name:'New Pet', description:'', abilityText:'', minInitialHp:10, maxInitialHp:10 };
+    const p = { id: uid('pet'), name:'New Pet', description:'', minInitialHp:10, maxInitialHp:10 };
     state.pets.push(p);
     save(); renderPets();
     openPetEditor(p.id);
@@ -16573,9 +16586,7 @@ function openPetEditor(petId){
       <div style="display:flex; gap:24px; align-items:stretch;">
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
-          <label style="margin-top:14px">Description / flavor text</label><textarea id="p-desc">${escapeHtml(p.description||'')}</textarea>
-          <label style="margin-top:14px">What it does (freeform — for your own notes; not wired to any real behavior)</label>
-          <textarea id="p-ability">${escapeHtml(p.abilityText||'')}</textarea>
+          <label style="margin-top:14px">Description / flavor text</label><textarea id="p-desc" style="flex:1; min-height:80px;">${escapeHtml(p.description||'')}</textarea>
           <div class="row" style="margin-top:14px">
             <div><label title="MonsterModel.MinInitialHp — real starting HP is randomized between this and Max, same as any monster.">Min starting HP</label><input type="number" id="p-min-hp" min="1" step="1" value="${Number.isFinite(p.minInitialHp) ? p.minInitialHp : 10}"></div>
             <div><label title="MonsterModel.MaxInitialHp">Max starting HP</label><input type="number" id="p-max-hp" min="1" step="1" value="${Number.isFinite(p.maxInitialHp) ? p.maxInitialHp : 10}"></div>
@@ -16611,6 +16622,20 @@ function openPetEditor(petId){
           <input type="file" class="art-upload-input" id="pet-art-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
           <div class="art-field-error" id="pet-art-error"></div>
           <div class="hint-small" style="margin-top:6px">No art uploaded uses the game's own placeholder visuals. Static only — no animation yet.</div>
+
+          <label style="margin-top:14px" title="[Round 295] How tall this pet renders in combat. [VERIFIED via decompiling &quot;The Trainer - New Character&quot;, claude/round290-pets-v2-real-source-research.md §1] 250 is the real game's own confirmed default (its Sprite2D scale AND its Bounds/CenterPos/IntentPos marker offsets are all computed from this one value). Only visible in-game once Art above is uploaded.">On-screen height (px)</label>
+          <input type="number" id="p-onscreen-height" min="1" step="1" value="${Number.isFinite(p.onScreenHeight) ? p.onScreenHeight : 250}">
+
+          <label style="margin-top:14px">Size preview</label>
+          <div id="pet-size-preview" style="position:relative; height:${PET_SIZE_PREVIEW_BOX_HEIGHT}px; max-width:160px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:rgba(127,127,127,0.06);">
+            <svg viewBox="0 0 100 200" preserveAspectRatio="xMidYMax meet" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); height:100%; width:auto; opacity:0.3; color:var(--text-dim, #888);">
+              <circle cx="50" cy="28" r="22" fill="currentColor"></circle>
+              <path d="M18 200 L18 118 Q18 66 50 66 Q82 66 82 118 L82 200 Z" fill="currentColor"></path>
+            </svg>
+            <img id="pet-size-pet-img" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); display:none; max-width:92%; object-fit:contain;">
+            <div id="pet-size-pet-placeholder" style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:55%; border-radius:45% 45% 30% 30%; background:var(--accent-bright, #4a9); opacity:0.5; display:none;"></div>
+          </div>
+          <div class="hint-small" style="margin-top:4px">vs. a ${PET_SIZE_PREVIEW_REFERENCE_HEIGHT}px-tall character (silhouette)</div>
         </div>
       </div>
     </div>
@@ -16630,6 +16655,38 @@ function openPetEditor(petId){
   const artUpload = document.getElementById('pet-art-upload');
   const artClear = document.getElementById('pet-art-clear');
   const artError = document.getElementById('pet-art-error');
+  const heightInput = document.getElementById('p-onscreen-height');
+  const sizePetImg = document.getElementById('pet-size-pet-img');
+  const sizePetPlaceholder = document.getElementById('pet-size-pet-placeholder');
+
+  // [Round 295] Live "how big is this next to a person" ruler — editor-only,
+  // see PET_SIZE_PREVIEW_REFERENCE_HEIGHT/PET_SIZE_PREVIEW_BOX_HEIGHT's own
+  // comment for why this has no real evidence trail to cite (it's not
+  // compiled data). Maps whatever's in the height field onto the fixed
+  // silhouette box by the same simple ratio the real CreateCustomVisuals()
+  // override itself will use once compiled (heightPx / reference), so this
+  // preview stays honest about relative scale even though its own pixel
+  // sizes are display-only.
+  function refreshPetSizePreview(){
+    const raw = parseFloat(heightInput.value);
+    const heightPx = Number.isFinite(raw) && raw > 0 ? raw : 250;
+    const displayPx = Math.max(2, (heightPx / PET_SIZE_PREVIEW_REFERENCE_HEIGHT) * PET_SIZE_PREVIEW_BOX_HEIGHT);
+    const url = pendingPetArtDataUrl !== undefined
+      ? pendingPetArtDataUrl
+      : findAssetDataUrl(p.artAssetRef, 'petArt');
+    if(url){
+      sizePetImg.src = url;
+      sizePetImg.style.height = displayPx + 'px';
+      sizePetImg.style.display = '';
+      sizePetPlaceholder.style.display = 'none';
+    } else {
+      sizePetImg.style.display = 'none';
+      sizePetImg.removeAttribute('src');
+      sizePetPlaceholder.style.height = displayPx + 'px';
+      sizePetPlaceholder.style.display = '';
+    }
+  }
+  heightInput.addEventListener('input', refreshPetSizePreview);
 
   function refreshPetArtPreview(){
     const url = pendingPetArtDataUrl !== undefined
@@ -16637,6 +16694,7 @@ function openPetEditor(petId){
       : findAssetDataUrl(p.artAssetRef, 'petArt');
     if(url){ artImg.src = url; artImg.style.display = ''; artPh.style.display = 'none'; artClear.style.display = ''; }
     else { artImg.style.display = 'none'; artImg.removeAttribute('src'); artPh.style.display = ''; artClear.style.display = 'none'; }
+    refreshPetSizePreview();
   }
   refreshPetArtPreview();
   artFrame.addEventListener('click', ()=> artUpload.click());
@@ -16675,13 +16733,19 @@ function openPetEditor(petId){
   document.getElementById('save-pet').onclick = ()=>{
     p.name = document.getElementById('p-name').value;
     p.description = document.getElementById('p-desc').value;
-    p.abilityText = document.getElementById('p-ability').value;
     p.minInitialHp = Math.max(1, Math.floor(parseFloat(document.getElementById('p-min-hp').value)) || 1);
     p.maxInitialHp = Math.max(p.minInitialHp, Math.floor(parseFloat(document.getElementById('p-max-hp').value)) || p.minInitialHp);
     p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;
     p.takesHitsForYou = document.getElementById('p-takes-hits').checked;
     const leavesRaw = Math.floor(parseFloat(document.getElementById('p-leaves-after-turns').value));
     if (Number.isFinite(leavesRaw) && leavesRaw >= 1) { p.leavesAfterTurns = leavesRaw; } else { delete p.leavesAfterTurns; }
+    // [Round 295] onScreenHeight — see that field's own schema description.
+    // Positive-number guard mirrors leavesAfterTurns' own pattern just
+    // above; an invalid/blank entry falls back to omitting the field
+    // entirely (backend/compiler.js:writePetArt then uses the confirmed
+    // real 250 default), same "omit rather than store garbage" convention.
+    const heightRaw = parseFloat(document.getElementById('p-onscreen-height').value);
+    if (Number.isFinite(heightRaw) && heightRaw > 0) { p.onScreenHeight = heightRaw; } else { delete p.onScreenHeight; }
     if(pendingPetArtDataUrl !== undefined){
       p.artAssetRef = commitAsset(pendingPetArtDataUrl, p.artAssetRef, 'petArt');
     }

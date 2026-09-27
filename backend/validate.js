@@ -2281,6 +2281,14 @@ function validateCharacterPackage(pkg) {
     if (pet.leavesAfterTurns !== undefined && (typeof pet.leavesAfterTurns !== 'number' || !Number.isInteger(pet.leavesAfterTurns) || pet.leavesAfterTurns < 1)) {
       errors.push(`${p}.leavesAfterTurns must be a positive whole number if present (omit it to have this pet stay for the whole fight).`);
     }
+    // [Round 295] "On-screen height" — see pet.onScreenHeight's own schema
+    // description for the full evidence trail (round 290's confirmed real
+    // `250f` CreateCustomVisuals() constant, now user-adjustable). Optional;
+    // omitted means backend/compiler.js:writePetArt falls back to that same
+    // confirmed 250 default.
+    if (pet.onScreenHeight !== undefined && (typeof pet.onScreenHeight !== 'number' || !Number.isFinite(pet.onScreenHeight) || pet.onScreenHeight <= 0)) {
+      errors.push(`${p}.onScreenHeight must be a positive number if present (omit it to use the default 250px).`);
+    }
   });
 
   // Enchantments/Afflictions — Round 95, Tyler: "Enchantments/Afflictions
