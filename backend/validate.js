@@ -2295,6 +2295,24 @@ function validateCharacterPackage(pkg) {
     if (pet.groundOffset !== undefined && (typeof pet.groundOffset !== 'number' || !Number.isFinite(pet.groundOffset))) {
       errors.push(`${p}.groundOffset must be a number if present (omit it or use 0 for normal ground-level placement).`);
     }
+    // [Round 299] "Arrives with" — see pet.arrivesWith's own schema
+    // description for the full evidence trail. Same shape/validation style
+    // as ModifyStatus's own custom-kind statusEntries[].ref check above
+    // (mechanicIds is the same Set built from pkg.mechanics, already in
+    // scope this whole function).
+    if (pet.arrivesWith !== undefined) {
+      if (!Array.isArray(pet.arrivesWith)) {
+        errors.push(`${p}.arrivesWith must be an array if present.`);
+      } else {
+        pet.arrivesWith.forEach((ref, ri) => {
+          if (!isNonEmptyString(ref)) {
+            errors.push(`${p}.arrivesWith[${ri}] must be a non-empty string (a mechanic id).`);
+          } else if (!mechanicIds.has(ref)) {
+            errors.push(`${p}.arrivesWith[${ri}] "${ref}" doesn't match any defined mechanic id.`);
+          }
+        });
+      }
+    }
   });
 
   // Enchantments/Afflictions — Round 95, Tyler: "Enchantments/Afflictions

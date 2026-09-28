@@ -2193,6 +2193,25 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const turnsResetLine = (Number.isInteger(pet.leavesAfterTurns) && pet.leavesAfterTurns > 0)
         ? `\n            ((${petCls})fgSummonedPet.Monster).TurnsRemaining = ${pet.leavesAfterTurns}; // [Round 293] refresh the "leaves after N turns" timer on every summon — matches the reference mod's own re-summon behavior`
         : '';
+      // [Round 299 — VERIFIED via Tyler's own uploaded full mod source,
+      // Cards/Bulbasaur.cs cross-checked against Charmander.cs/Squirtle.cs/
+      // Caterpie.cs] pet.arrivesWith — one HasPower-guarded PowerCmd.Apply<T>
+      // line per configured mechanic, appended after the Heal(...) call
+      // below so it runs on BOTH a genuinely fresh AddPet<T> and a revive
+      // (fgPetReviving true or false — this whole block is already inside
+      // the branch that excludes the already-alive/GainMaxHp case above),
+      // matching the real reference source's own placement exactly. The
+      // HasPower<T>() guard is real (ported verbatim) — it's what stops a
+      // re-summon of an already-out pet from double-stacking these, and per
+      // Tyler's own question ("i dont believe it reapplies the status on
+      // summon") is also exactly why an already-alive pet (the branch
+      // above, GainMaxHp) never gets these lines at all: that path never
+      // reaches this code.
+      const arrivesWithMechanicIds = Array.isArray(pet.arrivesWith) ? pet.arrivesWith : [];
+      const arrivesWithLines = arrivesWithMechanicIds.map(mechId => {
+        const cls = mechanicClassName(mechId);
+        return `\n                if (!fgSummonedPet.HasPower<${cls}>()) await MegaCrit.Sts2.Core.Commands.PowerCmd.Apply<${cls}>(choiceContext, fgSummonedPet, 1m, null, null); // [Round 299] see pet.arrivesWith's own schema description`;
+      }).join('');
       return `        {
             var fgSummonOwner = ${summonPlayerExpr};
             var fgExistingPet = fgSummonOwner.Creature.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgSummonOwner);
@@ -2215,7 +2234,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
                     fgSummonedPet = await MegaCrit.Sts2.Core.Commands.PlayerCmd.AddPet<${petCls}>(fgSummonOwner);${soakApplyLine}
                 }
                 await MegaCrit.Sts2.Core.Commands.CreatureCmd.SetMaxHp(fgSummonedPet, ${amountExpr});
-                await MegaCrit.Sts2.Core.Commands.CreatureCmd.Heal(fgSummonedPet, ${amountExpr}, fgPetReviving);
+                await MegaCrit.Sts2.Core.Commands.CreatureCmd.Heal(fgSummonedPet, ${amountExpr}, fgPetReviving);${arrivesWithLines}
             }
             // [VERIFIED via decompiling "The Trainer - New Character", round290 §4] AddPet's own internal ToggleIsInteractable call fires before HP is actually set — re-trigger now that it's real.
             MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance?.GetCreatureNode(fgSummonedPet)?.ToggleIsInteractable(fgSummonedPet.Monster.IsHealthBarVisible);${turnsResetLine}

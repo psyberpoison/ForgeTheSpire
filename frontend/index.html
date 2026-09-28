@@ -16744,6 +16744,13 @@ function openPetEditor(petId){
           <input type="number" id="p-ground-offset" step="1" style="max-width:140px" value="${Number.isFinite(p.groundOffset) ? p.groundOffset : 0}">
         </div>
       </div>
+      <div style="margin-top:14px">
+        <label title="[Round 299] Statuses this pet is granted, at 1 stack each, the moment it actually starts existing in combat — a fresh summon or a revive from a corpse (see 'Takes hits for you' above), never a re-summon of a pet that's already out and alive. [VERIFIED via Tyler's own uploaded full mod source, Cards/Bulbasaur.cs and 3 other starter cards] Click a status to toggle it on/off.">Arrives with</label>
+        <div class="kw-picker" id="pet-arrives-with-picker"></div>
+        <div class="panel-desc" style="margin-top:6px">
+          ${state.mechanics.length ? '' : 'No custom statuses defined yet — add some in the Statuses/Mechanics section.'}
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-pet">Delete</button>
@@ -16765,6 +16772,33 @@ function openPetEditor(petId){
   const groundOffsetInput = document.getElementById('p-ground-offset');
   const sizePetImg = document.getElementById('pet-size-pet-img');
   const sizePetPlaceholder = document.getElementById('pet-size-pet-placeholder');
+
+  // [Round 299] "Arrives with" — a toggleable pill/chip row over this
+  // character's own state.mechanics, same .kw-picker/.kw-chip pattern
+  // renderKeywordPickerInto() uses for card keywords (see that function's
+  // own header comment for the pattern's origin), just simpler: mechanics
+  // are already a flat list with no "custom overflow" problem to solve, so
+  // this renders every entry as its own chip directly rather than reusing
+  // renderKeywordPickerInto() itself (which is hardcoded to CARD_KEYWORDS'
+  // 7 built-ins + cardKeywords[] overflow — a different shape). Tracked in
+  // a local Set, committed to p.arrivesWith only on Save, same
+  // edit-a-copy-until-Save convention every other field in this modal
+  // already follows.
+  const arrivesWithSet = new Set(Array.isArray(p.arrivesWith) ? p.arrivesWith : []);
+  const arrivesWithPicker = document.getElementById('pet-arrives-with-picker');
+  function renderArrivesWithPicker(){
+    arrivesWithPicker.innerHTML = state.mechanics.map(m=>
+      `<button type="button" class="kw-chip${arrivesWithSet.has(m.id)?' active':''}" data-mech="${escapeAttr(m.id)}">${escapeHtml(m.name||'(unnamed)')}</button>`
+    ).join('');
+    arrivesWithPicker.querySelectorAll('.kw-chip[data-mech]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const id = btn.dataset.mech;
+        if(arrivesWithSet.has(id)) arrivesWithSet.delete(id); else arrivesWithSet.add(id);
+        btn.classList.toggle('active');
+      };
+    });
+  }
+  renderArrivesWithPicker();
 
   // [Round 295] Live "how big is this next to a person" ruler — editor-only,
   // see PET_SIZE_PREVIEW_REFERENCE_HEIGHT/PET_SIZE_PREVIEW_BOX's own
@@ -16895,6 +16929,11 @@ function openPetEditor(petId){
     // (backend/compiler.js:writePetArt's own fallback).
     const groundOffsetRaw = parseFloat(document.getElementById('p-ground-offset').value);
     if (Number.isFinite(groundOffsetRaw) && groundOffsetRaw !== 0) { p.groundOffset = groundOffsetRaw; } else { delete p.groundOffset; }
+    // [Round 299] "Arrives with" — see pet.arrivesWith's own schema
+    // description. Omitted (not an empty array) when nothing's picked,
+    // same "omit rather than store an empty default" convention
+    // leavesAfterTurns/groundOffset above already follow.
+    if (arrivesWithSet.size) { p.arrivesWith = Array.from(arrivesWithSet); } else { delete p.arrivesWith; }
     if(pendingPetArtDataUrl !== undefined){
       p.artAssetRef = commitAsset(pendingPetArtDataUrl, p.artAssetRef, 'petArt');
     }
