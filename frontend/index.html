@@ -16676,13 +16676,15 @@ function openPetEditor(petId){
       <div style="display:flex; gap:24px; align-items:stretch;">
         <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
           <label>Name</label><input type="text" id="p-name" value="${escapeAttr(p.name)}">
-          <div class="tagline" style="margin-top:14px">
-            <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
-            <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
-          </div>
-          <div class="tagline" style="margin-top:10px">
-            <input type="checkbox" id="p-takes-hits" ${p.takesHitsForYou ? 'checked' : ''}>
-            <label for="p-takes-hits" style="margin:0" title="Redirects unblocked attacks aimed at you onto this pet instead, while it's alive. [Round 293] Ported from a real, compiled reference mod's own VenusaurSoakPower — see claude/round290-pets-v2-real-source-research.md §2.">Takes hits for you</label>
+          <div style="display:flex; gap:20px; margin-top:14px;">
+            <div class="tagline" style="margin-top:0">
+              <input type="checkbox" id="p-health-bar-visible" ${p.isHealthBarVisible === false ? '' : 'checked'}>
+              <label for="p-health-bar-visible" style="margin:0" title="Shows a health bar above the pet in combat. On by default (the game's own default too).">Show health bar</label>
+            </div>
+            <div class="tagline" style="margin-top:0">
+              <input type="checkbox" id="p-takes-hits" ${p.takesHitsForYou ? 'checked' : ''}>
+              <label for="p-takes-hits" style="margin:0" title="Redirects unblocked attacks aimed at you onto this pet instead, while it's alive. [Round 293] Ported from a real, compiled reference mod's own VenusaurSoakPower — see claude/round290-pets-v2-real-source-research.md §2.">Takes hits for you</label>
+            </div>
           </div>
           <div style="margin-top:10px">
             <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
