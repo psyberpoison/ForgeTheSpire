@@ -9546,9 +9546,17 @@ const CONDITION_KINDS = [
   { id:'HasStatusStacks', label:'Has status stacks', real:true, hint:'' },
   { id:'HpBelowPercent', label:'HP', real:true,
     hint:'Checks the chosen creature\'s current HP as a percentage of max HP. Works everywhere, including inside the Glow section below.' },
-  { id:'EnergyRemaining', label:'Your energy remaining', real:true,
+  // [Round 311] Label was 'Your energy remaining' — baked-in "Your" was
+  // the ONLY way this kind ever got its correct grammar before round 310
+  // added an always-visible subject word in front of every kind's label.
+  // Now that subject word (locked to "You" here, since this is always the
+  // player's own energy) supplies the possessive itself (see
+  // subjectOptionLabel's EnergyRemaining branch below), so the label's
+  // own baked-in "Your" is dropped to avoid "You Your energy remaining".
+  { id:'EnergyRemaining', label:'energy remaining', real:true,
     hint:'Checks your current Energy. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook.' },
-  { id:'StarsRemaining', label:'Your stars remaining', real:true,
+  // [Round 311] Same fix as EnergyRemaining directly above.
+  { id:'StarsRemaining', label:'stars remaining', real:true,
     hint:'Checks your current Stars — distinct from a card\'s own star cost. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook.' },
   { id:'CardsInHand', label:'Cards in hand', real:true,
     hint:'Counts your current hand size. Works wherever a card\'s own effects run (OnPlay, OnAnyCardPlayed) and on a relic/mechanic\'s OnAnyCardPlayed hook; not available on a relic/mechanic\'s "on take damage" hook, same as Energy/Stars remaining.' },
@@ -9603,11 +9611,17 @@ const CONDITION_KINDS = [
     hint:'Checks whether Any (at least one) or All of the cards currently in your hand are a given type. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'AttacksPlayedThisTurn', label:'Attacks played this turn', real:true,
     hint:'Counts how many Attack-type cards you\'ve finished playing so far this turn. Valid on every trigger, and inside the Glow section below, same as "Cards played this turn".' },
-  { id:'OrbSlotCount', label:'Your orb slot count', real:true, requiresTrigger:'anyRealTrigger',
+  // [Round 311] Same "Your"-was-baked-in-until-round-310-added-a-real-
+  // subject-word fix as EnergyRemaining/StarsRemaining above.
+  { id:'OrbSlotCount', label:'orb slot count', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks your current orb slot count. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'EnemyIntent', label:"Enemy's intent is", real:true, requiresTrigger:'cardPlayBound',
     hint:'Checks the card\'s target\'s next move for an Attack or Defend intent (the only two intent types currently offered here). Needs a target in scope — valid on "OnPlay" and "OnAnyCardPlayed" only.' },
-  { id:'HasSpecificRelic', label:'You have relic', real:true, requiresTrigger:'anyRealTrigger',
+  // [Round 311] Label was 'You have relic' — same baked-in-pronoun issue
+  // as EnergyRemaining/StarsRemaining/OrbSlotCount above, just a verb
+  // phrase ("You have...") instead of a possessive noun phrase. Now
+  // "have relic" plus the always-locked "You" subject word.
+  { id:'HasSpecificRelic', label:'have relic', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether you currently hold a specific relic from this character\'s own relics list. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'NoCopiesOfCardInHand', label:'No copies of card in hand', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks that no copy of a specific card from this character\'s own cards list is currently in your hand. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
@@ -13268,19 +13282,53 @@ function availableConditionKinds(eff){
 // should also change to 'your' if you select 'HP below' or 'energy
 // remaining'." Two small helpers so renderConditionRowFields can swap just
 // the word/option-label that changes, rather than duplicating label text
-// per subject. EnergyRemaining's subject dropdown (see needsSubject below
-// — [Round 310] now shown for every kind, but locked to just "You" for
-// EnergyRemaining specifically, since it's always the player's own
-// energy) is never anything but "You," so its "Your energy remaining"
-// label above is a plain static string, not something either helper
-// needs to touch.
+// per subject.
+// [Round 311] Tyler, shown "IF [You] [Cards in hand] [≥] [1]": "change
+// 'you' to 'your' so it makes sense grammatically... you don't have to
+// update the dropdown, just what it shows visually in the sentence."
+// Round 310 started always showing a subject word in front of EVERY
+// kind's label, not just the historically subject-capable ones — surveyed
+// every kind's rendered sentence under the locked/default "You" subject
+// (same "go through all of them" thoroughness round 309 already
+// established) rather than fixing only the one example shown, and found
+// three distinct shapes:
+//  (A) "have/has X" verb-phrase kinds — pronoun subject
+//      ("You"/"Target"/"Pet") is already correct, only "Has"/"Have"
+//      itself needs to agree. HasStatusStacks already had
+//      hasStatusStacksLabel below; HasBlock needed the exact same
+//      treatment (hasBlockLabel below). HasSpecificRelic is verb-shaped
+//      too ("[You] have relic") but always locked to "You" (never
+//      subject-capable), so its own label text just needed its
+//      redundant baked-in "You" dropped — see that kind's own
+//      CONDITION_KINDS entry.
+//  (B) possessive noun-phrase kinds — the subject word itself needs to
+//      switch to "Your"/"Target's"/"Pet's". HpBelowPercent already had
+//      this (below); this round adds every other kind shaped the same
+//      way, in the POSSESSIVE_SUBJECT_CONDITION_KINDS list below —
+//      including CardsInHand (Tyler's own example) and
+//      EnergyRemaining/StarsRemaining/OrbSlotCount, whose own labels
+//      used to bake "Your" INTO the label text (the only way they ever
+//      got correct grammar before round 310 added a real subject word)
+//      — that baked-in "Your" is now dropped from their own
+//      CONDITION_KINDS entries so this mechanism can supply it instead,
+//      without duplicating it ("You Your energy remaining").
+//  (C) already-complete sentences — DamageBrokeBlock ("This card's
+//      damage broke the target's block"), EnemyIntent ("Enemy's intent
+//      is..."), NoCopiesOfCardInHand ("No copies of card in hand...") —
+//      where NEITHER "You" nor "Your" reads naturally immediately in
+//      front ("You This card's damage broke..." and "Your This card's
+//      damage broke..." are both wrong). Deliberately left rendering
+//      their current plain pronoun subject ("You") — a real remaining
+//      rough edge, but not one a mechanical you/your swap actually
+//      fixes, so nothing was guessed at here for these three.
+const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PetPositionIs'];
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
-  // front of a possessed noun — HpBelowPercent ("...HP below X%") is the
-  // only subject-capable kind shaped like that today. HasStatusStacks
-  // ("[You] have status stacks") wants the plain subject pronoun instead,
-  // handled by hasStatusStacksLabel below.
-  if(cond.kind === 'HpBelowPercent'){
+  // front of a possessed noun — see POSSESSIVE_SUBJECT_CONDITION_KINDS'
+  // own comment above. HasStatusStacks/HasBlock ("[You] have status
+  // stacks"/"[You] have block") want the plain subject pronoun instead,
+  // handled by hasStatusStacksLabel/hasBlockLabel below.
+  if(POSSESSIVE_SUBJECT_CONDITION_KINDS.includes(cond.kind)){
     if(subject.id === 'Self') return 'Your';
     return subject.label + "'s";
   }
@@ -13290,6 +13338,15 @@ function hasStatusStacksLabel(cond){
   // "Has status stacks" agrees with Target/Pet ("Target has..."); "You"
   // takes "Have status stacks" instead ("You have...", not "You has...").
   return cond.subject === 'Self' ? 'Have status stacks' : 'Has status stacks';
+}
+// [Round 311] Same Has/Have agreement as hasStatusStacksLabel above,
+// for HasBlock specifically — this kind has been subject-capable (with a
+// real "You" option) since long before round 310, so "You Has block" was
+// already reachable and already wrong; round 310 just made "You" show up
+// in front of every OTHER kind too, which is what actually surfaced it
+// during this round's survey.
+function hasBlockLabel(cond){
+  return cond.subject === 'Self' ? 'Have block' : 'Has block';
 }
 // [Round 55] Tyler: "adding another target of [this card]... creating the
 // rest of the sentence with 'is in the [leftmost/rightmost] position.'
@@ -13451,7 +13508,7 @@ function renderConditionRowFields(row, cond, eff){
     <div class="condition-row-main">
       <span class="cond-word cond-if">If</span>
       ${needsSubject ? `<select class="c-subject" title="Which creature (or, for Position in hand, which card) to check.">${subjects.map(s=>`<option value="${s.id}" ${s.id===cond.subject?'selected':''} title="${escapeAttr(s.title||s.label)}">${escapeHtml(subjectOptionLabel(s, cond))}</option>`).join('')}</select>` : ''}
-      <select class="c-kind">${kinds.map(k=>`<option value="${k.id}" ${k.id===cond.kind?'selected':''}>${escapeHtml(k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond) : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond) : k.label)}</option>`).join('')}</select>
+      <select class="c-kind">${kinds.map(k=>`<option value="${k.id}" ${k.id===cond.kind?'selected':''}>${escapeHtml(k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond) : k.id==='HasBlock' ? hasBlockLabel(cond) : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond) : k.label)}</option>`).join('')}</select>
       ${needsPetIsOutRef ? `<span class="cond-word" style="opacity:.6">—</span><select class="c-petisout-ref" title="${petIsOutSpecificPetAllowed ? 'Which pet to check for — leave on &quot;Any pet&quot; to check whether ANY of your pets is currently summoned.' : 'Checking for one specific pet needs a real relic/mechanic/card effect-block trigger — not available in Glow/Playability or a Group B modifier hook. Only &quot;Any pet&quot; is offered here.'}">
         <option value="${PET_ANY_SENTINEL}" ${(!cond.petRef || cond.petRef===PET_ANY_SENTINEL)?'selected':''}>Any pet</option>
         ${petIsOutSpecificPetAllowed ? state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('') : ''}
