@@ -9896,6 +9896,22 @@ const THAT_CARD_ONLY_CONDITION_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTa
 // own separate, OPTIONAL `petRef` field (see CONDITION_KINDS' own entry
 // and renderConditionRowFields' needsPetIsOutRef below).
 const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', 'PetIsOut', ...THAT_CARD_ONLY_CONDITION_KINDS];
+// [Round 308] Tyler, shown the full kind dropdown under subject "Pet":
+// "which ones make sense to have the subject be 'pet'?" Checked against
+// backend/compiler.js's OWN (deliberately narrower) SUBJECT_CAPABLE_
+// CONDITION_KINDS — the only 4 kinds whose compiled codegen ever actually
+// reads cond.subject at all, each resolving it to a real per-creature
+// member (fgPet!.CurrentHp/MaxHp, .Block, .Powers, GetStatusStacks<T>) —
+// every other kind, including the 11 previously left reachable here by
+// the generic `!isCardSubject` fallback (Your energy remaining, Cards in
+// hand, Enemy's intent is, Pet position is — which already has its own
+// dedicated petRef picker from round 303 and ignores subject too, etc.),
+// compiles byte-identically no matter what subject is selected, so
+// letting them show under subject "Pet" was pure noise, not a real
+// pet-scoped check. PetIsOut ("is summoned") is a real, correct exception
+// to this list — it's already handled by its own dedicated branch below,
+// which is why it isn't repeated here.
+const PET_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -9941,6 +9957,17 @@ function conditionKindsForSubject(eff, subject){
     // the UI flow, not for compiled output" precedent CardPositionInHand
     // already established, see that kind's own comment elsewhere).
     if(k.id === 'PetIsOut') return subject === 'Pet';
+    // [Round 308] Tyler: "which ones make sense to have the subject be
+    // 'pet'?" — see PET_SUBJECT_CONDITION_KINDS' own comment above. Only
+    // the 4 real per-creature stat kinds (plus PetIsOut, already handled
+    // above) actually mean anything different under subject "Pet"; every
+    // other kind ignores cond.subject entirely in backend/compiler.js, so
+    // showing them here was pure noise. This mirrors CardPositionInHand's
+    // own isCardSubject narrowing two branches up — subject "Pet" now
+    // narrows the kind list exactly the same way "This/That Card" already
+    // does, instead of falling through to the generic !isCardSubject
+    // (effectively "show everything") case below.
+    if(subject === 'Pet') return PET_SUBJECT_CONDITION_KINDS.includes(k.id);
     // Every other kind (HasStatusStacks, HpBelowPercent, etc.) is a
     // creature-subject kind, not a card-subject one — the original
     // isCardSubject-ternary here hid ALL of them once a card subject
