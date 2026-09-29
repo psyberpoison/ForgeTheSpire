@@ -9925,7 +9925,21 @@ const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'H
 // pet-scoped check. PetIsOut ("is summoned") is a real, correct exception
 // to this list — it's already handled by its own dedicated branch below,
 // which is why it isn't repeated here.
-const PET_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
+// [Round 312] Renamed from PET_SUBJECT_CONDITION_KINDS — round 310
+// briefly locked the subject dropdown itself to a single "You" option for
+// any kind not in this list, as a different way of avoiding the same
+// "fake choice" problem; Tyler pushed back ("don't remove the option to
+// select a different subject... just reset the conditional to the first
+// valid condition" — see renderConditionRowFields' own subjects comment),
+// so the dropdown is unrestricted again and THIS list is now the only
+// thing keeping the fake-choice problem from coming back, applied to
+// "Target" (CardTarget) the same way it was already applied to "Pet" —
+// resolveConditionSubjectExpr('CardTarget') resolves to the exact same
+// `fgTarget!` these 4 kinds already read via `resolveConditionSubjectExpr
+// (cond.subject)` uniformly, a real per-creature member on the CARD'S
+// TARGET this time instead of the pet — same real mechanism, different
+// creature, so the same 4-kind list applies unchanged.
+const CREATURE_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -9971,17 +9985,25 @@ function conditionKindsForSubject(eff, subject){
     // the UI flow, not for compiled output" precedent CardPositionInHand
     // already established, see that kind's own comment elsewhere).
     if(k.id === 'PetIsOut') return subject === 'Pet';
-    // [Round 308] Tyler: "which ones make sense to have the subject be
-    // 'pet'?" — see PET_SUBJECT_CONDITION_KINDS' own comment above. Only
-    // the 4 real per-creature stat kinds (plus PetIsOut, already handled
-    // above) actually mean anything different under subject "Pet"; every
-    // other kind ignores cond.subject entirely in backend/compiler.js, so
-    // showing them here was pure noise. This mirrors CardPositionInHand's
-    // own isCardSubject narrowing two branches up — subject "Pet" now
-    // narrows the kind list exactly the same way "This/That Card" already
-    // does, instead of falling through to the generic !isCardSubject
-    // (effectively "show everything") case below.
-    if(subject === 'Pet') return PET_SUBJECT_CONDITION_KINDS.includes(k.id);
+    // [Round 308, widened Round 312] Tyler: "which ones make sense to
+    // have the subject be 'pet'?" — see CREATURE_SUBJECT_CONDITION_KINDS'
+    // own comment above. Only the 4 real per-creature stat kinds (plus
+    // PetIsOut, already handled above) actually mean anything different
+    // under subject "Pet" or "Target"; every other kind ignores
+    // cond.subject entirely in backend/compiler.js, so showing them here
+    // was pure noise. This mirrors CardPositionInHand's own isCardSubject
+    // narrowing two branches up — subject "Pet"/"Target" now narrow the
+    // kind list exactly the same way "This/That Card" already does,
+    // instead of falling through to the generic !isCardSubject
+    // (effectively "show everything") case below. [Round 312] Widened
+    // from Pet-only to also cover CardTarget — with the subject dropdown
+    // itself unrestricted again (see renderConditionRowFields' own
+    // comment), "Target" can now be picked from ANY kind's subject
+    // dropdown, including EnergyRemaining/CardsInHand/etc., so this
+    // narrowing has to apply there too or "Target's energy remaining"
+    // (compiling byte-identically to "Your energy remaining," since
+    // EnergyRemaining never reads cond.subject) becomes reachable again.
+    if(subject === 'Pet' || subject === 'CardTarget') return CREATURE_SUBJECT_CONDITION_KINDS.includes(k.id);
     // Every other kind (HasStatusStacks, HpBelowPercent, etc.) is a
     // creature-subject kind, not a card-subject one — the original
     // isCardSubject-ternary here hid ALL of them once a card subject
@@ -13479,16 +13501,34 @@ function renderConditionRowFields(row, cond, eff){
   // Fixed by always rendering the subject dropdown, for every kind, so
   // its position in the row (leftmost, before kind — the same
   // left-to-right order every subject-capable kind already uses) never
-  // changes. For a kind that's genuinely never subject-capable (no real
-  // Target/Pet variant exists — see the comment block above), the
-  // dropdown now shows exactly one real option, "You" — never a fake
-  // Target/Pet choice that would silently do nothing, matching round
-  // 308's own "don't offer what compiles to nothing" principle, just
-  // applied from the subject side instead of the kind side this time.
+  // changes.
+  // [Round 312] Round 310's fix above locked the dropdown to a single
+  // "You" option for a kind with no real Target/Pet variant (EnergyRemaining,
+  // etc.) — Tyler, shown that single-option dropdown: "don't remove the
+  // option to select a different subject. if the user wants to swap
+  // subjects then let them. just reset the conditional to the first
+  // valid condition." So the dropdown now always offers the FULL real
+  // subject list (availableSubjects(eff, cond.kind), same call every
+  // subject-capable kind already used — nothing kind-specific about it,
+  // since availableSubjects only special-cases PetIsOut and the
+  // ThisCard/ThatCard onlyForKind gates, neither of which depend on
+  // cond.kind being subject-capable). Picking a subject the CURRENT kind
+  // doesn't actually support (e.g. "Target" while on "Energy remaining")
+  // is handled by the existing .c-subject onchange handler further below
+  // — completely unchanged by this round — which already resets to the
+  // first kind conditionKindsForSubject(eff, newSubject) still considers
+  // valid, exactly the "reset the conditional to the first valid
+  // condition" Tyler asked for here. Staying honest about what's real is
+  // still enforced, just one level down: conditionKindsForSubject (see
+  // its own CREATURE_SUBJECT_CONDITION_KINDS comment) is what stops
+  // "Energy remaining" from ever being a valid KIND once subject "Target"
+  // or "Pet" is actually picked, so the fake "Target's energy remaining"
+  // combination this round's fix could otherwise re-introduce never gets
+  // a chance to render — round 308's "don't offer what compiles to
+  // nothing" principle now lives in the kind list, not in restricting
+  // which subjects are even selectable.
   const needsSubject = true;
-  const subjectCapableForKind = SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind);
-  const SELF_ONLY_SUBJECT = [CONDITION_SUBJECTS.find(s => s.id === 'Self')];
-  const subjects = subjectCapableForKind ? availableSubjects(eff, cond.kind) : SELF_ONLY_SUBJECT;
+  const subjects = availableSubjects(eff, cond.kind);
   // Merged status picker — Tyler's example ("If [you] [have status stacks]
   // of [strength] [=][5]") shows ONE status choice, not a separate
   // vanilla/custom toggle beside it. A searchable combobox, not a plain
