@@ -9689,19 +9689,27 @@ const CONDITION_KINDS = [
   // relic/mechanic/card effect-block trigger, not Glow/Playability or a
   // Group B modifier hook (no live per-instance Allies concept there).
   // [Round 315] Tyler, shown "IF Your Pet position is Bulbasaur is in 1
-  // (1st)": "this is not proper". The row renders subject, then this kind
-  // label, then the petRef select (the actual pet name, e.g. Bulbasaur),
-  // then a literal "is in" span, then the position number -- so the old
-  // label 'Pet position is' put a second "is" right before the "is in"
-  // span with the pet's NAME sandwiched in between, reading as if the
-  // position literally equals the pet's name. Relabeled to the bare noun
-  // 'pet' and reworded the trailing span from "is in" to "is in position"
-  // (see renderConditionRowFields) so the fields read left to right as
-  // one real sentence with normal spacing between every field (no
-  // apostrophe-s needed, which would've butted up against the petRef
-  // select with an unwanted gap from the row's flex layout): "Your pet
-  // Bulbasaur is in position 1 (1st)".
-  { id:'PetPositionIs', label:'pet', real:true, requiresTrigger:'anyRealTrigger',
+  // (1st)": "this is not proper". Round 315 fixed the double-"is" by
+  // relabeling this to the bare noun 'pet' and rewording the trailing
+  // span to "is in position" -- but that left this kind reachable ONLY
+  // under subject "Self" (conditionKindsForSubject had no PetPositionIs
+  // branch, so it fell through to the generic "!isCardSubject" case,
+  // which is true for "Self" and false for "Pet"/"CardTarget" -- see that
+  // function's own comment). Tyler: "that moved the pet position
+  // condition to the 'you' category. bring it back to pet."
+  // [Round 316] Gave PetPositionIs its own conditionKindsForSubject
+  // branch, same shape as PetIsOut's ("only real under subject 'Pet'") --
+  // this condition is fundamentally about one of THIS character's own
+  // pets, never "you," so "Pet" is now the only subject it's ever offered
+  // under (also removed from POSSESSIVE_SUBJECT_CONDITION_KINDS, so the
+  // subject reads plain "Pet," not "Pet's"). With subject now always
+  // "Pet," a label of bare 'pet' would repeat it ("Pet pet Bulbasaur...");
+  // relabeled again to the self-contained verb phrase 'is in position',
+  // and moved the specific-pet select to a trailing "—" refinement AFTER
+  // the number, the exact same visual pattern PetIsOut already uses for
+  // "which one" (see needsPetPositionRef in renderConditionRowFields):
+  // "Pet is in position 1 (1st) — Bulbasaur".
+  { id:'PetPositionIs', label:'is in position', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether a specific one of this character\'s own pets currently sits in a given position (1st/2nd/3rd...), matching the same left-to-right order pets visually line up in on screen. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
 ];
 // Whether a condition kind's `requiresTrigger` is satisfiable];
@@ -10010,6 +10018,16 @@ function conditionKindsForSubject(eff, subject){
     // the UI flow, not for compiled output" precedent CardPositionInHand
     // already established, see that kind's own comment elsewhere).
     if(k.id === 'PetIsOut') return subject === 'Pet';
+    // [Round 316] Tyler: "that moved the pet position condition to the
+    // 'you' category. bring it back to pet." Same treatment as PetIsOut
+    // directly above -- PetPositionIs always checks one of THIS
+    // character's own pets (via its own petRef select, rendered as a
+    // trailing refinement in renderConditionRowFields), so "Pet" is the
+    // only subject it ever makes sense under; without this branch it fell
+    // through to the generic creature-kind case below, which only shows
+    // PetPositionIs under subject "Self" (`!isCardSubject`) since it was
+    // never added to CREATURE_SUBJECT_CONDITION_KINDS either.
+    if(k.id === 'PetPositionIs') return subject === 'Pet';
     // [Round 308, widened Round 312] Tyler: "which ones make sense to
     // have the subject be 'pet'?" — see CREATURE_SUBJECT_CONDITION_KINDS'
     // own comment above. Only the 4 real per-creature stat kinds (plus
@@ -13374,7 +13392,15 @@ function availableConditionKinds(eff){
 //      "[You] have no copies of card in hand" is a real sentence once
 //      "have" is part of the label instead of missing entirely. See that
 //      kind's own CONDITION_KINDS entry.
-const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PetPositionIs'];
+//      [Round 316] PetPositionIs removed from this list — it's now gated
+//      to subject "Pet" only (see conditionKindsForSubject's own
+//      PetPositionIs branch), and "Pet's" read as redundant right in
+//      front of its own 'is in position' label. Subject now renders the
+//      plain, non-possessive "Pet" for this kind (falls through to
+//      subjectOptionLabel's final `return subject.label` below) — the
+//      specific pet's NAME is what carries the "whose" information, via
+//      its own trailing petRef select, same as PetIsOut.
+const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck'];
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
   // front of a possessed noun — see POSSESSIVE_SUBJECT_CONDITION_KINDS'
@@ -13614,12 +13640,11 @@ function renderConditionRowFields(row, cond, eff){
       </select>
       <span class="cond-word">position</span>
       <span class="cond-word c-hand-position-preview" style="opacity:.75; font-style:italic" title="Live preview — if you select 1st from the left, the card preview says leftmost so you can verify it.">${handPositionPreviewText(cond.edge, cond.position)}</span>` : ''}
-      ${needsPetPositionRef ? (state.pets.length
-        ? `<select class="c-pet-position-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
-        : `<select class="c-pet-position-ref" disabled><option value="">— no pets defined yet —</option></select>`) : ''}
-      ${needsPetPositionRef ? `<span class="cond-word">is in position</span>
-      <input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = leftmost/first-summoned, matching the same order pets line up in on screen.">
+      ${needsPetPositionRef ? `<input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = leftmost/first-summoned, matching the same order pets line up in on screen.">
       <span class="cond-word c-pet-position-preview" style="opacity:.75; font-style:italic">(${ordinal(cond.position||1)})</span>` : ''}
+      ${needsPetPositionRef ? (state.pets.length
+        ? `<span class="cond-word" style="opacity:.6">—</span><select class="c-pet-position-ref" title="Which of this character's own pets to check the position of.">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word" style="opacity:.6">—</span><select class="c-pet-position-ref" disabled><option value="">— no pets defined yet —</option></select>`) : ''}
       <button class="ghost c-remove">✕</button>
     </div>
     ${needsStatusRef && !isVanillaStatus && !mechanicOpts.length ? `<div class="hint-small" style="color:var(--danger-bright)">No custom mechanics defined yet — define one first, or pick a Vanilla status from the dropdown above instead.</div>` : ''}
