@@ -9688,7 +9688,20 @@ const CONDITION_KINDS = [
   // HasSpecificRelic/NoCopiesOfCardInHand right above -- real on any
   // relic/mechanic/card effect-block trigger, not Glow/Playability or a
   // Group B modifier hook (no live per-instance Allies concept there).
-  { id:'PetPositionIs', label:'Pet position is', real:true, requiresTrigger:'anyRealTrigger',
+  // [Round 315] Tyler, shown "IF Your Pet position is Bulbasaur is in 1
+  // (1st)": "this is not proper". The row renders subject, then this kind
+  // label, then the petRef select (the actual pet name, e.g. Bulbasaur),
+  // then a literal "is in" span, then the position number -- so the old
+  // label 'Pet position is' put a second "is" right before the "is in"
+  // span with the pet's NAME sandwiched in between, reading as if the
+  // position literally equals the pet's name. Relabeled to the bare noun
+  // 'pet' and reworded the trailing span from "is in" to "is in position"
+  // (see renderConditionRowFields) so the fields read left to right as
+  // one real sentence with normal spacing between every field (no
+  // apostrophe-s needed, which would've butted up against the petRef
+  // select with an unwanted gap from the row's flex layout): "Your pet
+  // Bulbasaur is in position 1 (1st)".
+  { id:'PetPositionIs', label:'pet', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether a specific one of this character\'s own pets currently sits in a given position (1st/2nd/3rd...), matching the same left-to-right order pets visually line up in on screen. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
 ];
 // Whether a condition kind's `requiresTrigger` is satisfiable];
@@ -13604,7 +13617,7 @@ function renderConditionRowFields(row, cond, eff){
       ${needsPetPositionRef ? (state.pets.length
         ? `<select class="c-pet-position-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<select class="c-pet-position-ref" disabled><option value="">— no pets defined yet —</option></select>`) : ''}
-      ${needsPetPositionRef ? `<span class="cond-word">is in</span>
+      ${needsPetPositionRef ? `<span class="cond-word">is in position</span>
       <input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = leftmost/first-summoned, matching the same order pets line up in on screen.">
       <span class="cond-word c-pet-position-preview" style="opacity:.75; font-style:italic">(${ordinal(cond.position||1)})</span>` : ''}
       <button class="ghost c-remove">✕</button>
