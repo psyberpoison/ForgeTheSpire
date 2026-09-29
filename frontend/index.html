@@ -12187,6 +12187,16 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
   // off `entity` because for an upgrade tier, `entity` is the tier mirror
   // object (tierEntities[i]), not the card itself — costsX is a whole-
   // card property. See renderActionRows/renderActionRowFields' xEligible.
+  //
+  // [Round 304] cardIsSingleTarget — same "read off costsXCard, not
+  // entity" reasoning as costsX above (a card's own top-level `target`
+  // field is whole-card too, not per-upgrade-tier, and costsXCard is
+  // undefined for relics/mechanics, which have no `target` field at all).
+  // Tyler: "if the target of the card is single target, this should say
+  // 'this card's target' instead of 'an enemy'" — threaded down into
+  // every action row's own target dropdown (ACTION_TARGET_LABELS) so a
+  // "SingleEnemy" option reads correctly wherever it's offered.
+  const cardIsSingleTarget = !!(costsXCard && costsXCard.target === 'SingleEnemy');
   listElId = listElId || 'effects-list';
   const list = document.getElementById(listElId);
   // [Round 219] Passive is a real trigger CHOICE (HOOK_TRIGGERS) that
@@ -12453,7 +12463,7 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       elseLabelEl.textContent = hasConditions
         ? 'Else (optional — runs instead, only when the condition(s) above are false):'
         : 'Else — add a condition above first; there\'s nothing to be the opposite of yet.';
-      renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
+      renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget);
     };
     const refreshConditions = ()=>{
       // A condition kind can be restricted to one specific trigger (only
@@ -12556,8 +12566,8 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       // fixTriggerForPile()/the pile <select>'s own onchange above.)
       fixReturnToHandActions(eff.actions, returnToHandEligibleNow());
       fixReturnToHandActions(eff.elseActions, returnToHandEligibleNow());
-      renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
-      renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
+      renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget);
+      renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget);
     };
     if(useBubblePicker){
       renderTriggerPicker(block.querySelector('.eb-trigger-picker'), triggerOptionsForPile(), eff.trigger, onTriggerChanged);
@@ -12575,9 +12585,9 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       renderConditionRows(eff, condListEl, onConditionsChanged);
     };
     block.querySelector('.eb-remove').onclick = ()=>{ entity.effects.splice(i,1); renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic); };
-    block.querySelector('.eb-add-action').onclick = ()=>{ eff.actions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow()); };
-    block.querySelector('.eb-add-else-action').onclick = ()=>{ eff.elseActions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow()); };
-    renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow());
+    block.querySelector('.eb-add-action').onclick = ()=>{ eff.actions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget); };
+    block.querySelector('.eb-add-else-action').onclick = ()=>{ eff.elseActions.push(defaultActionForTrigger(eff.trigger)); renderActionRows(eff.elseActions, elseListEl, xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget); };
+    renderActionRows(eff.actions, block.querySelector('.eb-actions'), xEligibleNow(), xStarEligibleNow(), eff.trigger, returnToHandEligibleNow(), cardIsSingleTarget);
     onConditionsChanged();
   });
   if(showPile) updateAdvancedOptionsSummary(costsXCard);
@@ -13714,14 +13724,29 @@ const ACTION_TARGET_LABELS = {
   Self: 'Yourself',
   RandomEnemy: 'A Random Enemy',
 };
-function targetOptList(actionType, selected, trigger, mode){
+function targetOptList(actionType, selected, trigger, mode, cardIsSingleTarget){
   // Round 23 — hiddenTargetsForTrigger's exclusions never apply to the
   // CURRENTLY selected target, same "an already-saved value still renders
   // as itself" rule actionTypeOptList already follows — fixActionTargetForTrigger
   // is what actually repairs a stale mismatch, not this filter.
   const hidden = hiddenTargetsForTrigger(actionType, mode, trigger);
+  // [Round 304] Tyler, re: the PetAttack sentence editor screenshot: "if
+  // the target of the card is single target, this should say 'this
+  // card's target' instead of 'an enemy'". Backed by compiler.js's
+  // resolveTargetExpr: an action's own 'SingleEnemy' target choice always
+  // compiles to `fgTarget!` (the card's own bound target from
+  // cardPlay.Target) — it never means "pick a fresh enemy" — so on a
+  // card whose own top-level target is already SingleEnemy, the action's
+  // SingleEnemy option is genuinely just re-stating "this card's target,"
+  // and the old "An Enemy" wording was misleading (reads like a second,
+  // independent enemy pick). Only overrides that one option's label, and
+  // only when cardIsSingleTarget is true; every other context (relics,
+  // mechanics, non-SingleEnemy-target cards) is unaffected.
   return validTargetsForAction(actionType).filter(v => v === selected || !hidden.has(v))
-    .map(v=>`<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(ACTION_TARGET_LABELS[v] || v)}</option>`).join('');
+    .map(v=>{
+      const label = (v === 'SingleEnemy' && cardIsSingleTarget) ? "This Card's Target" : (ACTION_TARGET_LABELS[v] || v);
+      return `<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(label)}</option>`;
+    }).join('');
 }
 // Inline sentence-dropdown labels for `mode` — Tyler's "present a box in
 // the easy to read sentence for [add/remove]" (ModifyStatus) / "a dropdown
@@ -14103,14 +14128,14 @@ function sanitizeAllActionDefaults(){
 // else deal 5" ask). Was `renderActionRows(eff, container)`, hardcoded to
 // `eff.actions` — generalized so the exact same row rendering/wiring code
 // serves both lists instead of a second, drift-prone copy.
-function renderActionRows(actions, container, xEligible, xStarEligible, trigger, returnToHandEligible){
+function renderActionRows(actions, container, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget){
   container.innerHTML = '';
   actions.forEach((act, j)=>{
     ensureActionRefDefaults(act);
     const row = document.createElement('div');
     row.className = 'action-row';
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     container.appendChild(row);
   });
 }
@@ -14125,7 +14150,7 @@ function renderActionRows(actions, container, xEligible, xStarEligible, trigger,
 // offered at all on this row: a card whose own costsX is true, inside
 // that SAME card's own OnPlay effect block (mirrors backend/validate.js
 // exactly). Always false for relics/mechanics and for any other trigger.
-function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible){
+function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget){
   const needsStatusPicker = actionNeedsStatusPicker(act.type);
   const modePair = actionModePair(act.type);
   // ModifyStatus's Add/Remove mode gates several things below (amount UX,
@@ -14240,7 +14265,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // type-change handler in wireActionRowHandlers regardless of whether a
   // selector is shown for it here.
   const hidesTarget = PLAYER_ONLY_ACTIONS.includes(act.type) || SELF_ONLY_ACTIONS.includes(act.type);
-  const targetHtml = hidesTarget ? '' : `<select class="a-target as-target">${targetOptList(act.type, act.target, trigger, act.mode)}</select>`;
+  const targetHtml = hidesTarget ? '' : `<select class="a-target as-target">${targetOptList(act.type, act.target, trigger, act.mode, cardIsSingleTarget)}</select>`;
   // scaleToggleHtml/scaleExtensionHtml stay exactly as they were for the
   // OTHER scale-capable types (GainBlock/ModifyHp/ModifyStatus) — inline
   // "per stack" checkbox + trailing "of X on Y." clause, unchanged.
@@ -14652,7 +14677,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // toggle/trigger-select/add-button (this row's OWN new controls) are
   // wired in wireActionRowHandlers below.
   const followUpActionsEl = row.querySelector('.a-followup-actions');
-  if(followUpActionsEl) renderActionRows(act.followUp.actions, followUpActionsEl, xEligible, xStarEligible, trigger, returnToHandEligible);
+  if(followUpActionsEl) renderActionRows(act.followUp.actions, followUpActionsEl, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
 }
 
 // `actions` is the array itself (see renderActionRows above) — same
@@ -14660,7 +14685,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
 // `xEligible` — see renderActionRowFields' doc comment; threaded through
 // every re-render this function triggers so "Use X" stays offered/hidden
 // correctly across a type change, same as every other row-rebuild path.
-function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible){
+function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget){
   row.querySelector('.a-type').onchange = e=>{
     act.type = e.target.value;
     // The valid target set AND whether this action needs a status picker
@@ -14685,8 +14710,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
     ensureActionRefDefaults(act);
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // No `.a-target` element exists at all for PLAYER_ONLY_ACTIONS/
   // SELF_ONLY_ACTIONS (see renderActionRowFields' hidesTarget/targetHtml)
@@ -14706,16 +14731,16 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(modeSelect) modeSelect.onchange = (e)=>{
     act.mode = e.target.value;
     ensureActionRefDefaults(act);
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // GainEnergy's "Double Energy" checkbox — DOES need a re-render (hides/
   // shows the flat amount input, see hideAmountForDoubleEnergy).
   const doubleEnergy = row.querySelector('.a-doubleenergy');
   if(doubleEnergy) doubleEnergy.onchange = (e)=>{
     act.doubleEnergy = e.target.checked;
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // DiscardCard/ExhaustCard's "Randomly selected" checkbox — no re-render
   // needed.
@@ -14805,8 +14830,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       delete act.amountScalesWithStatus;
       delete act.amountScalesWithBuiltinStatus;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
 
   // [Round 74] "Use X (Star)" — CardModel.ResolveStarXValue(), the star
@@ -14824,8 +14849,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       delete act.amountScalesWithStatus;
       delete act.amountScalesWithBuiltinStatus;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
 
   // "Use X" (hit count) — same evidence, DealDamage-only real
@@ -14834,8 +14859,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(hitCountUseX) hitCountUseX.onchange = (e)=>{
     act.hitCountIsX = e.target.checked;
     if(act.hitCountIsX) delete act.hitCountIsStarX;
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
 
   // [Round 76, BEST EFFORT] "X Star Hits" — see compiler.js's
@@ -14846,8 +14871,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(hitCountUseStarX) hitCountUseStarX.onchange = (e)=>{
     act.hitCountIsStarX = e.target.checked;
     if(act.hitCountIsStarX) delete act.hitCountIsX;
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
 
   const scaleToggle = row.querySelector('.a-scale-toggle');
@@ -14870,8 +14895,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       delete act.amountScalesWithBuiltinStatus;
       delete act.amountScalesWithSubject;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // "Whose stacks" — Tyler's follow-up when the DealDamage row gained its
   // sentence layout: "we need to add a new box for per stack that checks
@@ -14885,8 +14910,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   const scaleSubject = row.querySelector('.a-scale-subject');
   if(scaleSubject) scaleSubject.onchange = (e)=>{
     act.amountScalesWithSubject = e.target.value;
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // Single merged status/mechanic picker for "per stack" scaling — Tyler's
   // follow-up: "the per stack option for effects still has the user
@@ -14924,14 +14949,14 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       delete act.hitCountScalesWithBuiltinStatus;
       delete act.hitCountScalesWithSubject;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   const hitCountScaleSubject = row.querySelector('.a-hitcount-scale-subject');
   if(hitCountScaleSubject) hitCountScaleSubject.onchange = (e)=>{
     act.hitCountScalesWithSubject = e.target.value;
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   wireMergedStatusPicker(row.querySelector('.a-hitcount-scale-picker'), act, ACTION_HITCOUNT_SCALE_FIELDS);
 
@@ -14948,8 +14973,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     } else {
       delete act.followUp;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   const followUpTriggerSelect = row.querySelector('.a-followup-trigger');
   if(followUpTriggerSelect) followUpTriggerSelect.onchange = (e)=>{
@@ -14963,8 +14988,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       if(!COMPARATORS.find(c=>c.id===act.followUp.comparator)) act.followUp.comparator = 'gte';
       if(typeof act.followUp.value !== 'number') act.followUp.value = 1;
     }
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   const followUpComparatorEl = row.querySelector('.a-followup-comparator');
   if(followUpComparatorEl) followUpComparatorEl.onchange = e=> act.followUp.comparator = e.target.value;
@@ -14975,10 +15000,10 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     // Same default action shape effect blocks' own "+ Add action" button
     // uses (see the .eb-add-action handler near renderEffectsList).
     act.followUp.actions.push({type:'DealDamage', target:'SingleEnemy', amount:6});
-    renderActionRows(act.followUp.actions, row.querySelector('.a-followup-actions'), xEligible, xStarEligible, trigger, returnToHandEligible);
+    renderActionRows(act.followUp.actions, row.querySelector('.a-followup-actions'), xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
 
-  row.querySelector('.a-remove').onclick = ()=>{ actions.splice(j,1); renderActionRows(actions, container, xEligible, xStarEligible, trigger, returnToHandEligible); };
+  row.querySelector('.a-remove').onclick = ()=>{ actions.splice(j,1); renderActionRows(actions, container, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget); };
 }
 
 /* ---------- RELICS ---------- */
