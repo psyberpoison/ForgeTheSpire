@@ -780,15 +780,40 @@
     padding:5vh 20px; overflow-y:auto; z-index:50;
   }
   .overlay.open{display:flex;}
+  /* [Round 301 — Tyler: "card edit boxes also go off the screen now"]
+     ROOT CAUSE: .modal-body's own max-height was capped (78vh, see its
+     history below), but .modal itself had NO cap at all — it just grew to
+     modal-head + modal-body (up to 78vh) + modal-foot, which past a
+     couple of real effect blocks routinely landed well past 100vh once
+     head/foot were added on top of an already-near-78vh body. The
+     overlay itself is `overflow-y:auto` (see its own rule above), so
+     technically the rest was still reachable by scrolling the page
+     behind the modal — but nothing hinted that was possible, so a
+     modal-foot (Save/Delete) pushed past the bottom edge just read as
+     "gone." Fix: .modal itself is now the thing capped and scrolled.
+     `display:flex; flex-direction:column; max-height:88vh` on .modal,
+     `flex:0 0 auto` on modal-head/modal-foot (never shrink, always fully
+     visible), and modal-body switched from its own fixed max-height to
+     `flex:1 1 auto; min-height:0` (the min-height:0 is required — a flex
+     item's default min-height:auto otherwise refuses to shrink below its
+     content size, which would silently defeat overflow-y:auto here).
+     Net effect: the whole modal (chrome included) now never exceeds 88vh,
+     matching the overlay's own 5vh+5vh top/bottom padding with room to
+     spare, so the overlay itself never needs to scroll — ONLY
+     modal-body's own internal scrollbar does, and modal-head/modal-foot
+     are now always on-screen no matter how much a card/relic/mechanic
+     grows. Applies to every modal in the app, not just Edit Card. */
   .modal{
     background:var(--stone); border:1px solid var(--border-soft); border-radius:var(--radius);
-    width:100%; max-width:640px;
+    width:100%; max-width:640px; max-height:88vh;
+    display:flex; flex-direction:column;
     box-shadow:0 20px 60px rgba(0,0,0,.5);
   }
   .modal.wide{max-width:940px;}
   .modal-head{
     padding:18px 24px; border-bottom:1px solid var(--border);
     display:flex; justify-content:space-between; align-items:center;
+    flex:0 0 auto;
   }
   .modal-head h3{margin:0; font-size:16px;}
   .modal-head .close{cursor:pointer; color:var(--parchment-dim); font-size:20px; line-height:1;}
@@ -808,9 +833,17 @@
      trigger-picker flip() comment) that this stops the clamp from
      landing below either category's natural content height in a normal
      browser window. Applies to every modal, not just Edit Relic/
-     Mechanic, but taller modals are a plain win elsewhere too. */
-  .modal-body{padding:22px 24px; max-height:78vh; overflow-y:auto;}
-  .modal-foot{padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between;}
+     Mechanic, but taller modals are a plain win elsewhere too.
+     [Round 301] The fixed 78vh cap is gone — see .modal's own comment
+     just above. flip()'s own boundary walk (backend-free, pure DOM: it
+     looks for the nearest ancestor whose computed overflow-y isn't
+     "visible") still finds THIS element by its overflow-y:auto alone and
+     reads its real, live getBoundingClientRect() — nothing about that
+     logic depended on the specific 78vh number, only on this box
+     genuinely being the scrolling ancestor, which flex:1 1 auto below
+     keeps true. */
+  .modal-body{padding:22px 24px; overflow-y:auto; flex:1 1 auto; min-height:0;}
+  .modal-foot{padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; flex:0 0 auto;}
 
   /* Round 20 — the compile-error modal (showCompileErrorModal), replacing
      a raw alert() with something Tyler can actually read: grouped by which
@@ -16689,9 +16722,6 @@ function openPetEditor(petId){
           <div style="margin-top:10px">
             <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
             <input type="number" id="p-leaves-after-turns" min="1" step="1" value="${Number.isInteger(p.leavesAfterTurns) ? p.leavesAfterTurns : ''}" placeholder="stays whole fight">
-          </div>
-          <div class="panel-desc" style="margin-top:10px">
-            No custom turn behavior yet — this pet just stands there each turn (no move/AI authoring). Summon it with a "Summon Pet" action in any effect list — a pet you never summon anywhere simply never appears in-game.
           </div>
         </div>
         <div style="flex:0 0 300px;">
