@@ -9904,7 +9904,7 @@ function conditionKindsForSubject(eff, subject){
     return !isCardSubject;
   });
 }
-function availableSubjects(eff){
+function availableSubjects(eff, kind){
   // [Round 66] `onlyForKind` entries (ThisCard/ThatCard) show up in EVERY
   // subject-capable kind's dropdown (HasStatusStacks, HpBelowPercent,
   // HasBlock, DebuffStacksTotal, PetIsOut, CardPositionInHand itself) —
@@ -9953,6 +9953,19 @@ function availableSubjects(eff){
   // never real here (no fgPet path exists for a modifier body at all,
   // unlike the glow/playability Owner?.Osty path below); 'CardTarget' only
   // when this specific hook binds a second party.
+  // [Tyler] "Pet" "Has a pet out" doesn't make sense -- PetIsOut with
+  // subject 'Pet' would compile to `fgPet!.Pets.Any()` (does YOUR OWN
+  // pet currently have a pet of its own out), not a real check anything
+  // in Forge's pet system supports (Creature.Pets exists generically on
+  // every creature, but nothing ever assigns a pet's own PetOwner to
+  // another pet) — same "if the options in this menu don't reasonably
+  // belong behind a target, they shouldn't be in that menu" precedent
+  // already applied to THAT_CARD_ONLY_CONDITION_KINDS above. Every other
+  // subject-capable kind (HasStatusStacks, HpBelowPercent, HasBlock,
+  // DebuffStacksTotal, CardPositionInHand) is unaffected — 'Pet' still
+  // makes sense as "check your pet's HP/block/stacks," just not as "does
+  // your pet have a pet out."
+  const petSubjectMakesNoSenseForKind = kind === 'PetIsOut';
   if(eff.modifierHook){
     return CONDITION_SUBJECTS.filter(s => {
       if(!onlyForKindOk(s)) return false;
@@ -9980,6 +9993,7 @@ function availableSubjects(eff){
   return CONDITION_SUBJECTS.filter(s => {
     if(!onlyForKindOk(s)) return false;
     if(!onlyForTriggerOk(s)) return false;
+    if(s.id === 'Pet' && petSubjectMakesNoSenseForKind) return false;
     if(s.id === 'CardTarget') return !glowOrPlayabilityContext && !noCardTargetBound;
     if(s.requiresTrigger) return glowOrPlayabilityContext || PET_SUPPORTED_TRIGGERS.includes(eff.trigger);
     return true;
@@ -10033,6 +10047,11 @@ function fixConditionSubjectForTrigger(cond, trigger){
   if(!SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind)) return;
   if(cond.subject === 'Pet' && !PET_SUPPORTED_TRIGGERS.includes(trigger)) cond.subject = 'Self';
   if(cond.subject === 'CardTarget' && (HOOK_TRIGGER_BINDING[trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(trigger))) cond.subject = 'Self';
+  // [Tyler] "Pet" "Has a pet out" doesn't make sense — same reasoning as
+  // availableSubjects' petSubjectMakesNoSenseForKind above, reached here
+  // for data saved before this restriction existed (or hand-edited
+  // JSON), not just blocked in the dropdown going forward.
+  if(cond.kind === 'PetIsOut' && cond.subject === 'Pet') cond.subject = 'Self';
 }
 function fixConditionsForTrigger(conditions, trigger){
   (conditions||[]).forEach(c=>fixConditionSubjectForTrigger(c, trigger));
@@ -13257,7 +13276,7 @@ function renderConditionRowFields(row, cond, eff){
   // through the exact same needsSubject/availableSubjects path as every
   // other subject-capable kind, no special-casing needed here anymore.
   const needsSubject = SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind);
-  const subjects = needsSubject ? availableSubjects(eff) : [];
+  const subjects = needsSubject ? availableSubjects(eff, cond.kind) : [];
   // Merged status picker — Tyler's example ("If [you] [have status stacks]
   // of [strength] [=][5]") shows ONE status choice, not a separate
   // vanilla/custom toggle beside it. A searchable combobox, not a plain
@@ -13352,7 +13371,14 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
     // [Round 66] See this handler's own comment above — carry the
     // already-chosen subject forward into the new kind rather than
     // resetting it, whenever the new kind is subject-capable at all.
-    if(SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) && prevSubject) cond.subject = prevSubject;
+    // [Tyler] ...except into 'PetIsOut' with a carried-forward 'Pet'
+    // subject — "Pet" "Has a pet out" doesn't make sense (see
+    // availableSubjects' petSubjectMakesNoSenseForKind), so this is the
+    // other direction that bug can be reached from: switching kind FROM
+    // e.g. "Has block" (subject "Pet") TO "Has a pet out" would otherwise
+    // silently carry the stale subject forward into a combination
+    // availableSubjects no longer even offers via the dropdown.
+    if(SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) && prevSubject && !(newKind === 'PetIsOut' && prevSubject === 'Pet')) cond.subject = prevSubject;
     renderConditionRowFields(row, cond, eff);
     wireConditionRowHandlers(row, cond, eff, container, j, onChange);
   };

@@ -645,6 +645,23 @@ if (cond.kind === 'CardPositionInHand') {
       // PlayedCardHasKeyword/PlayedCardHasTag trigger checks above.
       if (cond.subject !== undefined && !CONDITION_SUBJECTS.includes(cond.subject)) {
         errors.push(`${p}.subject "${cond.subject}" is not one of: ${CONDITION_SUBJECTS.join(', ')}.`);
+      } else if (cond.kind === 'PetIsOut' && cond.subject === 'Pet') {
+        // Tyler: the "Pet" "Has a pet out" combination doesn't make
+        // sense. PetIsOut compiles to `${resolveConditionSubjectExpr(cond.subject)}.Pets.Any()`
+        // (see compiler.js's own case) — with subject 'Pet' that's
+        // `fgPet!.Pets.Any()`, i.e. "does YOUR OWN pet currently have a
+        // pet of its own out." Creature.Pets exists generically on every
+        // creature so this compiles fine, but nothing in Forge's pet
+        // system (PetOwner-based, see ForgePetPositionPatch) ever
+        // assigns a pet's own PetOwner to another pet — it's not a real
+        // check anyone could ever get true. Same "if the options in
+        // this menu don't reasonably belong behind a target, they
+        // shouldn't be in that menu" precedent as
+        // THAT_CARD_ONLY_CONDITION_KINDS above. Rejected here as
+        // defense in depth — the frontend's availableSubjects no longer
+        // offers "Pet" as a subject choice once "Has a pet out" is the
+        // selected kind, but this guards hand-edited/pre-existing JSON.
+        errors.push(`${p} has kind "PetIsOut" with subject "Pet" — checking whether your own pet has a pet of its own out isn't a real, meaningful check. Use "You" (Self) to check whether you have a pet out, or "Target" to check the card's target.`);
       } else if (modifierHook) {
         // Round 20 — Group B modifier conditions: no cardPlay, no glow
         // context, no cardPlay.Player.Osty path — fgPlayer/fgTarget come
