@@ -7060,12 +7060,16 @@ function openRestSpriteModal(){
     draft = { ...DEFAULT_REST_SPRITE_TRANSFORM };
     paint();
   });
-  document.getElementById('rest-sprite-modal-done').addEventListener('click', ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveRestSprite = ()=>{
     state.character.restSpriteTransform = draft;
     save();
     renderRestSpriteStage(url);
     closeModal();
-  });
+  };
+  document.getElementById('rest-sprite-modal-done').addEventListener('click', doSaveRestSprite);
+  modalSaveOnOutsideClick = doSaveRestSprite;
 }
 // [Round 110] Now nested inside campfire-art-frame -- stopPropagation so
 // this click doesn't also bubble up to the frame's own click listener and
@@ -7265,12 +7269,16 @@ function openShopSpriteModal(){
     draft = shopBoxFromTransform(DEFAULT_SHOP_SPRITE_TRANSFORM);
     paint();
   });
-  document.getElementById('shop-sprite-modal-done').addEventListener('click', ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveShopSprite = ()=>{
     state.character.shopSpriteTransform = shopTransformFromBox(draft);
     save();
     renderShopSpriteStage(url);
     closeModal();
-  });
+  };
+  document.getElementById('shop-sprite-modal-done').addEventListener('click', doSaveShopSprite);
+  modalSaveOnOutsideClick = doSaveShopSprite;
 }
 // [Round 110] Same stopPropagation fix as campfire-art-modify-btn above --
 // shop-sprite-modify-btn is now nested inside shop-sprite-frame too.
@@ -7426,7 +7434,9 @@ function openStarEditor(){
     reader.readAsDataURL(file);
   });
 
-  document.getElementById('save-star-edit').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveStarEdit = ()=>{
     if(pendingDataUrl){
       state.character.starAssetRef = commitAsset(pendingDataUrl, state.character.starAssetRef, 'star');
     } else if(removedImage && state.character.starAssetRef){
@@ -7438,6 +7448,8 @@ function openStarEditor(){
     renderEnergyPreview();
     closeModal();
   };
+  document.getElementById('save-star-edit').onclick = doSaveStarEdit;
+  modalSaveOnOutsideClick = doSaveStarEdit;
 }
 
 // Renders the clickable circular preview. Three modes:
@@ -7873,7 +7885,9 @@ function openOrbLayerEditor(){
   }
   renderRows();
 
-  document.getElementById('save-orb-layers').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveOrbLayers = ()=>{
     layers.forEach((layer, i)=>{
       if(pendingDataUrls[i]){
         layer.assetRef = commitAsset(pendingDataUrls[i], layer.assetRef, 'orbLayer');
@@ -7895,6 +7909,8 @@ function openOrbLayerEditor(){
     renderEnergyPreview();
     closeModal();
   };
+  document.getElementById('save-orb-layers').onclick = doSaveOrbLayers;
+  modalSaveOnOutsideClick = doSaveOrbLayers;
 }
 
 /* ---- hand art (4 poses, exactly 422×1200px each) ---- */
@@ -8579,11 +8595,15 @@ function openChronicleEditor(chronicleId){
     state.character.chronicles = state.character.chronicles.filter(x=>x.id!==chronicleId);
     save(); renderChronicles(); closeModal();
   };
-  document.getElementById('save-chronicle').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveChronicle = ()=>{
     c.name = document.getElementById('chr-name').value;
     c.description = document.getElementById('chr-desc').value;
     save(); renderChronicles(); closeModal();
   };
+  document.getElementById('save-chronicle').onclick = doSaveChronicle;
+  modalSaveOnOutsideClick = doSaveChronicle;
 }
 
 // undefined = untouched this modal session (keep the existing asset, if
@@ -8747,6 +8767,16 @@ function openEpochEditor(chronicleId, epochId){
     save();
     backToChronicle();
   };
+  // [Round 302] Unlike every other editor's modalSaveOnOutsideClick (which
+  // reuses the exact same function as its own Done button), Done here
+  // ("ep-save") deliberately navigates back to the parent Chronicle editor
+  // rather than closing the whole modal (this is a nested sub-editor, not
+  // a top-level one — see backToChronicle()/openEpochEditor's own call
+  // site). Clicking OUTSIDE the modal instead means "I'm done editing
+  // entirely," so this saves the same fields but closes the whole modal
+  // outright, same as the header's own × does — not a reimplementation of
+  // saveEpochFields() itself, just a different "what happens after."
+  modalSaveOnOutsideClick = ()=>{ saveEpochFields(); save(); closeModal(); };
 }
 
 /* ---------- generic modal ---------- */
@@ -8770,8 +8800,31 @@ let activeCardEditorRefreshPreview = null;
 // openModal() itself always clears it first so a guard set by one editor
 // can never leak into the next one opened afterward.
 let modalCloseGuard = null;
+// [Round 302] Tyler: "if you rename a card and then click out of the
+// editor, the name doesnt stick. you have to click on 'done'. Lets
+// change that to save if the user clicks out." Root cause: every editor
+// in this app follows a deliberate "nothing touches state until Done"
+// convention (see openCardEditor's own header comment) — fields are held
+// in local closures/pending variables and only committed to `state` (and
+// `save()`d) inside the Done/Save button's own onclick. Clicking the
+// backdrop instead of Done skipped that handler entirely and went
+// straight to the bare discard-everything closeModal() below.
+// `modalSaveOnOutsideClick`, set by an editor right after its own
+// openModal() call (same convention as modalCloseGuard just above — and
+// same reset-per-open so a guard/save hook from one editor can never
+// leak into the next), points at the EXACT SAME function already wired
+// to that editor's Done button (never a separate reimplementation, so
+// there's nothing to drift out of sync) — the overlay's own click
+// handler below calls it instead of closeModal() directly when it's set,
+// so an outside click now saves-then-closes exactly like clicking Done
+// would have. Left null (falls back to a bare discard-close, unchanged
+// behavior) for modals that were never a "form with fields to lose" in
+// the first place — a confirmation/info dialog's own "Got it"/"Close"
+// button just calls closeModal() directly and has nothing to save.
+let modalSaveOnOutsideClick = null;
 function openModal(html, opts){
   modalCloseGuard = null;
+  modalSaveOnOutsideClick = null;
   modal.innerHTML = html;
   // `wide` is used by the card editor (and anything else with a
   // side-by-side form + preview layout) — a plain toggle rather than a
@@ -8797,6 +8850,7 @@ function closeModal(){
     if(blockReason){ alert(blockReason); return; }
   }
   modalCloseGuard = null;
+  modalSaveOnOutsideClick = null;
   overlay.classList.remove('open');
   modal.classList.remove('wide');
   modal.innerHTML = '';
@@ -8818,7 +8872,15 @@ function closeModal(){
 // the backdrop no longer does.
 let overlayMousedownOnBackdrop = false;
 overlay.addEventListener('mousedown', (e)=>{ overlayMousedownOnBackdrop = (e.target === overlay); });
-overlay.addEventListener('click', (e)=>{ if(e.target === overlay && overlayMousedownOnBackdrop) closeModal(); });
+// [Round 302] A genuine backdrop click now saves (via modalSaveOnOutsideClick,
+// see its own comment above) when the open editor set one, instead of
+// unconditionally discarding through closeModal() — same drag-guard as
+// before (overlayMousedownOnBackdrop) still applies either way.
+overlay.addEventListener('click', (e)=>{
+  if(e.target === overlay && overlayMousedownOnBackdrop){
+    if(modalSaveOnOutsideClick) modalSaveOnOutsideClick(); else closeModal();
+  }
+});
 // Route EVERY wheel event anywhere over the open overlay into the modal's
 // own scrollable pane, regardless of where the mouse happens to be
 // hovering (backdrop padding, modal-head, modal-foot — none of those
@@ -11945,7 +12007,12 @@ function openCardEditor(cardId){
     state.cards = state.cards.filter(c=>c.id!==cardId);
     save(); renderCards(); closeModal();
   };
-  document.getElementById('save-card').onclick = ()=>{
+  // [Round 302] Named (not an inline arrow straight on .onclick) so the
+  // exact same function can also be handed to modalSaveOnOutsideClick —
+  // see that variable's own header comment. Clicking outside this editor
+  // now saves exactly what clicking Done would have, not a separate
+  // reimplementation.
+  const doSaveCard = ()=>{
     card.name = document.getElementById('m-name').value;
     card.costsX = document.getElementById('m-costsx').checked;
     // [CORRECTED] no more -1 sentinel — see schema's card.cost/costsX
@@ -12043,6 +12110,8 @@ function openCardEditor(cardId){
 
     save(); renderCards(); closeModal();
   };
+  document.getElementById('save-card').onclick = doSaveCard;
+  modalSaveOnOutsideClick = doSaveCard;
 }
 
 // [Round 269] Tyler: "we can take out rest site options for status
@@ -15579,7 +15648,11 @@ function openRelicEditor(relicId){
     state.relics = state.relics.filter(r=>r.id!==relicId);
     save(); renderRelics(); closeModal();
   };
-  document.getElementById('save-relic').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment (frontend/index.html's
+  // openModal/closeModal section). Clicking outside now saves exactly
+  // what Done would have.
+  const doSaveRelic = ()=>{
     relic.name = document.getElementById('m-name').value;
     relic.rarity = document.getElementById('m-rarity').value;
     const typedRelicDescription = document.getElementById('m-description').value.trim();
@@ -15596,6 +15669,8 @@ function openRelicEditor(relicId){
     // writes them straight to `relic` live, on change, instead.
     save(); renderRelics(); closeModal();
   };
+  document.getElementById('save-relic').onclick = doSaveRelic;
+  modalSaveOnOutsideClick = doSaveRelic;
 }
 
 /* ---------- MECHANICS ---------- */
@@ -16620,7 +16695,13 @@ function openMechEditor(mechId){
     document.getElementById('m-bar-fields').style.display = e.target.checked ? '' : 'none';
     renderMechBarFields(m);
   });
-  document.getElementById('save-mech').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment. Clicking outside now saves
+  // exactly what Done would have, including — unchanged — still running
+  // into modalCloseGuard's own dual-bar-pairing block (set above) inside
+  // closeModal() if that requirement isn't met yet: the field commits and
+  // save() below still happen either way, only the actual close is held.
+  const doSaveMech = ()=>{
     m.name = document.getElementById('m-name').value;
     const typedMechDescription = document.getElementById('m-description').value.trim();
     m.description = typedMechDescription || undefined;
@@ -16646,6 +16727,8 @@ function openMechEditor(mechId){
     if(linkedBar) linkedBar.label = m.name; // keep the bar's label in sync with a renamed status
     save(); renderMechanics(); closeModal();
   };
+  document.getElementById('save-mech').onclick = doSaveMech;
+  modalSaveOnOutsideClick = doSaveMech;
 }
 
 /* ---------- PETS ---------- */
@@ -16924,7 +17007,10 @@ function openPetEditor(petId){
     state.pets = state.pets.filter(x=>x.id!==petId);
     save(); renderPets(); closeModal();
   };
-  document.getElementById('save-pet').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment. Clicking outside now saves
+  // exactly what Done would have.
+  const doSavePet = ()=>{
     p.name = document.getElementById('p-name').value;
     p.isHealthBarVisible = document.getElementById('p-health-bar-visible').checked;
     p.takesHitsForYou = document.getElementById('p-takes-hits').checked;
@@ -16956,6 +17042,8 @@ function openPetEditor(petId){
     }
     save(); renderPets(); closeModal();
   };
+  document.getElementById('save-pet').onclick = doSavePet;
+  modalSaveOnOutsideClick = doSavePet;
 }
 
 /* ---------- ENCHANTMENTS / AFFLICTIONS ---------- */
@@ -17751,7 +17839,9 @@ function makeAfflictionSection(opts){
     };
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
-    document.getElementById(`save-${idPrefix}`).onclick = ()=>{
+    // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+    // — see that variable's own header comment.
+    const doSaveAffliction = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
@@ -17775,6 +17865,8 @@ function makeAfflictionSection(opts){
 
       save(); render(); closeModal();
     };
+    document.getElementById(`save-${idPrefix}`).onclick = doSaveAffliction;
+    modalSaveOnOutsideClick = doSaveAffliction;
   }
   return { render };
 }
@@ -18095,7 +18187,9 @@ function makeRichEntitySection(opts){
     };
 
     document.getElementById(`delete-${idPrefix}`).onclick = ()=>{ state[stateKey] = state[stateKey].filter(x=>x.id!==entId); save(); render(); closeModal(); };
-    document.getElementById(`save-${idPrefix}`).onclick = ()=>{
+    // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+    // — see that variable's own header comment.
+    const doSaveRichEntity = ()=>{
       e.name = document.getElementById(`${idPrefix}-name`).value;
       e.description = document.getElementById(`${idPrefix}-desc`).value;
       e.cardLineText = document.getElementById(`${idPrefix}-cardline`).value;
@@ -18128,6 +18222,8 @@ function makeRichEntitySection(opts){
 
       save(); render(); closeModal();
     };
+    document.getElementById(`save-${idPrefix}`).onclick = doSaveRichEntity;
+    modalSaveOnOutsideClick = doSaveRichEntity;
   }
   return { render };
 }
@@ -18208,7 +18304,9 @@ function openOrbEditor(orbId){
     </div>
   `);
   document.getElementById('delete-orb').onclick = ()=>{ state.orbs = state.orbs.filter(x=>x.id!==orbId); save(); renderOrbs(); closeModal(); };
-  document.getElementById('save-orb').onclick = ()=>{
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveOrb = ()=>{
     o.name = document.getElementById('o-name').value;
     o.description = document.getElementById('o-desc').value;
     o.passiveText = document.getElementById('o-passive').value;
@@ -18218,6 +18316,8 @@ function openOrbEditor(orbId){
     o.focusScales = document.getElementById('o-focus').value === 'true';
     save(); renderOrbs(); closeModal();
   };
+  document.getElementById('save-orb').onclick = doSaveOrb;
+  modalSaveOnOutsideClick = doSaveOrb;
 }
 
 /* ---------- compile error display ---------- */
