@@ -77,18 +77,34 @@
      I dont want to push all the elements to the right by adding this. I
      want to keep the page contents the exact same, but i want to add
      this as an overlay element on the left. Think a box on the side of
-     the screen, but not the full height of the app." So: body's
-     padding-left is GONE (page contents back to their pre-round-321
-     layout, byte-for-byte the same as before this whole feature existed)
-     and .side-nav is now a floating card — vertically centered, sized to
-     its own content (not top:0/bottom:0 stretched), sitting ON TOP of
-     whatever's underneath (an overlay, per Tyler's own word) rather than
-     claiming permanent layout space. Reuses section.panel's own
-     background-gradient/border/radius/shadow recipe so it reads as the
-     same kind of "card" as everything else in this app instead of a
-     different visual language. --side-nav-width unchanged/still used
-     below, just no longer forces the page to make room for it. */
-  :root{ --side-nav-width:200px; }
+     the screen, but not the full height of the app." body's padding-left
+     removed; .side-nav became a floating card, vertically centered,
+     sized to its own content, sitting at left:20px as an overlay.
+     [Round 323] Tyler: "make it touch the left wall, have it be
+     collapsible to the left, and make sure its width doesn't extend over
+     any of the contents in the page." Three changes, all in
+     updateSideNavFit()/renderSideNav() (see those functions' own
+     comments) plus the CSS below:
+       - left:20px -> left:0 (flush against the viewport edge; border-left
+         and the left border-radius corners dropped since there's no gap
+         to round into anymore).
+       - --side-nav-computed-width is now set by JS, not a fixed
+         constant: updateSideNavFit() measures the REAL empty gutter
+         between the viewport's left edge and wherever <main>'s own
+         centered content actually starts (main's max-width:1180px;
+         margin:0 auto never changed — that gutter shrinks toward 0 on a
+         narrower window), and shrinks the nav to fit inside it (or
+         forces the same collapsed look via .no-room when there isn't
+         enough room for a usable width at all) — so it can never overlap
+         real page content, at any window size, without relying on a
+         fixed pixel guess.
+       - A manual .side-nav-toggle tab lets Tyler collapse/expand it
+         himself regardless of available room; the resulting state
+         persists across reloads via localStorage (same
+         wrap-in-try/catch convention the game-version-banner dismissal
+         flag already uses elsewhere in this file), the same way a
+         collapsed devtools/IDE sidebar remembers its own state. */
+  :root{ --side-nav-ideal-width:200px; --side-nav-collapsed-width:26px; }
   body{
     margin:0;
     background:
@@ -99,17 +115,41 @@
   }
   html{scroll-behavior:smooth;}
   .side-nav{
-    position:fixed; top:50%; left:20px; transform:translateY(-50%);
-    width:var(--side-nav-width);
+    position:fixed; top:50%; left:0; transform:translateY(-50%);
+    width:var(--side-nav-computed-width, var(--side-nav-ideal-width));
+    max-height:80vh;
+    overflow:hidden;
+    background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
+    border:1px solid var(--border); border-left:none;
+    border-radius:0 var(--radius) var(--radius) 0;
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45);
+    z-index:50;
+    transition:width .18s ease;
+  }
+  /* Collapsed by Tyler's own toggle, OR no-room (the computed gutter is
+     too narrow to show a usable nav at all) -- either flag alone forces
+     the same narrow "just the toggle tab" width, overriding the
+     JS-computed --side-nav-computed-width var via normal CSS specificity
+     (two classes beats one, no !important needed). */
+  .side-nav.collapsed, .side-nav.no-room{ width:var(--side-nav-collapsed-width); }
+  .side-nav-inner{
+    width:var(--side-nav-ideal-width);
     max-height:80vh;
     overflow-y:auto;
-    background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45);
     padding:16px 0;
-    z-index:50;
   }
+  .side-nav-toggle{
+    position:absolute; top:8px; right:6px;
+    width:18px; height:18px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    color:var(--parchment-dim);
+    font-size:12px;
+    border-radius:3px;
+    background:rgba(255,255,255,.04);
+    user-select:none;
+  }
+  .side-nav-toggle:hover{color:var(--parchment); background:rgba(255,255,255,.09);}
   .side-nav .side-nav-title{
     font-family:'Cinzel',serif; letter-spacing:.06em; font-weight:700;
     font-size:11px; text-transform:uppercase; color:var(--parchment-dim);
@@ -123,6 +163,7 @@
     font-size:13px;
     border-left:3px solid transparent;
     transition:background .15s, color .15s, border-color .15s;
+    white-space:nowrap;
   }
   .side-nav-link:hover{color:var(--parchment); background:rgba(255,255,255,.04);}
   .side-nav-link.active{
@@ -2617,9 +2658,13 @@
 </head>
 <body>
 
-<!-- [Round 321] Tyler: "lets make a side navigation bar for the app... always on the side and doesnt move when scrolling. It should have names for each section, and clicking on one should jump you to that section." Left empty here — populated by renderSideNav() from the real section.panel elements in <main> below (their own .num/h2 text), not a hand-maintained parallel list, so a future round that adds/renames/reorders a section can never let this drift out of sync with what actually exists. -->
+<!-- [Round 321] Tyler: "lets make a side navigation bar for the app... always on the side and doesnt move when scrolling. It should have names for each section, and clicking on one should jump you to that section." Left empty here — populated by renderSideNav() from the real section.panel elements in <main> below (their own .num/h2 text), not a hand-maintained parallel list, so a future round that adds/renames/reorders a section can never let this drift out of sync with what actually exists.
+     [Round 323] Tyler: "make it touch the left wall, have it be collapsible to the left, and make sure its width doesn't extend over any of the contents in the page." .side-nav-inner wraps the title/links so the outer .side-nav can shrink its own width (collapsed, or no-room -- see updateSideNavFit()) while clipping that fixed-width inner content via overflow:hidden, without the links themselves reflowing/wrapping mid-collapse. .side-nav-toggle is the manual collapse/expand tab, wired in renderSideNav(). -->
 <nav class="side-nav" id="side-nav">
-  <div class="side-nav-title">Sections</div>
+  <div class="side-nav-inner">
+    <div class="side-nav-title">Sections</div>
+  </div>
+  <div class="side-nav-toggle" id="side-nav-toggle" title="Collapse section navigation">&lsaquo;</div>
 </nav>
 
 <header class="top">
@@ -19846,9 +19891,102 @@ function openGamePathModal(current){
 // "you are here" active-link highlight, same as any persistent nav rail
 // is expected to have -- it never drives the scroll itself, so it can't
 // fight with a real click-triggered jump.
+// [Round 323] Tyler: "have it be collapsible to the left" -- persists the
+// user's own manual collapse/expand choice across reloads, same
+// wrap-every-call-in-try/catch convention the game-version-banner
+// dismissal flag (gameVersionDismissKey, further down this file) already
+// uses for a small non-character-data UI flag like this. Deliberately a
+// PLAIN localStorage key, not part of `state` -- collapse state is a
+// per-browser UI preference, not character-project data that belongs in
+// a save file or a Compile Mod export.
+const SIDE_NAV_COLLAPSE_KEY = 'forge_side_nav_collapsed';
+function getSideNavCollapsedPref(){
+  try{ return localStorage.getItem(SIDE_NAV_COLLAPSE_KEY) === '1'; }catch(e){ return false; }
+}
+function setSideNavCollapsedPref(collapsed){
+  try{ localStorage.setItem(SIDE_NAV_COLLAPSE_KEY, collapsed ? '1' : '0'); }catch(e){ /* ignore -- collapse still works this session, just won't persist */ }
+}
+function setSideNavCollapsed(collapsed){
+  const nav = document.getElementById('side-nav');
+  const toggle = document.getElementById('side-nav-toggle');
+  if(!nav || !toggle) return;
+  nav.classList.toggle('collapsed', collapsed);
+  // Left/right angle-quote arrow points the direction the NEXT click will
+  // move the box's edge -- pointing left (expanded, tab says "collapse
+  // me leftward... into myself") reads backwards, so this instead points
+  // whichever way reveals more: collapsed -> right-pointing "open me
+  // back up", expanded -> left-pointing "tuck me away".
+  toggle.innerHTML = collapsed ? '&rsaquo;' : '&lsaquo;';
+  toggle.title = collapsed ? 'Expand section navigation' : 'Collapse section navigation';
+  setSideNavCollapsedPref(collapsed);
+}
+// [Round 323] Tyler: "make sure its width doesn't extend over any of the
+// contents in the page." <main>'s own max-width:1180px; margin:0 auto
+// (unchanged since before this whole side-nav feature existed) is what
+// actually decides how much empty gutter sits to the left of the real
+// page content at any given window width -- on a wide window that gutter
+// is generous, on a narrow one it shrinks toward zero. Rather than guess
+// a fixed pixel width and hope it never collides, this measures that real
+// gutter (main's own rendered left edge, i.e. the live DOM, not a
+// recomputed max-width guess) every time it might have changed, and
+// shrinks the nav to fit inside it -- or, once there's no longer enough
+// room for a USABLE width at all, forces the same narrow "just the
+// toggle tab" look .collapsed already uses (via the separate .no-room
+// class, so it doesn't clobber Tyler's own manual collapse preference --
+// widen the window back out and a nav he never manually collapsed
+// re-expands on its own).
+const SIDE_NAV_SAFETY_MARGIN = 12; // breathing room past the gutter's exact edge
+const SIDE_NAV_MIN_USABLE_WIDTH = 120; // below this, text wraps too much to be worth showing
+function updateSideNavFit(){
+  const nav = document.getElementById('side-nav');
+  const main = document.querySelector('main');
+  if(!nav || !main) return;
+  // main's own box starts flush at the viewport edge once the window is
+  // narrower than its max-width:1180px (margin:0 auto has no room left to
+  // center it) -- but main ALSO carries its own padding:36px 40px 100px,
+  // so the real section.panel content actually starts 40px further in
+  // than main's border-box edge. Measuring only main's own rect (as the
+  // first version of this function did) undercounts the safe gutter by
+  // exactly that 40px on any narrower window, letting the nav sit on top
+  // of real content instead of just main's own empty padding.
+  const mainStyle = getComputedStyle(main);
+  const mainContentLeft = main.getBoundingClientRect().left + (parseFloat(mainStyle.paddingLeft) || 0);
+  const gutter = Math.max(0, mainContentLeft);
+  const safeWidth = gutter - SIDE_NAV_SAFETY_MARGIN;
+  const noRoom = safeWidth < SIDE_NAV_MIN_USABLE_WIDTH;
+  nav.classList.toggle('no-room', noRoom);
+  const idealWidth = parseFloat(getComputedStyle(nav).getPropertyValue('--side-nav-ideal-width')) || 200;
+  const fitWidth = noRoom ? idealWidth : Math.min(idealWidth, safeWidth);
+  nav.style.setProperty('--side-nav-computed-width', fitWidth + 'px');
+}
+let sideNavResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(sideNavResizeTimer);
+  sideNavResizeTimer = setTimeout(updateSideNavFit, 120);
+});
+
+// [Round 321] Tyler: "lets make a side navigation bar for the app...
+// always on the side and doesn't move when scrolling. It should have
+// names for each section, and clicking on one should jump you to that
+// section." Builds the sidebar's links directly from the real
+// section.panel[id^="section-"] elements already in <main> -- each
+// link's number/title comes straight from that section's own .num/h2
+// text, not a hand-maintained parallel list, so this can never drift out
+// of sync with whatever sections actually exist if a future round
+// renames/reorders/adds/removes one. Plain #anchor hrefs do the actual
+// jump (html{scroll-behavior:smooth} in the stylesheet is what makes it
+// glide instead of snap); the IntersectionObserver below only adds the
+// "you are here" active-link highlight, same as any persistent nav rail
+// is expected to have -- it never drives the scroll itself, so it can't
+// fight with a real click-triggered jump.
+// [Round 323] Links now append into .side-nav-inner (not the outer .side-nav
+// directly) -- see that wrapper's own comment by the markup -- and this
+// also wires the manual collapse toggle and the fit-to-gutter sizing
+// (updateSideNavFit above), both new this round.
 function renderSideNav(){
   const nav = document.getElementById('side-nav');
-  if(!nav) return;
+  const inner = nav ? nav.querySelector('.side-nav-inner') : null;
+  if(!nav || !inner) return;
   const sections = Array.from(document.querySelectorAll('main section.panel[id^="section-"]'));
   const links = [];
   sections.forEach(sec=>{
@@ -19866,9 +20004,15 @@ function renderSideNav(){
     a.href = `#${sec.id}`;
     a.dataset.sectionId = sec.id;
     a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span>${escapeHtml(title)}</span>`;
-    nav.appendChild(a);
+    inner.appendChild(a);
     links.push(a);
   });
+
+  const toggle = document.getElementById('side-nav-toggle');
+  if(toggle) toggle.onclick = ()=> setSideNavCollapsed(!nav.classList.contains('collapsed'));
+  setSideNavCollapsed(getSideNavCollapsedPref());
+  updateSideNavFit();
+
   if(!sections.length || !('IntersectionObserver' in window)) return;
   const orderedIds = sections.map(sec=>sec.id);
   const visible = new Set();
