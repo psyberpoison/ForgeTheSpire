@@ -17200,10 +17200,19 @@ function renderPets(){
   petGrid.innerHTML = '';
   state.pets.forEach(p=>{
     const t = document.createElement('div');
-    t.className = 'tile';
+    // [Round 318] Tyler: "put a preview of the pet image on the pet tile
+    // like we do for statuses and relics" — same state.assets{id,kind,
+    // dataUrl} lookup findAssetDataUrl already provides for the pet
+    // editor's own art-upload preview (openPetEditor's pet-art-frame,
+    // kind 'petArt'), and the exact same .tile-has-icon/.tile-icon-preview
+    // pair renderRelics/renderMechanics already use for their own
+    // icon/art thumbnails (round 256's own comment right below in
+    // renderMechanics) — reused verbatim, no new CSS needed.
+    const artUrl = findAssetDataUrl(p.artAssetRef, 'petArt');
+    t.className = 'tile' + (artUrl ? ' tile-has-icon' : '');
     const petBadges = [p.takesHitsForYou ? 'takes hits for you' : null, Number.isInteger(p.leavesAfterTurns) ? `leaves after ${p.leavesAfterTurns}t` : null].filter(Boolean);
     const petMeta = petBadges.length ? petBadges.join(' · ') : 'pet';
-    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${petMeta}</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${petMeta}</div>${artUrl ? `<img class="tile-icon-preview" src="${artUrl}" alt="">` : ''}`;
     t.onclick = ()=> openPetEditor(p.id);
     petGrid.appendChild(t);
   });
