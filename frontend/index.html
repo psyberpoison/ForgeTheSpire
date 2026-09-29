@@ -14122,8 +14122,8 @@ function renderConditionRowFields(row, cond, eff){
       </select>
       <span class="cond-word">position</span>
       <span class="cond-word c-hand-position-preview" style="opacity:.75; font-style:italic" title="Live preview — if you select 1st from the left, the card preview says leftmost so you can verify it.">${handPositionPreviewText(cond.edge, cond.position)}</span>` : ''}
-      ${needsPetPositionRef ? `<input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = leftmost/first-summoned, matching the same order pets line up in on screen.">
-      <span class="cond-word c-pet-position-preview" style="opacity:.75; font-style:italic">(${ordinal(cond.position||1)})</span>` : ''}
+      ${needsPetPositionRef ? `<input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 is the leftmost space. The higher the number, the further right they go.">
+      <span class="cond-word c-pet-position-preview" style="opacity:.75; font-style:italic">(1 = leftmost, higher = further right)</span>` : ''}
       ${needsPetPositionRef ? (state.pets.length
         ? `<span class="cond-word" style="opacity:.6">—</span><select class="c-pet-position-ref" title="Which of this character's own pets to check the position of.">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word" style="opacity:.6">—</span><select class="c-pet-position-ref" disabled><option value="">— no pets defined yet —</option></select>`) : ''}
@@ -14269,13 +14269,18 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   const handEdgeEl = row.querySelector('.c-hand-edge');
   if(handEdgeEl) handEdgeEl.onchange = e=>{ cond.edge = e.target.value; if(handPositionPreviewEl) handPositionPreviewEl.textContent = handPositionPreviewText(cond.edge, cond.position); };
   // [Round 303] Same plain-property-write convention as relicRefEl/
-  // cardRefEl above (petRef), plus a live ordinal preview matching
-  // handPositionEl's own pattern (position).
+  // cardRefEl above (petRef).
+  // [2026-09-29 round 328d — SUPERSEDES round 328c's own per-value "(1st)"/
+  // "(2nd)" ordinal preview] Tyler: "updating the text to just say xst, or
+  // xrd doesnt help. tell the user that 1 is the leftmost space. the
+  // higher the number, the further to the right they go" — the preview
+  // span is now a fixed explanatory caption (see its own render above)
+  // instead of a per-value ordinal, so it no longer needs updating as the
+  // value changes; this handler now only clamps the value itself.
   const petPositionRefEl = row.querySelector('.c-pet-position-ref');
   if(petPositionRefEl && !petPositionRefEl.disabled) petPositionRefEl.onchange = e=> cond.petRef = e.target.value;
   const petPositionEl = row.querySelector('.c-pet-position');
-  const petPositionPreviewEl = row.querySelector('.c-pet-position-preview');
-  if(petPositionEl) petPositionEl.oninput = e=>{ cond.position = Math.max(1, parseInt(e.target.value, 10) || 1); if(petPositionPreviewEl) petPositionPreviewEl.textContent = `(${ordinal(cond.position)})`; };
+  if(petPositionEl) petPositionEl.oninput = e=>{ cond.position = Math.max(1, parseInt(e.target.value, 10) || 1); };
   // [Round 306] PetIsOut's own petRef dropdown — same plain-property-write
   // convention as petPositionRefEl above, no disabled-state check needed
   // since this select is never fully disabled (it always offers at least
@@ -15499,18 +15504,24 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // [2026-09-29 round 328c — Tyler: "for pet position effects, add a
       // tooltip showing that 1 is left and so on and so forth. make sure
       // to not accept position values less than the actual minimum"]
-      // `title` + the live ordinal preview span mirror PetPositionIs's own
-      // condition-side position input exactly (same wording, same
-      // "(1st)"/"(2nd)" preview shape) — see needsPetPositionRef's own
-      // rendering above for the sibling this was copied from. Minimum
+      // `title` + the preview span mirror PetPositionIs's own
+      // condition-side position input exactly — see needsPetPositionRef's
+      // own rendering above for the sibling this was copied from. Minimum
       // enforcement (`min="1"` here, plus the real Math.max(1, ...) clamp
       // in wireActionRowHandlers below) mirrors that same input's own
       // oninput handler — the HTML `min` attribute alone doesn't block a
       // typed 0/negative value, only spinner-arrow use, so the JS clamp is
       // what actually does the enforcing.
+      // [2026-09-29 round 328d — SUPERSEDES round 328c's own per-value
+      // "(1st)"/"(2nd)" ordinal preview/tooltip] Tyler: "updating the text
+      // to just say xst, or xrd doesnt help. tell the user that 1 is the
+      // leftmost space. the higher the number, the further to the right
+      // they go" — both now state the actual rule directly instead of an
+      // ordinal suffix, same fixed-caption change made to
+      // PetPositionIs's own sibling input above.
       const pickerHtml = act.petSelectKind === 'Position'
-        ? `<input type="number" class="a-pet-position-src" min="1" step="1" value="${Number.isInteger(act.position) && act.position>=1 ? act.position : 1}" style="width:56px; flex:none;" title="1 = leftmost/frontmost, matching the same order pets line up in on screen (same convention as the 'Pet position is' condition).">
-          <span class="cond-word a-pet-position-src-preview" style="opacity:.75; font-style:italic">(${ordinal(Number.isInteger(act.position) && act.position>=1 ? act.position : 1)})</span>`
+        ? `<input type="number" class="a-pet-position-src" min="1" step="1" value="${Number.isInteger(act.position) && act.position>=1 ? act.position : 1}" style="width:56px; flex:none;" title="1 is the leftmost space. The higher the number, the further right they go.">
+          <span class="cond-word a-pet-position-src-preview" style="opacity:.75; font-style:italic">(1 = leftmost, higher = further right)</span>`
         : (state.pets.length
           ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
           : `<span class="cond-word hint-small">(create a pet first)</span>`);
@@ -15723,7 +15734,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
-  // [2026-09-29 round 328b, floor-clamp + live preview added round 328c]
+  // [2026-09-29 round 328b, floor-clamp added round 328c]
   // MovePetPosition's own Position-mode 1-based slot input -- no
   // re-render needed, same "just write the field" treatment
   // petRefSelect/petPositionModeSelect above get. Switched from onchange
@@ -15734,14 +15745,13 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // -- the HTML min="1" attribute on this input only blocks the spinner
   // arrows from going below 1, NOT a typed "0" or "-3", so this JS clamp
   // is what actually enforces the floor Tyler asked for ("make sure to
-  // not accept position values less than the actual minimum"). Also
-  // keeps the live "(1st)"/"(2nd)" ordinal preview span in sync as the
-  // user types, same as that sibling input's own preview.
+  // not accept position values less than the actual minimum").
+  // [2026-09-29 round 328d] The preview span is now a fixed explanatory
+  // caption (see its own render above) instead of a per-value ordinal, so
+  // it no longer needs updating as the value changes.
   const petPositionSrcInput = row.querySelector('.a-pet-position-src');
-  const petPositionSrcPreview = row.querySelector('.a-pet-position-src-preview');
   if(petPositionSrcInput) petPositionSrcInput.oninput = e=>{
     act.position = Math.max(1, parseInt(e.target.value, 10) || 1);
-    if(petPositionSrcPreview) petPositionSrcPreview.textContent = `(${ordinal(act.position)})`;
   };
   // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
   // needed, same as destinationSelect/costScopeSelect above.
