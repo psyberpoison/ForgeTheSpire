@@ -17246,6 +17246,22 @@ function openPetEditor(petId){
             <label title="Optional. Leave blank and this pet stays for the whole fight once summoned. [Round 293] Real TurnsRemaining/AfterSideTurnEnd/CreatureCmd.Escape — see claude/round290-pets-v2-real-source-research.md §3.">Leaves after (turns) — blank = stays whole fight</label>
             <input type="number" id="p-leaves-after-turns" min="1" step="1" value="${Number.isInteger(p.leavesAfterTurns) ? p.leavesAfterTurns : ''}" placeholder="stays whole fight">
           </div>
+          <!-- [Round 317] Tyler, shown this section stretched across the
+               full modal width below both columns: "move the 'pet enters
+               the battlefield with...' area under the 'stays for x turns'
+               area. no need to take up the full width of the whole
+               window." Moved from its own full-width row (previously
+               right after the two-column flex wrapper closes, see below)
+               into this LEFT column, directly under Leaves After (turns) —
+               same flex:1 column, so it now only takes the left column's
+               width instead of the whole modal. renderPetArrivesWithPicker
+               itself needed no change: its .picker-filter is width:100%
+               against whatever container it's given (see that function's
+               own header comment), so it just naturally narrows to fit. -->
+          <div style="margin-top:14px">
+            <label title="[Round 299] Statuses this pet is granted, at 1 stack each, the moment it actually starts existing in combat — a fresh summon or a revive from a corpse (see 'Takes hits for you' above), never a re-summon of a pet that's already out and alive. [VERIFIED via Tyler's own uploaded full mod source, Cards/Bulbasaur.cs and 3 other starter cards] Only your own custom statuses can be picked here — vanilla/built-in statuses aren't offered.">Pet enters battle with the following statuses:</label>
+            <div id="pet-arrives-with-picker"></div>
+          </div>
         </div>
         <div style="flex:0 0 300px;">
           <div style="display:flex; gap:12px; align-items:flex-start;">
@@ -17298,10 +17314,6 @@ function openPetEditor(petId){
           <label style="margin-top:14px" title="[Round 296] Lifts this pet above its normal ground-level placement — positive floats it, negative sinks it into the ground, 0 is the original grounded placement. Unlike On-screen height, this isn't something the decompiled reference mod does (no pets there fly) — it's Forge's own addition: a plain positional offset applied to the pet's sprite and its Bounds/CenterPos/IntentPos marker nodes together, so a flying pet's hitbox and intent icon rise with it instead of staying pinned to the floor. Only visible in-game once Art above is uploaded.">Ground offset (px) <span class="dim-hint">(0 = grounded, + floats, − sinks)</span></label>
           <input type="number" id="p-ground-offset" step="1" style="max-width:140px" value="${Number.isFinite(p.groundOffset) ? p.groundOffset : 0}">
         </div>
-      </div>
-      <div style="margin-top:14px">
-        <label title="[Round 299] Statuses this pet is granted, at 1 stack each, the moment it actually starts existing in combat — a fresh summon or a revive from a corpse (see 'Takes hits for you' above), never a re-summon of a pet that's already out and alive. [VERIFIED via Tyler's own uploaded full mod source, Cards/Bulbasaur.cs and 3 other starter cards] Only your own custom statuses can be picked here — vanilla/built-in statuses aren't offered.">Pet enters battle with the following statuses:</label>
-        <div id="pet-arrives-with-picker"></div>
       </div>
     </div>
     <div class="modal-foot">
