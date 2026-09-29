@@ -9714,6 +9714,45 @@ const CONDITION_KINDS = [
   { id:'PetPositionIs', label:'is in position', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether a specific one of this character\'s own pets currently sits in a given position (1st/2nd/3rd...), matching the same left-to-right order pets visually line up in on screen. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
 ];
+// [Round 320] Tyler, shown the kind dropdown's full 15-item open popup
+// (subject "Self"): "lets colorize and categorize this menu." Purely a
+// browse/scan aid for the kind <select> — grouping is done at RENDER time
+// here (see the .c-kind template in renderConditionRowFields), not by
+// reordering CONDITION_KINDS itself, so nothing about conditionKindsForSubject's
+// filtering/ordering or any other kind-list consumer changes. Colors reuse
+// the app's own existing --bb-gold/--bb-red/--bb-blue/--bb-purple/--bb-green
+// categorical palette (already established for auto-description colored
+// text, see .bb-gold&co CSS rules) plus --teal (already a real CSS var,
+// previously only used for the update banner) for the 6th group — no new
+// colors invented. Chrome (confirmed the browser this whole app is used
+// in) renders inline color/background-color styles on individual <option>
+// elements inside its native <select> popup, so this works without
+// replacing the native <select> with a custom combobox.
+// Every one of CONDITION_KINDS' 21 real kind ids is assigned to exactly
+// one category below (PLAYED_CARD_HAS_KEYWORD etc. included even though
+// they only ever show up once "That Card" is picked as the subject — same
+// "assign every kind, regardless of which subject actually surfaces it"
+// completeness as SUBJECT_CAPABLE_CONDITION_KINDS/POSSESSIVE_SUBJECT_
+// CONDITION_KINDS elsewhere already follow) — conditionKindCategoryFor's
+// own fallback below exists only as a defensive catch-all for a kind that
+// somehow isn't listed here, never expected to actually fire.
+const CONDITION_KIND_CATEGORIES = [
+  { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','HasBlock','DebuffStacksTotal'] },
+  { id:'resources', label:'Your Resources', color:'var(--bb-gold)', kindIds:['EnergyRemaining','StarsRemaining','CardsInHand','CardsPlayedThisTurn','AttacksPlayedThisTurn','OrbSlotCount','HandCardTypeCheck'] },
+  { id:'relicsCards', label:'Relics & Cards', color:'var(--bb-purple)', kindIds:['HasSpecificRelic','NoCopiesOfCardInHand'] },
+  { id:'cardReference', label:'Card Reference', color:'var(--bb-green)', kindIds:['CardPositionInHand','PlayedCardHasKeyword','PlayedCardHasTag','PlayedCardHasType'] },
+  { id:'pet', label:'Pet', color:'var(--teal)', kindIds:['PetIsOut','PetPositionIs'] },
+  { id:'combatEvents', label:'Combat Events', color:'var(--bb-red)', kindIds:['DamageBrokeBlock','EnemyIntent'] },
+];
+function conditionKindCategoryFor(kindId){
+  return CONDITION_KIND_CATEGORIES.find(cat => cat.kindIds.includes(kindId))
+    // Defensive fallback (round 118's findAssetDataUrl self-heal is the
+    // same convention) -- every real kind IS listed above, so this only
+    // ever matters if a future kind is added here without also being
+    // added to CONDITION_KIND_CATEGORIES; better an uncategorized grey
+    // option than a silently missing one.
+    || { id:'uncategorized', label:'Other', color:'var(--parchment-dim)', kindIds:[] };
+}
 // Whether a condition kind's `requiresTrigger` is satisfiable];
 // Whether a condition kind's `requiresTrigger` is satisfiable by the given
 // effect trigger — handles both the single-exact-trigger string form
@@ -13464,6 +13503,36 @@ function handPositionPreviewText(edge, position){
   if(pos === 1) return `(${e === 'left' ? 'leftmost' : 'rightmost'})`;
   return `(${ordinal(pos)} from the ${e})`;
 }
+// [Round 320] Builds the kind <select>'s inner HTML as colorized
+// <optgroup>s (see CONDITION_KIND_CATEGORIES' own header comment) instead
+// of one flat list of <option>s. `kinds` is already the subject-filtered
+// list conditionKindsForSubject produced — this only changes how those
+// same kinds are grouped/styled for display, never which ones are
+// offered. Every kind in `kinds` is placed in exactly one group (walked
+// once into `byCategory`, keyed by conditionKindCategoryFor's own
+// category id, which always returns SOME category — real or the
+// 'uncategorized' fallback), then groups are emitted in
+// CONDITION_KIND_CATEGORIES' own declared order (fallback last) with any
+// empty category simply skipped — so this can't silently drop a kind the
+// way a mismatched category list could.
+function renderKindOptionsGrouped(kinds, cond){
+  const kindLabel = k => k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond)
+    : k.id==='HasBlock' ? hasBlockLabel(cond)
+    : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond)
+    : k.label;
+  const byCategory = new Map();
+  kinds.forEach(k=>{
+    const cat = conditionKindCategoryFor(k.id);
+    if(!byCategory.has(cat.id)) byCategory.set(cat.id, { cat, items: [] });
+    byCategory.get(cat.id).items.push(k);
+  });
+  const orderedCatIds = [...CONDITION_KIND_CATEGORIES.map(c=>c.id), 'uncategorized'];
+  return orderedCatIds.filter(id=>byCategory.has(id)).map(id=>{
+    const { cat, items } = byCategory.get(id);
+    const optionsHtml = items.map(k=>`<option value="${escapeAttr(k.id)}" ${k.id===cond.kind?'selected':''} style="color:${cat.color}">${escapeHtml(kindLabel(k))}</option>`).join('');
+    return `<optgroup label="${escapeAttr(cat.label)}" style="color:${cat.color}">${optionsHtml}</optgroup>`;
+  }).join('');
+}
 function renderConditionRowFields(row, cond, eff){
   // [Tyler, this round] `kindDef` used to be read here for the hint block
   // removed below (the only place this function used it) — dropped along
@@ -13607,7 +13676,7 @@ function renderConditionRowFields(row, cond, eff){
     <div class="condition-row-main">
       <span class="cond-word cond-if">If</span>
       ${needsSubject ? `<select class="c-subject" title="Which creature (or, for Position in hand, which card) to check.">${subjects.map(s=>`<option value="${s.id}" ${s.id===cond.subject?'selected':''} title="${escapeAttr(s.title||s.label)}">${escapeHtml(subjectOptionLabel(s, cond))}</option>`).join('')}</select>` : ''}
-      <select class="c-kind">${kinds.map(k=>`<option value="${k.id}" ${k.id===cond.kind?'selected':''}>${escapeHtml(k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond) : k.id==='HasBlock' ? hasBlockLabel(cond) : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond) : k.label)}</option>`).join('')}</select>
+      <select class="c-kind">${renderKindOptionsGrouped(kinds, cond)}</select>
       ${needsPetIsOutRef ? `<span class="cond-word" style="opacity:.6">—</span><select class="c-petisout-ref" title="${petIsOutSpecificPetAllowed ? 'Which pet to check for — leave on &quot;Any pet&quot; to check whether ANY of your pets is currently summoned.' : 'Checking for one specific pet needs a real relic/mechanic/card effect-block trigger — not available in Glow/Playability or a Group B modifier hook. Only &quot;Any pet&quot; is offered here.'}">
         <option value="${PET_ANY_SENTINEL}" ${(!cond.petRef || cond.petRef===PET_ANY_SENTINEL)?'selected':''}>Any pet</option>
         ${petIsOutSpecificPetAllowed ? state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('') : ''}
