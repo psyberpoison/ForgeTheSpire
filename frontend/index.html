@@ -13517,7 +13517,30 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
     // so `prevSubject` is always already 'Pet' by the time a user can
     // reach it this way — no special-case needed, this line just does
     // the right thing automatically.
-    if(SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) && prevSubject) cond.subject = prevSubject;
+    // [Round 309] Tyler: "that same 'dont touch the subject' rule should
+    // apply to all of the conditionals. I noticed that the [cards in
+    // hand] option removed it." Real bug: gating this on
+    // SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) meant switching
+    // to any NON-subject-capable kind (CardsInHand, EnergyRemaining, any
+    // of the other 12) dropped `prevSubject` on the floor entirely — the
+    // `Object.keys(cond).forEach(k=>delete cond[k])` two lines up already
+    // wiped it, and blankCondition(newKind) for a non-subject kind never
+    // puts it back. Switch kind back to e.g. HasBlock afterward and the
+    // subject dropdown had silently reset to "Self," even though the user
+    // never touched it — exactly the kind of "retroactively change the
+    // subject" behavior round 307 was about. Fixed by always carrying
+    // `prevSubject` forward, whether or not the NEW kind currently reads
+    // it — it just sits inert on `cond` until a subject-capable kind is
+    // picked again, same "harmless inert field" tolerance this codebase
+    // already extends to stale petRef/minInitialHp values on packages
+    // that no longer use them (backend/validate.js never rejects an
+    // extra, unread field). Safe unconditionally: newKind was only ever
+    // selectable in the first place because conditionKindsForSubject(eff,
+    // cond.subject) — using the OLD subject, i.e. this same prevSubject —
+    // already decided it belonged in the dropdown, so there's no way to
+    // land here with a prevSubject/newKind combination that wasn't
+    // already sanctioned.
+    if(prevSubject) cond.subject = prevSubject;
     renderConditionRowFields(row, cond, eff);
     wireConditionRowHandlers(row, cond, eff, container, j, onChange);
   };
