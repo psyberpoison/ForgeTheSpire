@@ -16747,11 +16747,8 @@ function openPetEditor(petId){
         </div>
       </div>
       <div style="margin-top:14px">
-        <label title="[Round 299] Statuses this pet is granted, at 1 stack each, the moment it actually starts existing in combat — a fresh summon or a revive from a corpse (see 'Takes hits for you' above), never a re-summon of a pet that's already out and alive. [VERIFIED via Tyler's own uploaded full mod source, Cards/Bulbasaur.cs and 3 other starter cards] Click a status to toggle it on/off.">Arrives with</label>
-        <div class="kw-picker" id="pet-arrives-with-picker"></div>
-        <div class="panel-desc" style="margin-top:6px">
-          ${state.mechanics.length ? '' : 'No custom statuses defined yet — add some in the Statuses/Mechanics section.'}
-        </div>
+        <label title="[Round 299] Statuses this pet is granted, at 1 stack each, the moment it actually starts existing in combat — a fresh summon or a revive from a corpse (see 'Takes hits for you' above), never a re-summon of a pet that's already out and alive. [VERIFIED via Tyler's own uploaded full mod source, Cards/Bulbasaur.cs and 3 other starter cards] Only your own custom statuses can be picked here — vanilla/built-in statuses aren't offered.">Pet enters battle with the following statuses:</label>
+        <div id="pet-arrives-with-picker"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -16775,32 +16772,18 @@ function openPetEditor(petId){
   const sizePetImg = document.getElementById('pet-size-pet-img');
   const sizePetPlaceholder = document.getElementById('pet-size-pet-placeholder');
 
-  // [Round 299] "Arrives with" — a toggleable pill/chip row over this
-  // character's own state.mechanics, same .kw-picker/.kw-chip pattern
-  // renderKeywordPickerInto() uses for card keywords (see that function's
-  // own header comment for the pattern's origin), just simpler: mechanics
-  // are already a flat list with no "custom overflow" problem to solve, so
-  // this renders every entry as its own chip directly rather than reusing
-  // renderKeywordPickerInto() itself (which is hardcoded to CARD_KEYWORDS'
-  // 7 built-ins + cardKeywords[] overflow — a different shape). Tracked in
-  // a local Set, committed to p.arrivesWith only on Save, same
-  // edit-a-copy-until-Save convention every other field in this modal
-  // already follows.
-  const arrivesWithSet = new Set(Array.isArray(p.arrivesWith) ? p.arrivesWith : []);
-  const arrivesWithPicker = document.getElementById('pet-arrives-with-picker');
-  function renderArrivesWithPicker(){
-    arrivesWithPicker.innerHTML = state.mechanics.map(m=>
-      `<button type="button" class="kw-chip${arrivesWithSet.has(m.id)?' active':''}" data-mech="${escapeAttr(m.id)}">${escapeHtml(m.name||'(unnamed)')}</button>`
-    ).join('');
-    arrivesWithPicker.querySelectorAll('.kw-chip[data-mech]').forEach(btn=>{
-      btn.onclick = ()=>{
-        const id = btn.dataset.mech;
-        if(arrivesWithSet.has(id)) arrivesWithSet.delete(id); else arrivesWithSet.add(id);
-        btn.classList.toggle('active');
-      };
-    });
-  }
-  renderArrivesWithPicker();
+  // [Round 300] "Pet enters battle with the following statuses:" — Tyler:
+  // "instead of just a bubble selector, do the dropdown status search bar
+  // and only include custom statuses." Replaces round 299's .kw-picker/
+  // .kw-chip toggle row with renderPetArrivesWithPicker (search-filter +
+  // checkbox-list + chip-row, see that function's own header comment) —
+  // `arrivesWith` is a plain array (not a Set — the picker mutates it in
+  // place, same convention as renderEnchKeywordPicker's own `selected`
+  // param), copied from p.arrivesWith and committed back only on Save,
+  // same edit-a-copy-until-Save convention every other field in this
+  // modal already follows.
+  const arrivesWith = Array.isArray(p.arrivesWith) ? p.arrivesWith.slice() : [];
+  document.getElementById('pet-arrives-with-picker').replaceWith(renderPetArrivesWithPicker(arrivesWith));
 
   // [Round 295] Live "how big is this next to a person" ruler — editor-only,
   // see PET_SIZE_PREVIEW_REFERENCE_HEIGHT/PET_SIZE_PREVIEW_BOX's own
@@ -16931,11 +16914,13 @@ function openPetEditor(petId){
     // (backend/compiler.js:writePetArt's own fallback).
     const groundOffsetRaw = parseFloat(document.getElementById('p-ground-offset').value);
     if (Number.isFinite(groundOffsetRaw) && groundOffsetRaw !== 0) { p.groundOffset = groundOffsetRaw; } else { delete p.groundOffset; }
-    // [Round 299] "Arrives with" — see pet.arrivesWith's own schema
-    // description. Omitted (not an empty array) when nothing's picked,
-    // same "omit rather than store an empty default" convention
-    // leavesAfterTurns/groundOffset above already follow.
-    if (arrivesWithSet.size) { p.arrivesWith = Array.from(arrivesWithSet); } else { delete p.arrivesWith; }
+    // [Round 300] "Pet enters battle with the following statuses:" — see
+    // pet.arrivesWith's own schema description. Omitted (not an empty
+    // array) when nothing's picked, same "omit rather than store an empty
+    // default" convention leavesAfterTurns/groundOffset above already
+    // follow. `arrivesWith` (the picker's own live-mutated array, see its
+    // wiring above) is already exactly p.arrivesWith's own shape.
+    if (arrivesWith.length) { p.arrivesWith = arrivesWith.slice(); } else { delete p.arrivesWith; }
     if(pendingPetArtDataUrl !== undefined){
       p.artAssetRef = commitAsset(pendingPetArtDataUrl, p.artAssetRef, 'petArt');
     }
@@ -17230,6 +17215,104 @@ function renderEnchKeywordPicker(selected){
       <label class="picker-option${checked?' checked':''}" title="${escapeAttr(o.hint)}">
         <input type="checkbox" value="${escapeAttr(o.id)}" ${checked?'checked':''}>
         <span>${escapeHtml(o.id)}</span>
+      </label>`;
+    }).join('');
+  }
+
+  renderChips();
+  renderList();
+
+  filterInput.addEventListener('focus', ()=> pickerWrap.classList.add('open'));
+  filterInput.addEventListener('input', ()=>{
+    const q = filterInput.value.toLowerCase();
+    listEl.querySelectorAll('.picker-option').forEach(row=>{
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  listEl.addEventListener('change', e=>{
+    const box = e.target.closest('input[type="checkbox"]');
+    if(!box) return;
+    const v = box.value;
+    const idx = selected.indexOf(v);
+    if(box.checked && idx === -1) selected.push(v);
+    else if(!box.checked && idx !== -1) selected.splice(idx, 1);
+    box.closest('.picker-option').classList.toggle('checked', box.checked);
+    renderChips();
+  });
+
+  chipRow.addEventListener('click', e=>{
+    const x = e.target.closest('.chip-x');
+    if(!x) return;
+    const v = x.getAttribute('data-value');
+    const idx = selected.indexOf(v);
+    if(idx !== -1) selected.splice(idx, 1);
+    renderChips();
+    const box = Array.from(listEl.querySelectorAll('input[type="checkbox"]')).find(cb=>cb.value===v);
+    if(box){ box.checked = false; box.closest('.picker-option').classList.remove('checked'); }
+  });
+
+  return wrap;
+}
+
+// [Round 300] Pet editor's "Pet enters battle with the following
+// statuses:" (pet.arrivesWith) picker — Tyler: "instead of just a bubble
+// selector, do the dropdown status search bar and only include custom
+// statuses." Same search-filter + checkbox-list + chip-row shape as
+// renderEnchKeywordPicker just above (a flat array of id strings, mutated
+// in place), just over mechanicOptionsData() instead of CARD_KEYWORDS —
+// mechanicOptionsData() is already custom-only (this character's own
+// state.mechanics; there's no vanilla/built-in "status" list mixed in the
+// way renderStatusPicker's ModifyStatus combobox has, since a pet
+// arriving with a vanilla power was never part of this ask — only the
+// bubble-picker screenshot's own custom statuses were). Styled with
+// .a-status-picker (ModifyStatus's own class), NOT .ench-kw-picker —
+// .ench-kw-picker pins .picker-wrap to a fixed 170px because it sits
+// beside a label in a cramped enchantment-editor row; this picker instead
+// sits alone on its own full-width row of the (wide) pet editor, same
+// shape as ModifyStatus's action row, so it should stretch the same way
+// (.a-status-picker sets no width at all — the filter box's own
+// width:100% base rule just fills whatever full-width container it's
+// given). Chip row on top (mirrors renderStatusPicker's own markup
+// order), search box below. Replaces round 299's .kw-picker/.kw-chip
+// toggle-chip row.
+function renderPetArrivesWithPicker(selected){
+  const options = mechanicOptionsData();
+  const findEntry = id => selected.includes(id);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'a-status-picker';
+  wrap.innerHTML = `
+    <div class="chip-row"></div>
+    <div class="picker-wrap">
+      <input type="text" class="picker-filter" autocomplete="off" placeholder="${options.length ? `Click to browse ${options.length} custom statuses…` : 'No custom statuses defined yet'}">
+      <div class="picker-list"></div>
+    </div>
+  `;
+  const chipRow = wrap.querySelector('.chip-row');
+  const pickerWrap = wrap.querySelector('.picker-wrap');
+  const listEl = wrap.querySelector('.picker-list');
+  const filterInput = wrap.querySelector('.picker-filter');
+
+  function renderChips(){
+    if(!selected.length){
+      chipRow.innerHTML = `<span class="chip-empty">none selected</span>`;
+      return;
+    }
+    chipRow.innerHTML = selected.map(id=>{
+      const opt = options.find(o=>o.value===id);
+      return `<span class="chip" title="${escapeAttr(opt ? opt.tooltip : '')}">${escapeHtml(opt ? opt.label : id)} <span class="chip-x" data-value="${escapeAttr(id)}">✕</span></span>`;
+    }).join('');
+  }
+
+  function renderList(){
+    if(!options.length){ listEl.innerHTML = `<div class="empty">— no custom statuses defined yet — add some in Statuses/Mechanics —</div>`; return; }
+    listEl.innerHTML = options.map(o=>{
+      const checked = findEntry(o.value);
+      return `
+      <label class="picker-option${checked?' checked':''}" title="${escapeAttr(o.tooltip)}">
+        <input type="checkbox" value="${escapeAttr(o.value)}" ${checked?'checked':''}>
+        <span>${escapeHtml(o.label)}</span>
       </label>`;
     }).join('');
   }
