@@ -517,6 +517,37 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       }
       return;
     }
+    if (cond.kind === 'PetIsOut') {
+      // [Round 306] Tyler: "rather than 'pet has a pet out' change it to
+      // be 'if [pet] [is summoned]' meaning that it only checks to see if
+      // the player has a pet summoned. then add an optional field to add
+      // a pet to check for. otherwise it will return true if any pet is
+      // summoned." No longer subject-capable (see
+      // compiler.js:SUBJECT_CAPABLE_CONDITION_KINDS' own comment) — always
+      // checks the player. `petRef` is OPTIONAL and defaults to
+      // PET_ANY_SENTINEL ("any pet") when omitted — a different shape
+      // from PetPositionIs's own `petRef` right above, which always needs
+      // one specific named pet; this one accepts the sentinel too, same
+      // optional-sentinel shape PetAttack's own action-level petRef
+      // already established.
+      const isAnyPet = cond.petRef === undefined || cond.petRef === PET_ANY_SENTINEL;
+      if (!isAnyPet) {
+        if (!petIds || !petIds.has(cond.petRef)) {
+          errors.push(`${p}.petRef "${cond.petRef}" doesn't match any defined pet id (or the reserved "any pet" sentinel).`);
+        } else if (trigger === undefined) {
+          // A specific pet needs the same real Player-in-scope
+          // (resolvePlayerExpr(ctx)/ctx.fgPlayerBound) PetPositionIs
+          // already requires — NOT available inside Glow/Playability or a
+          // Group B modifier hook (both pass trigger: undefined here, see
+          // GENERALIZED_PLAYER_ONLY_CONDITION_KINDS' own comment above).
+          // Scoped to just this specific-pet branch, unlike that shared
+          // check, since the default "any pet" case (compiler.js's
+          // Owner?.Creature?.Pets?.Any() branch) stays real in both.
+          errors.push(`${p} has kind "PetIsOut" checking for a SPECIFIC pet, but this condition has no effect-block trigger in scope (Glow/Playability or a Group B modifier hook) — checking for a specific pet needs a real Player in scope, which today means any normal relic/mechanic/card effect-block trigger. Leave the pet field on "Any pet" to check in Glow/Playability instead.`);
+        }
+      }
+      return;
+    }
 if (cond.kind === 'CardPositionInHand') {
       // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 —
       // Earthquake's real IsPlayable override, "isLeftmostInHand"] Checks
@@ -596,16 +627,13 @@ if (cond.kind === 'CardPositionInHand') {
       }
       return;
     }
-    // PetIsOut [VERIFIED via sts2.dll — Creature.Pets] is boolean, no
-    // comparator/value — unlike DamageBrokeBlock it IS subject-capable (see
-    // SUBJECT_CAPABLE_CONDITION_KINDS below), so it doesn't return early
-    // here; it just skips the comparator/value requirement every other
-    // (non-boolean) kind needs and falls through to the shared
-    // subject-validation block below.
-    if (cond.kind !== 'PetIsOut') {
-      if (!COMPARATORS.includes(cond.comparator)) errors.push(`${p}.comparator "${cond.comparator}" is not one of: ${COMPARATORS.join(', ')}.`);
-      if (typeof cond.value !== 'number') errors.push(`${p}.value must be a number.`);
-    }
+    // [Round 306] PetIsOut moved to its own early-return block (below,
+    // next to NoCopiesOfCardInHand/PetPositionIs) since it's no longer
+    // subject-capable — no special-case skip needed here anymore, every
+    // kind reaching this point needs comparator/value same as before
+    // PetIsOut ever existed.
+    if (!COMPARATORS.includes(cond.comparator)) errors.push(`${p}.comparator "${cond.comparator}" is not one of: ${COMPARATORS.join(', ')}.`);
+    if (typeof cond.value !== 'number') errors.push(`${p}.value must be a number.`);
     if (cond.kind === 'HasStatusStacks') {
       // `statusKind` ('vanilla' | 'custom', defaults to 'custom' — the
       // only kind this condition supported before Tyler's follow-up "the
@@ -645,23 +673,6 @@ if (cond.kind === 'CardPositionInHand') {
       // PlayedCardHasKeyword/PlayedCardHasTag trigger checks above.
       if (cond.subject !== undefined && !CONDITION_SUBJECTS.includes(cond.subject)) {
         errors.push(`${p}.subject "${cond.subject}" is not one of: ${CONDITION_SUBJECTS.join(', ')}.`);
-      } else if (cond.kind === 'PetIsOut' && cond.subject === 'Pet') {
-        // Tyler: the "Pet" "Has a pet out" combination doesn't make
-        // sense. PetIsOut compiles to `${resolveConditionSubjectExpr(cond.subject)}.Pets.Any()`
-        // (see compiler.js's own case) — with subject 'Pet' that's
-        // `fgPet!.Pets.Any()`, i.e. "does YOUR OWN pet currently have a
-        // pet of its own out." Creature.Pets exists generically on every
-        // creature so this compiles fine, but nothing in Forge's pet
-        // system (PetOwner-based, see ForgePetPositionPatch) ever
-        // assigns a pet's own PetOwner to another pet — it's not a real
-        // check anyone could ever get true. Same "if the options in
-        // this menu don't reasonably belong behind a target, they
-        // shouldn't be in that menu" precedent as
-        // THAT_CARD_ONLY_CONDITION_KINDS above. Rejected here as
-        // defense in depth — the frontend's availableSubjects no longer
-        // offers "Pet" as a subject choice once "Has a pet out" is the
-        // selected kind, but this guards hand-edited/pre-existing JSON.
-        errors.push(`${p} has kind "PetIsOut" with subject "Pet" — checking whether your own pet has a pet of its own out isn't a real, meaningful check. Use "You" (Self) to check whether you have a pet out, or "Target" to check the card's target.`);
       } else if (modifierHook) {
         // Round 20 — Group B modifier conditions: no cardPlay, no glow
         // context, no cardPlay.Player.Osty path — fgPlayer/fgTarget come

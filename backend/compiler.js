@@ -797,7 +797,16 @@ const CONDITION_SUBJECTS = ['Self', 'CardTarget', 'Pet'];
 // Condition kinds that take a `subject` field at all — used by the
 // frontend (which kinds show the subject dropdown) and kept here, next to
 // CONDITION_SUBJECTS, so the two lists can't drift apart.
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'PetIsOut'];
+// [Round 306] PetIsOut removed — Tyler: "if [pet] [is summoned]... only
+// checks to see if the player has a pet summoned... add an optional field
+// to add a pet to check for." Subject 'CardTarget' ("does the enemy
+// target have a pet out") and 'Pet' ("does your own pet have a pet of
+// its own out" — already rejected as nonsensical, round 305) were never
+// real, meaningful checks in this PetOwner-based pet system; PetIsOut is
+// now its own dedicated `petRef`-driven kind (optional, defaults to
+// PET_ANY_SENTINEL) instead of a subject-capable one — see its own case
+// in conditionToCSharpRaw below.
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
 
 // [VERIFIED via reflect-baselib round 5] `Player.Osty` — the "pet"
 // creature some STS2 characters have — is a real, public, concrete
@@ -3461,25 +3470,50 @@ function conditionToCSharpRaw(cond, ctx = {}) {
         return `(${subjExpr}?.Powers?.Where(p => p.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff).Sum(p => p.Amount)).GetValueOrDefault() ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.Powers, PowerModel.Type/Amount] */`;
       }
       return `${resolveConditionSubjectExpr(cond.subject)}.Powers.Where(p => p.Type == MegaCrit.Sts2.Core.Entities.Powers.PowerType.Debuff).Sum(p => p.Amount) ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.Powers, PowerModel.Type/Amount] */`;
-    case 'PetIsOut':
-      // [VERIFIED via sts2.dll] Creature.Pets is a real, enumerable
-      // collection (`get_Pets`), independently corroborated by
-      // Player.Osty/IsOstyAlive (already [VERIFIED via reflect-baselib
-      // round 5], used elsewhere in this file for the Pet subject) AND by
-      // TheTrainerNewCharacter.dll — a SECOND real, compiled, shipped mod
-      // this round examined for the first time — defining a full real pet
-      // roster (BlastoisePet, CharizardPet, etc.) as working
-      // Creature-owned pets. No comparator/value/subject — a plain
-      // "does the player currently have an active pet" boolean check.
-      // 2026-09-07 fix — same undefined-variable-in-glow bug as
-      // HpBelowPercent above (see that case's own comment); also in
-      // SUBJECT_CAPABLE_CONDITION_KINDS, also already treated as glow-safe
-      // by the frontend.
-      if (ctx.glowContext) {
-        const subjExpr = resolveGlowSubjectExpr(cond.subject);
-        return `(${subjExpr}?.Pets?.Any()).GetValueOrDefault() /* [VERIFIED via sts2.dll — Creature.Pets, cross-confirmed via TheTrainerNewCharacter.dll's real pet roster] */`;
+    case 'PetIsOut': {
+      // [Round 306] Tyler: "rather than 'pet has a pet out' change it to
+      // be 'if [pet] [is summoned]' meaning that it only checks to see if
+      // the player has a pet summoned. then add an optional field to add
+      // a pet to check for. otherwise it will return true if any pet is
+      // summoned." Retired from SUBJECT_CAPABLE_CONDITION_KINDS (see that
+      // const's own comment) — this kind always checks the PLAYER now
+      // (never a subject-selectable creature; 'CardTarget'/'Pet' as
+      // subjects were never real, meaningful checks here — round 305
+      // already caught and rejected the 'Pet' one specifically), via this
+      // dedicated optional `petRef` field instead.
+      const isAnyPet = cond.petRef === undefined || cond.petRef === PET_ANY_SENTINEL;
+      if (isAnyPet) {
+        // Unchanged from the pre-306 'Self'-subject codegen — same real
+        // [VERIFIED via sts2.dll] Creature.Pets collection (`get_Pets`),
+        // independently corroborated by Player.Osty/IsOstyAlive AND by
+        // TheTrainerNewCharacter.dll's own real pet roster (BlastoisePet,
+        // CharizardPet, etc.) — just no longer routed through
+        // resolveConditionSubjectExpr/resolveGlowSubjectExpr, since 'Self'
+        // was always the only sensible subject choice in practice. Still
+        // real on every trigger AND inside Glow/Playability (2026-09-07
+        // fix retained) — no `ctx.fgPlayerBound` gate needed for this
+        // branch, same as before this round.
+        if (ctx.glowContext) {
+          return `(Owner?.Creature?.Pets?.Any()).GetValueOrDefault() /* [VERIFIED via sts2.dll — Creature.Pets, cross-confirmed via TheTrainerNewCharacter.dll's real pet roster] */`;
+        }
+        return `fgPlayer.Pets.Any() /* [VERIFIED via sts2.dll — Creature.Pets, cross-confirmed via TheTrainerNewCharacter.dll's real pet roster] */`;
       }
-      return `${resolveConditionSubjectExpr(cond.subject)}.Pets.Any() /* [VERIFIED via sts2.dll — Creature.Pets, cross-confirmed via TheTrainerNewCharacter.dll's real pet roster] */`;
+      // Specific-pet case — reuses the exact same real
+      // Creature.CombatState.Allies/PetOwner/Monster lookup
+      // PetPositionIs's own case (right below) already established, which
+      // needs a real Player in scope (resolvePlayerExpr(ctx)/
+      // ctx.fgPlayerBound) — NOT available inside Glow/Playability or a
+      // Group B modifier hook (backend/validate.js rejects a specific
+      // petRef there before this is ever reached; the ctx.fgPlayerBound
+      // check here is defense in depth, same "fix already-caught data
+      // too" convention as everywhere else in this file, not the primary
+      // gate).
+      if (!ctx.fgPlayerBound) return `ForgeActions.TodoCondition("PetIsOut(no player in scope on this hook)")`;
+      const petCls = ctx.petClassById && ctx.petClassById.get(cond.petRef);
+      if (!petCls) return `ForgeActions.TodoCondition("PetIsOut(no pet selected or pet not found: ${cond.petRef || ''})")`;
+      const playerExpr = resolvePlayerExpr(ctx);
+      return `${playerExpr}.Creature.CombatState.Allies.Any(_fgAlly => _fgAlly.PetOwner == ${playerExpr} && _fgAlly.Monster is ${petCls}) /* [Round 306] same real Creature.CombatState.Allies/PetOwner/Monster lookup PetPositionIs/PetAttack already use — see those cases' own evidence trail (round 286/293/303) */`;
+    }
     case 'HandCardTypeCheck': {
       // [Round 63] Generalized off `ctx.cardPlayBound` — reuses the exact
       // same real access pattern CardsInHand already established

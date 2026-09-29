@@ -9581,8 +9581,17 @@ const CONDITION_KINDS = [
     hint:'Checks the chosen creature\'s current Block. Works everywhere, including inside the Glow section below.' },
   { id:'DebuffStacksTotal', label:'Total debuff stacks', real:true,
     hint:'Sums the stack count of every debuff currently on the chosen creature. Works everywhere, including inside the Glow section below.' },
-  { id:'PetIsOut', label:'Has a pet out', real:true,
-    hint:'Checks whether the chosen creature currently has a pet out. Plain yes/no — no comparator/value. Works everywhere, including inside the Glow section below.' },
+  // [Round 306] Tyler: "rather than 'pet has a pet out' change it to be
+  // 'if [pet] [is summoned]' meaning that it only checks to see if the
+  // player has a pet summoned. then add an optional field to add a pet
+  // to check for. otherwise it will return true if any pet is summoned."
+  // No longer subject-capable (see SUBJECT_CAPABLE_CONDITION_KINDS' own
+  // comment) — renders its own dedicated petRef dropdown (defaulting to
+  // "Any pet") in the same visual slot the subject dropdown used to
+  // occupy, so the sentence reads "If [Any pet / a named pet] is
+  // summoned" — see renderConditionRowFields' needsPetIsOutRef below.
+  { id:'PetIsOut', label:'is summoned', real:true,
+    hint:'Checks whether one of the player\'s own pets is currently summoned. Leave the pet field on "Any pet" to check for any of your pets, or pick a specific one to check for just that pet. Plain yes/no — no comparator/value. The "Any pet" default works everywhere, including inside the Glow section below; checking for one SPECIFIC pet needs a real relic/mechanic/card effect-block trigger (not Glow/Playability or a Group B modifier hook).' },
   { id:'HandCardTypeCheck', label:'Cards in hand are type', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether Any (at least one) or All of the cards currently in your hand are a given type. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'AttacksPlayedThisTurn', label:'Attacks played this turn', real:true,
@@ -9863,7 +9872,14 @@ const PET_SUPPORTED_TRIGGERS = ['OnPlay', 'OnAnyCardPlayed', 'OnDiscard', 'OnTur
 // subject==='ThatCard' specifically, not the wider isCardSubject check
 // CardPositionInHand uses.
 const THAT_CARD_ONLY_CONDITION_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType'];
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'PetIsOut', 'CardPositionInHand', ...THAT_CARD_ONLY_CONDITION_KINDS];
+// [Round 306] PetIsOut removed — see backend/compiler.js:
+// SUBJECT_CAPABLE_CONDITION_KINDS' own comment (mirrored here, same
+// "frontend keeps its own copy" convention this const's own comment
+// above already documents for CardPositionInHand/THAT_CARD_ONLY_
+// CONDITION_KINDS) — it's now its own dedicated petRef-driven kind
+// instead, same shape as PetPositionIs (see CONDITION_KINDS' own entry
+// and renderConditionRowFields' needsPetIsOutRef below).
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', ...THAT_CARD_ONLY_CONDITION_KINDS];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -9953,19 +9969,12 @@ function availableSubjects(eff, kind){
   // never real here (no fgPet path exists for a modifier body at all,
   // unlike the glow/playability Owner?.Osty path below); 'CardTarget' only
   // when this specific hook binds a second party.
-  // [Tyler] "Pet" "Has a pet out" doesn't make sense -- PetIsOut with
-  // subject 'Pet' would compile to `fgPet!.Pets.Any()` (does YOUR OWN
-  // pet currently have a pet of its own out), not a real check anything
-  // in Forge's pet system supports (Creature.Pets exists generically on
-  // every creature, but nothing ever assigns a pet's own PetOwner to
-  // another pet) — same "if the options in this menu don't reasonably
-  // belong behind a target, they shouldn't be in that menu" precedent
-  // already applied to THAT_CARD_ONLY_CONDITION_KINDS above. Every other
-  // subject-capable kind (HasStatusStacks, HpBelowPercent, HasBlock,
-  // DebuffStacksTotal, CardPositionInHand) is unaffected — 'Pet' still
-  // makes sense as "check your pet's HP/block/stacks," just not as "does
-  // your pet have a pet out."
-  const petSubjectMakesNoSenseForKind = kind === 'PetIsOut';
+  // [Round 305] PetIsOut used to be excluded from offering 'Pet' as a
+  // subject here ("Pet" "Has a pet out" doesn't make sense) — moot as of
+  // round 306, which retired PetIsOut from SUBJECT_CAPABLE_CONDITION_KINDS
+  // entirely (it's no longer subject-capable at all, so it never reaches
+  // this function — see that const's own comment and CONDITION_KINDS'
+  // PetIsOut entry below for its new dedicated petRef field instead).
   if(eff.modifierHook){
     return CONDITION_SUBJECTS.filter(s => {
       if(!onlyForKindOk(s)) return false;
@@ -9993,7 +10002,6 @@ function availableSubjects(eff, kind){
   return CONDITION_SUBJECTS.filter(s => {
     if(!onlyForKindOk(s)) return false;
     if(!onlyForTriggerOk(s)) return false;
-    if(s.id === 'Pet' && petSubjectMakesNoSenseForKind) return false;
     if(s.id === 'CardTarget') return !glowOrPlayabilityContext && !noCardTargetBound;
     if(s.requiresTrigger) return glowOrPlayabilityContext || PET_SUPPORTED_TRIGGERS.includes(eff.trigger);
     return true;
@@ -10047,11 +10055,6 @@ function fixConditionSubjectForTrigger(cond, trigger){
   if(!SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind)) return;
   if(cond.subject === 'Pet' && !PET_SUPPORTED_TRIGGERS.includes(trigger)) cond.subject = 'Self';
   if(cond.subject === 'CardTarget' && (HOOK_TRIGGER_BINDING[trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(trigger))) cond.subject = 'Self';
-  // [Tyler] "Pet" "Has a pet out" doesn't make sense — same reasoning as
-  // availableSubjects' petSubjectMakesNoSenseForKind above, reached here
-  // for data saved before this restriction existed (or hand-edited
-  // JSON), not just blocked in the dropdown going forward.
-  if(cond.kind === 'PetIsOut' && cond.subject === 'Pet') cond.subject = 'Self';
 }
 function fixConditionsForTrigger(conditions, trigger){
   (conditions||[]).forEach(c=>fixConditionSubjectForTrigger(c, trigger));
@@ -10863,7 +10866,15 @@ function describeCondition(cond, trigger){
     // fragment convention as every case above.
     case 'HasBlock': return `${subj} ${has} ${cmp} ${cond.value} Block`;
     case 'DebuffStacksTotal': return `${subj==='you'?'your':subj+"'s"} total debuff stacks ${cond.comparator==='eq'?'is':'are'} ${cmp} ${cond.value}`;
-    case 'PetIsOut': return `${subj==='you'?'your':subj+"'s"} pet is out`;
+    // [Round 306] No longer subject-based — see CONDITION_KINDS' own
+    // PetIsOut entry and blankCondition's comment. `subj`/`has` (computed
+    // from cond.subject at the top of this function) are unused here now.
+    case 'PetIsOut': {
+      const petName = (!cond.petRef || cond.petRef === PET_ANY_SENTINEL)
+        ? 'a pet'
+        : ((state.pets.find(pet=>pet.id===cond.petRef) || {}).name || 'a pet');
+      return `${petName} is summoned`;
+    }
     case 'HandCardTypeCheck': return `${cond.mode==='All'?'all':'any'} of the cards in your hand ${cond.mode==='All'?'are':'is'} a ${cond.cardType}`;
     case 'AttacksPlayedThisTurn': return `the Attacks you've played this turn ${cond.comparator==='eq'?'is':'are'} ${cmp} ${cond.value}`;
     case 'OrbSlotCount': return `your orb slot count is ${cmp} ${cond.value}`;
@@ -13080,7 +13091,12 @@ function blankCondition(kind){
   // 2026-08-27 condition-kind expansion round — boolean/own-field kinds
   // that need their own blank shape (no comparator/value), same convention
   // as DamageBrokeBlock/PlayedCardHasKeyword/PlayedCardHasTag/PlayedCardHasType above.
-  if(kind === 'PetIsOut') return { kind, subject: 'Self' };
+  // [Round 306] Defaults to PET_ANY_SENTINEL ("any pet") — Tyler:
+  // "add an optional field to add a pet to check for. otherwise it will
+  // return true if any pet is summoned." No more `subject` (see
+  // SUBJECT_CAPABLE_CONDITION_KINDS' own comment) — always checks the
+  // player now.
+  if(kind === 'PetIsOut') return { kind, petRef: PET_ANY_SENTINEL };
   if(kind === 'HandCardTypeCheck') return { kind, mode: 'Any', cardType: CARD_TYPE_ORDER[0] };
   if(kind === 'EnemyIntent') return { kind, intentKind: 'Attack' };
   if(kind === 'HasSpecificRelic') return { kind, relicRef: state.relics[0] ? state.relics[0].id : '' };
@@ -13253,6 +13269,31 @@ function renderConditionRowFields(row, cond, eff){
   // together below (same row, no separate needsPetPosition split) since
   // neither field means anything without the other.
   const needsPetPositionRef = cond.kind === 'PetPositionIs';
+  // [Round 306] PetIsOut's own dedicated petRef dropdown — rendered in
+  // the same visual slot the subject dropdown used to occupy (right
+  // after "If", before the kind select) so the sentence reads "If [Any
+  // pet / a named pet] is summoned", matching Tyler's exact ask. Unlike
+  // PetPositionIs above, this field is OPTIONAL (defaults to
+  // PET_ANY_SENTINEL) and always renders an "Any pet" option first.
+  // `petIsOutSpecificPetAllowed` mirrors backend/validate.js's own
+  // PetIsOut specific-pet check: `eff.trigger === undefined` covers BOTH
+  // Glow/Playability and a Group B modifier hook (see that check's own
+  // comment) — neither has a real Player in scope for the
+  // Creature.CombatState.Allies lookup a specific pet needs, so only
+  // "Any pet" (the pre-existing, still-real-everywhere Creature.Pets.Any()
+  // check) is offered there; a normal relic/mechanic/card effect-block
+  // trigger offers every one of this character's own pets too.
+  const needsPetIsOutRef = cond.kind === 'PetIsOut';
+  const petIsOutSpecificPetAllowed = needsPetIsOutRef && eff.trigger !== undefined;
+  // Defensive normalization — if this condition somehow ended up with a
+  // specific (non-any) petRef in a context that doesn't allow one (glow/
+  // modifier hook), reset to "any pet" rather than silently keeping a
+  // value the dropdown below doesn't even offer as a selectable option
+  // (same "fix already-saved data, not just block new mismatches"
+  // convention as fixConditionSubjectForTrigger elsewhere in this file).
+  if(needsPetIsOutRef && !petIsOutSpecificPetAllowed && cond.petRef && cond.petRef !== PET_ANY_SENTINEL){
+    cond.petRef = PET_ANY_SENTINEL;
+  }
   // [Round 65] Only true once "This Card"/"That Card" is actually picked
   // from the merged subject dropdown (see CONDITION_SUBJECTS' own comment)
   // — You/Target/Pet are offered in the same dropdown for this kind too
@@ -13296,6 +13337,10 @@ function renderConditionRowFields(row, cond, eff){
     <div class="condition-row-main">
       <span class="cond-word cond-if">If</span>
       ${needsSubject ? `<select class="c-subject" title="Which creature (or, for Position in hand, which card) to check.">${subjects.map(s=>`<option value="${s.id}" ${s.id===cond.subject?'selected':''} title="${escapeAttr(s.title||s.label)}">${escapeHtml(subjectOptionLabel(s, cond))}</option>`).join('')}</select>` : ''}
+      ${needsPetIsOutRef ? `<select class="c-petisout-ref" title="${petIsOutSpecificPetAllowed ? 'Which pet to check for — leave on &quot;Any pet&quot; to check whether ANY of your pets is currently summoned.' : 'Checking for one specific pet needs a real relic/mechanic/card effect-block trigger — not available in Glow/Playability or a Group B modifier hook. Only &quot;Any pet&quot; is offered here.'}">
+        <option value="${PET_ANY_SENTINEL}" ${(!cond.petRef || cond.petRef===PET_ANY_SENTINEL)?'selected':''}>Any pet</option>
+        ${petIsOutSpecificPetAllowed ? state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('') : ''}
+      </select>` : ''}
       <select class="c-kind">${kinds.map(k=>`<option value="${k.id}" ${k.id===cond.kind?'selected':''}>${escapeHtml(k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond) : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond) : k.label)}</option>`).join('')}</select>
       ${needsStatusRef ? `<span class="cond-word">of</span>${mergedStatusPickerHtml(cond, COND_STATUS_FIELDS)}` : ''}
       ${needsComparatorValue ? `<select class="c-comparator">${COMPARATORS.map(c=>`<option value="${c.id}" ${c.id===cond.comparator?'selected':''}>${c.label}</option>`).join('')}</select>` : ''}
@@ -13371,14 +13416,11 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
     // [Round 66] See this handler's own comment above — carry the
     // already-chosen subject forward into the new kind rather than
     // resetting it, whenever the new kind is subject-capable at all.
-    // [Tyler] ...except into 'PetIsOut' with a carried-forward 'Pet'
-    // subject — "Pet" "Has a pet out" doesn't make sense (see
-    // availableSubjects' petSubjectMakesNoSenseForKind), so this is the
-    // other direction that bug can be reached from: switching kind FROM
-    // e.g. "Has block" (subject "Pet") TO "Has a pet out" would otherwise
-    // silently carry the stale subject forward into a combination
-    // availableSubjects no longer even offers via the dropdown.
-    if(SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) && prevSubject && !(newKind === 'PetIsOut' && prevSubject === 'Pet')) cond.subject = prevSubject;
+    // [Round 306] PetIsOut is no longer subject-capable (see
+    // SUBJECT_CAPABLE_CONDITION_KINDS' own comment) — switching kind INTO
+    // it never carries a subject forward any more (blankCondition gives
+    // it petRef instead), no special-case needed here.
+    if(SUBJECT_CAPABLE_CONDITION_KINDS.includes(newKind) && prevSubject) cond.subject = prevSubject;
     renderConditionRowFields(row, cond, eff);
     wireConditionRowHandlers(row, cond, eff, container, j, onChange);
   };
@@ -13483,6 +13525,12 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   const petPositionEl = row.querySelector('.c-pet-position');
   const petPositionPreviewEl = row.querySelector('.c-pet-position-preview');
   if(petPositionEl) petPositionEl.oninput = e=>{ cond.position = Math.max(1, parseInt(e.target.value, 10) || 1); if(petPositionPreviewEl) petPositionPreviewEl.textContent = `(${ordinal(cond.position)})`; };
+  // [Round 306] PetIsOut's own petRef dropdown — same plain-property-write
+  // convention as petPositionRefEl above, no disabled-state check needed
+  // since this select is never fully disabled (it always offers at least
+  // "Any pet", unlike petPositionRefEl's "no pets defined yet" case).
+  const petIsOutRefEl = row.querySelector('.c-petisout-ref');
+  if(petIsOutRefEl) petIsOutRefEl.onchange = e=> cond.petRef = e.target.value;
   row.querySelector('.c-remove').onclick = ()=>{ eff.conditions.splice(j,1); renderConditionRows(eff, container, onChange); };
 }
 
