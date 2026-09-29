@@ -136,6 +136,12 @@ const CONDITION_KINDS = [
   // compiler.js:conditionToCSharpRaw's CardPositionInHand case for the
   // full evidence trail.
   'CardPositionInHand',
+  // [Round 303] Tyler: "then maybe add a 'pet is in 1st/2nd/3rd position'
+  // conditional" — see this file's own dedicated validation block below
+  // and compiler.js:conditionToCSharpRaw's PetPositionIs case for the
+  // full evidence trail (reuses ForgePetPositionPatch's own real,
+  // decompiled Allies-ordering logic).
+  'PetPositionIs',
 ];
 // cardPlayBound-only condition kinds — down to just EnemyIntent as of
 // round 63. HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
@@ -155,7 +161,10 @@ const CONDITION_KINDS = [
 const CARD_PLAY_BOUND_ONLY_CONDITION_KINDS = ['EnemyIntent'];
 // [Round 63] See the comment above and this list's own use in
 // validateConditions below.
-const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand'];
+// [Round 303] PetPositionIs joins this list too — same real Player-in-
+// scope requirement (resolvePlayerExpr(ctx)/ctx.fgPlayerBound) as the 4
+// kinds above, see compiler.js:conditionToCSharpRaw's PetPositionIs case.
+const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'PetPositionIs'];
 const COMPARATORS = ['lt', 'lte', 'eq', 'gte', 'gt'];
 // 12-action-type model — replaces the old 17-type list (ApplyStatus/
 // RemoveStatus/ApplyCustomStatus/RemoveCustomStatus/LoseHp/HealHp/GainGold/
@@ -240,7 +249,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -340,7 +349,7 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // binds fgPet (there's no cardPlay.Player.Osty path for a value-returning
 // hook body, unlike OnPlay/OnAnyCardPlayed) — see the modifierHook branch
 // inside the SUBJECT_CAPABLE_CONDITION_KINDS block below.
-function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook) {
+function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds) {
   if (conditions === undefined) return;
   if (!Array.isArray(conditions)) { errors.push(`${path}.conditions must be an array.`); return; }
   conditions.forEach((cond, i) => {
@@ -489,6 +498,23 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // card id from this character's own cards[].
       if (!isNonEmptyString(cond.cardRef)) errors.push(`${p} has kind "NoCopiesOfCardInHand" but no cardRef.`);
       else if (!cardIds.has(cond.cardRef)) errors.push(`${p}.cardRef "${cond.cardRef}" doesn't match any defined card id.`);
+      return;
+    }
+    if (cond.kind === 'PetPositionIs') {
+      // [Round 303] Tyler: "then maybe add a 'pet is in 1st/2nd/3rd
+      // position' conditional" — see compiler.js:conditionToCSharpRaw's
+      // PetPositionIs case for the real Allies-ordering evidence trail.
+      // `petRef` — a pet id from this character's own pets[], same
+      // cross-check pattern relicRef/cardRef get above (NOT petIds' own
+      // sibling PET_ANY_SENTINEL check below — that sentinel is PetAttack-
+      // only; this condition always needs one specific named pet to check
+      // the position of, so it isn't accepted here). `position` — 1-based,
+      // same shape/limits as CardPositionInHand's own `position` field.
+      if (!isNonEmptyString(cond.petRef)) errors.push(`${p} has kind "PetPositionIs" but no petRef.`);
+      else if (!petIds || !petIds.has(cond.petRef)) errors.push(`${p}.petRef "${cond.petRef}" doesn't match any defined pet id.`);
+      if (typeof cond.position !== 'number' || !Number.isInteger(cond.position) || cond.position < 1) {
+        errors.push(`${p}.position must be a positive integer (1 = leftmost, matching ForgePetPositionPatch's own real on-screen ordering).`);
+      }
       return;
     }
 if (cond.kind === 'CardPositionInHand') {
@@ -959,9 +985,17 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // pet in game, they just have to not summon it"). [Round 293] widened
     // to "PetAttack" too -- see compiler.js's actionToCSharp "PetAttack"
     // case for the real ForgePetAttackSupport.Create call this drives.
+    // [Round 303] "PetAttack" specifically also accepts PET_ANY_SENTINEL --
+    // Tyler's "whatever pet is currently out attacks" option -- see
+    // compiler.js's own doc comment on that const and its actionToCSharp
+    // "PetAttack" case for what it compiles to. "SummonPet" does NOT
+    // accept it -- summoning genuinely needs one specific species (there's
+    // no real "summon whichever pet" concept, only "summon THIS one").
     if (act.type === 'SummonPet' || act.type === 'PetAttack') {
       if (act.petRef === '' || act.petRef === undefined) {
         errors.push(`${p}: action "${act.type}" needs a pet selected — pick one from the dropdown, or add a pet first if none exist yet (Pets section).`);
+      } else if (act.type === 'PetAttack' && act.petRef === PET_ANY_SENTINEL) {
+        // valid -- "any pet currently out" sentinel, PetAttack only.
       } else if (!petIds.has(act.petRef)) {
         errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined pet id.`);
       }
@@ -1296,7 +1330,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
         errors.push(`${p}.trigger "${eff.trigger}" is not one of: ${allowedTriggers.join(', ')}.`);
       }
     }
-    validateConditions(eff.conditions, p, errors, mechanicIds, cardIds, relicIds, eff.trigger, gameplayTagsInUse);
+    validateConditions(eff.conditions, p, errors, mechanicIds, cardIds, relicIds, eff.trigger, gameplayTagsInUse, undefined, petIds);
     // [Fix, round 33 — real crash: a genuine, mechanistically-proven
     // infinite-recursion stack overflow, root-caused via a real Windows
     // minidump (STATUS_STACK_OVERFLOW, ~thousands of uniformly-repeated
@@ -1379,7 +1413,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
 // this function doesn't require — or validate — any of that here either,
 // same "compiles but throws, not misleadingly" convention as every other
 // [UNVERIFIED]/deferred surface in this project.
-function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse) {
+function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds) {
   if (modifiers === undefined) return;
   if (!Array.isArray(modifiers)) { errors.push(`${path}.modifiers must be an array.`); return; }
   // Round 116: every modifier ultimately compiles to `public override
@@ -1413,7 +1447,7 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
       }
     }
     if (hook.shape === 'deferred') return;
-    validateConditions(mod.conditions, p, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, hook);
+    validateConditions(mod.conditions, p, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, hook, petIds);
     if (hook.shape === 'gate') {
       if (mod.gateValue !== undefined && typeof mod.gateValue !== 'boolean') errors.push(`${p}.gateValue must be a boolean if present.`);
     } else if (hook.shape === 'numeric') {
@@ -1583,7 +1617,7 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
     if (sub === undefined) return;
     if (!sub || typeof sub !== 'object') { errors.push(`${p}.advancedOptions.${key} must be an object if present.`); return; }
     if (sub.enabled !== undefined && typeof sub.enabled !== 'boolean') errors.push(`${p}.advancedOptions.${key}.enabled must be a boolean if present.`);
-    validateConditions(sub.conditions, `${p}.advancedOptions.${key}`, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse);
+    validateConditions(sub.conditions, `${p}.advancedOptions.${key}`, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, undefined, petIds);
   });
 
   // whileInHand — cardEffectBlock-shaped entries. 'OnTurnEndInHand' (the
@@ -2182,7 +2216,7 @@ function validateCharacterPackage(pkg) {
     if (!isNonEmptyString(relic.name)) errors.push(`${p}.name must be a non-empty string.`);
     if (!RELIC_RARITIES.includes(relic.rarity)) errors.push(`${p}.rarity "${relic.rarity}" is not one of: ${RELIC_RARITIES.join(', ')}.`);
     validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'relic', gameplayTagsInUse });
-    validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse);
+    validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds);
     // [Round 217] autoClaimShopInventory compiles to a real, dedicated
     // AfterRoomEntered override (backend/compiler.js:
     // generateClaimShopInventoryOverride) -- [BEST EFFORT], see that
@@ -2232,7 +2266,7 @@ function validateCharacterPackage(pkg) {
     if (mech.effects !== undefined) {
       validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'mechanic', gameplayTagsInUse });
     }
-    validateModifiers(mech.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse);
+    validateModifiers(mech.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds);
   });
 
   // --- pets / orbs — Tyler's "add a section to the page to create custom

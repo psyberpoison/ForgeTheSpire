@@ -4033,6 +4033,15 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
 const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack"];
+// [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
+// (this file has no require(), same hand-mirrored-constant convention as
+// CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
+// reserved PetAttack `petRef` value meaning "whatever pet is currently
+// out attacks," offered as an extra option in that action's own pet
+// picker alongside this character's own named pets[]. Never collides
+// with a real pet id (every real one comes from uid('pet'), always
+// `pet_` + 7 base36 chars, never this literal).
+const PET_ANY_SENTINEL = '__any_pet__';
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -9629,6 +9638,16 @@ const CONDITION_KINDS = [
   // occupies for other kinds, not buried in kind-dropdown text.
   { id:'CardPositionInHand', label:'Position in hand', real:true, requiresTrigger:'glowOrPlayabilityOrCardTrigger',
     hint:'' },
+  // [Round 303] Tyler: "then maybe add a 'pet is in 1st/2nd/3rd position'
+  // conditional" -- reuses the exact real ordering ForgePetPositionPatch
+  // already derives to visually line up multiple simultaneous pets left
+  // to right (see backend/compiler.js:generatePetPositionSupportFile's
+  // own header comment). Same 'anyRealTrigger' treatment as
+  // HasSpecificRelic/NoCopiesOfCardInHand right above -- real on any
+  // relic/mechanic/card effect-block trigger, not Glow/Playability or a
+  // Group B modifier hook (no live per-instance Allies concept there).
+  { id:'PetPositionIs', label:'Pet position is', real:true, requiresTrigger:'anyRealTrigger',
+    hint:'Checks whether a specific one of this character\'s own pets currently sits in a given position (1st/2nd/3rd...), matching the same left-to-right order pets visually line up in on screen. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
 ];
 // Whether a condition kind's `requiresTrigger` is satisfiable];
 // Whether a condition kind's `requiresTrigger` is satisfiable by the given
@@ -10785,7 +10804,12 @@ function describeAction(act){
     // compiler.js's actionToCSharp PetAttack case for the full evidence
     // trail.
     case 'PetAttack': {
-      const petName = (state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet';
+      // [Round 303] "any pet currently out" sentinel — see
+      // compiler.js's actionToCSharp PetAttack case for what this compiles
+      // to (a live Allies lookup, not a specific species).
+      const petName = act.petRef === PET_ANY_SENTINEL
+        ? 'whichever pet is out'
+        : ((state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet');
       return `Have ${petName} attack ${targetPhrase} for ${n} damage`;
     }
     default: return '';
@@ -10848,6 +10872,14 @@ function describeCondition(cond, trigger){
       const verb = isReacting ? 'was' : 'is'; // round 55 — Tyler's phrasing: "This card is..." vs "That card was..."
       if(pos === 1) return `${subject} ${verb} the ${edge === 'left' ? 'leftmost' : 'rightmost'} card in your hand`;
       return `${subject} ${verb} the ${ordinal(pos)} card from the ${edge} in your hand`;
+    }
+    // [Round 303] Tyler: "pet is in 1st/2nd/3rd position" — see
+    // compiler.js's conditionToCSharpRaw PetPositionIs case for the real
+    // Allies-ordering evidence trail.
+    case 'PetPositionIs': {
+      const petName = (state.pets.find(pet=>pet.id===cond.petRef) || {}).name || 'a pet';
+      const pos = cond.position || 1;
+      return `${petName} is in the ${ordinal(pos)} position`;
     }
     default: return '';
   }
@@ -13027,6 +13059,11 @@ function blankCondition(kind){
   // 2026-09-08 (round 52) — defaults to exactly Earthquake's own real
   // case (leftmost card, i.e. edge 'Left' + position 1).
   if(kind === 'CardPositionInHand') return { kind, edge: 'Left', position: 1 };
+  // [Round 303] Defaults to this character's own first pet, position 1
+  // (leftmost/first-summoned) — same "pick the first real option, no
+  // comparator/value" shape as HasSpecificRelic/NoCopiesOfCardInHand
+  // above.
+  if(kind === 'PetPositionIs') return { kind, petRef: state.pets[0] ? state.pets[0].id : '', position: 1 };
   const c = { kind, comparator:'gte', value: kind === 'HpBelowPercent' ? 50 : 1 };
   if(kind === 'HasStatusStacks'){
     // Defaults to 'custom' (the only kind this condition supported before
@@ -13169,7 +13206,7 @@ function renderConditionRowFields(row, cond, eff){
   // are the original 4; PetIsOut/HandCardTypeCheck/EnemyIntent/
   // HasSpecificRelic/NoCopiesOfCardInHand are the 5 added in the 2026-08-27
   // condition-kind expansion round (see blankCondition's own comment).
-  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand'];
+  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs'];
   const needsComparatorValue = !NO_COMPARATOR_KINDS.includes(cond.kind);
   const needsStatusRef = cond.kind === 'HasStatusStacks';
   const isVanillaStatus = needsStatusRef && cond.statusKind === 'vanilla';
@@ -13183,6 +13220,10 @@ function renderConditionRowFields(row, cond, eff){
   const needsIntentKind = cond.kind === 'EnemyIntent';
   const needsRelicRef = cond.kind === 'HasSpecificRelic';
   const needsCardRef = cond.kind === 'NoCopiesOfCardInHand';
+  // [Round 303] PetPositionIs's own petRef+position pair — rendered
+  // together below (same row, no separate needsPetPosition split) since
+  // neither field means anything without the other.
+  const needsPetPositionRef = cond.kind === 'PetPositionIs';
   // [Round 65] Only true once "This Card"/"That Card" is actually picked
   // from the merged subject dropdown (see CONDITION_SUBJECTS' own comment)
   // — You/Target/Pet are offered in the same dropdown for this kind too
@@ -13257,12 +13298,19 @@ function renderConditionRowFields(row, cond, eff){
       </select>
       <span class="cond-word">position</span>
       <span class="cond-word c-hand-position-preview" style="opacity:.75; font-style:italic" title="Live preview — if you select 1st from the left, the card preview says leftmost so you can verify it.">${handPositionPreviewText(cond.edge, cond.position)}</span>` : ''}
+      ${needsPetPositionRef ? (state.pets.length
+        ? `<select class="c-pet-position-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<select class="c-pet-position-ref" disabled><option value="">— no pets defined yet —</option></select>`) : ''}
+      ${needsPetPositionRef ? `<span class="cond-word">is in</span>
+      <input class="c-pet-position" type="number" min="1" step="1" value="${cond.position??1}" title="1 = leftmost/first-summoned, matching the same order pets line up in on screen.">
+      <span class="cond-word c-pet-position-preview" style="opacity:.75; font-style:italic">(${ordinal(cond.position||1)})</span>` : ''}
       <button class="ghost c-remove">✕</button>
     </div>
     ${needsStatusRef && !isVanillaStatus && !mechanicOpts.length ? `<div class="hint-small" style="color:var(--danger-bright)">No custom mechanics defined yet — define one first, or pick a Vanilla status from the dropdown above instead.</div>` : ''}
     ${needsTag && !gameplayTagOptions.length ? `<div class="hint-small" style="color:var(--danger-bright)">Add a Gameplay Tag to at least one card first (in that card's editor) — this condition has nothing to match yet.</div>` : ''}
     ${needsRelicRef && !state.relics.length ? `<div class="hint-small" style="color:var(--danger-bright)">No relics defined yet — define one first (in the Relics section).</div>` : ''}
     ${needsCardRef && !state.cards.length ? `<div class="hint-small" style="color:var(--danger-bright)">No cards defined yet — define one first.</div>` : ''}
+    ${needsPetPositionRef && !state.pets.length ? `<div class="hint-small" style="color:var(--danger-bright)">No pets defined yet — define one first (in the Pets section).</div>` : ''}
     <!-- [Tyler, this round] "lets get rid of that big block of text" —
          removed the per-kind evidence-hint block that used to render
          here (the full VERIFIED-via-decompile writeup for whichever
@@ -13391,6 +13439,14 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   if(handPositionEl) handPositionEl.oninput = e=>{ cond.position = Math.max(1, parseInt(e.target.value, 10) || 1); if(handPositionPreviewEl) handPositionPreviewEl.textContent = handPositionPreviewText(cond.edge, cond.position); };
   const handEdgeEl = row.querySelector('.c-hand-edge');
   if(handEdgeEl) handEdgeEl.onchange = e=>{ cond.edge = e.target.value; if(handPositionPreviewEl) handPositionPreviewEl.textContent = handPositionPreviewText(cond.edge, cond.position); };
+  // [Round 303] Same plain-property-write convention as relicRefEl/
+  // cardRefEl above (petRef), plus a live ordinal preview matching
+  // handPositionEl's own pattern (position).
+  const petPositionRefEl = row.querySelector('.c-pet-position-ref');
+  if(petPositionRefEl && !petPositionRefEl.disabled) petPositionRefEl.onchange = e=> cond.petRef = e.target.value;
+  const petPositionEl = row.querySelector('.c-pet-position');
+  const petPositionPreviewEl = row.querySelector('.c-pet-position-preview');
+  if(petPositionEl) petPositionEl.oninput = e=>{ cond.position = Math.max(1, parseInt(e.target.value, 10) || 1); if(petPositionPreviewEl) petPositionPreviewEl.textContent = `(${ordinal(cond.position)})`; };
   row.querySelector('.c-remove').onclick = ()=>{ eff.conditions.splice(j,1); renderConditionRows(eff, container, onChange); };
 }
 
@@ -13933,8 +13989,18 @@ function ensureActionRefDefaults(act){
   // as AfflictCard/EnchantCard above. [Round 289] Every defined pet is a
   // valid target now -- the earlier compileReal opt-in filter is retired.
   // [Round 293] Widened to "PetAttack" too -- same picker, same self-heal.
+  // [Round 303] PET_ANY_SENTINEL ("whatever pet is out") is ALSO a valid
+  // petRef, but only on "PetAttack" -- SummonPet never accepts it (see
+  // backend/validate.js). Without this carve-out the self-heal check below
+  // (state.pets.find(...) — never matches the sentinel) would wrongly
+  // stomp a deliberately-chosen "any pet" pick back to a specific pet on
+  // every single re-render.
   if(act.type === 'SummonPet' || act.type === 'PetAttack'){
-    if(state.pets.length && (!act.petRef || !state.pets.find(pet=>pet.id===act.petRef))){
+    const petRefIsValid = act.petRef && (
+      (act.type === 'PetAttack' && act.petRef === PET_ANY_SENTINEL) ||
+      !!state.pets.find(pet=>pet.id===act.petRef)
+    );
+    if(state.pets.length && !petRefIsValid){
       act.petRef = state.pets[0].id;
     }
   } else {
@@ -14500,9 +14566,15 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // compiler.js's actionToCSharp PetAttack case for the full evidence
     // trail. Same picker shape as SummonPet above, plus the shared
     // target/amount atoms every Creature-targeted action already uses.
+    // [Round 303] Tyler: "is it possible to add a 'whatever pet is
+    // currently out attacks' option?" -- the picker now offers
+    // PET_ANY_SENTINEL as an extra <option>, alongside this character's
+    // own named pets, rather than a separate checkbox/toggle -- keeps this
+    // a single dropdown choice, same shape SummonPet's own picker (and
+    // every other ref-picker in this app) already has.
     case 'PetAttack': {
       const petOptions = state.pets.length
-        ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        ? `<select class="a-pet-ref"><option value="${PET_ANY_SENTINEL}" ${act.petRef===PET_ANY_SENTINEL?'selected':''}>Whatever pet is out</option>${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create a pet first)</span>`;
       sentenceHtml = `<span class="cond-word">Have</span> ${petOptions}<span class="cond-word">attack</span>${targetHtml}<span class="cond-word">for</span>${amountHtml}${useXAmountHtml}<span class="cond-word">damage.</span>`;
       break;

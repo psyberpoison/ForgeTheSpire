@@ -841,6 +841,21 @@ const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'H
 // rather than ever risk emitting a reference to an unbound `fgPet`.
 const PET_SUPPORTED_TRIGGERS = ['OnPlay', 'OnAnyCardPlayed', 'OnDiscard', 'OnTurnEndInHand', 'OnRetained']; // [Round 95] OnRetained added — same real this.Owner.Osty petExpr as OnDiscard/OnTurnEndInHand, see CARD_TRIGGER_HOOKS.OnRetained
 
+// [Round 303] Tyler: "we currently have an option to make a pet attack,
+// but it checks for individual pets. is it possible to add a 'whatever
+// pet is currently out attacks' option?" — a reserved petRef value
+// PetAttack's own `petRef` field can carry instead of a real pet id,
+// picked in the frontend's picker as an extra option alongside this
+// character's own named pets. Never collides with a real pet id — every
+// real one comes from `uid('pet')` (frontend/index.html), which always
+// emits `pet_` followed by 7 base36 characters, never this literal
+// double-underscore string. Mirrored as a hand-typed literal in
+// frontend/index.html (that file has no require()) — same
+// one-string-two-files convention this codebase already uses for
+// CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS etc. See
+// actionToCSharp's "PetAttack" case for what this compiles to.
+const PET_ANY_SENTINEL = '__any_pet__';
+
 // Resolves a condition's `subject` field (see CONDITION_SUBJECTS above) to
 // the local variable a per-creature condition (HasStatusStacks) should
 // read. Mirrors resolveTargetExpr's `fgTarget!` null-forgiving pattern —
@@ -2260,12 +2275,44 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // allEnemiesHandledInline, so AllEnemies/RandomEnemy are handled by
       // the generic wrapper a few lines up, exactly like every other
       // non-DealDamage/ModifyStatus action type).
-      const petCls = ctx.petClassById && ctx.petClassById.get(action.petRef);
-      if (!petCls) return `        ForgeActions.Todo("PetAttack(no pet selected or pet not found: ${action.petRef || ''})");`;
+      // [Round 303 — Tyler: "we currently have an option to make a pet
+      // attack, but it checks for individual pets. is it possible to add a
+      // 'whatever pet is currently out attacks' option?"] `action.petRef`
+      // can now also be PET_ANY_SENTINEL — a reserved value the frontend's
+      // picker offers alongside this character's own named pets, meaning
+      // "don't require one specific species; attack with whichever of this
+      // player's own pets is out." Compiles to the SAME real
+      // fgPlayer.CombatState.Allies lookup below, just without the
+      // `Monster is ${petCls}` species narrowing — `PetOwner == fgPlayer.
+      // Player` alone is exactly what identifies "one of THIS player's own
+      // Forge pets" (the same real field/comparison SummonPet's own
+      // fgExistingPet lookup, right above this case, already relies on).
+      // Unlike the specific-species lookup — which can only ever match
+      // zero or one Creature (SummonPet's own GainMaxHp branch guarantees
+      // at most one live instance per species) — more than one of the
+      // player's own pets can be alive at once when several DIFFERENT
+      // species are all out simultaneously (ForgePetPositionPatch already
+      // handles exactly that case for visual placement — see
+      // generatePetPositionSupportFile). So `IsAlive` is folded into the
+      // FirstOrDefault predicate itself here (not checked after, the way
+      // the specific-species branch below does), so a dead corpse kept
+      // around by an earlier pet's takesHitsForYou power is skipped in
+      // favor of the next live one in Allies' own iteration order — the
+      // same left-to-right order ForgePetPositionPatch derives, so "the"
+      // pet that attacks here is always the frontmost one currently out.
+      const isAnyPet = action.petRef === PET_ANY_SENTINEL;
+      const petCls = !isAnyPet && ctx.petClassById && ctx.petClassById.get(action.petRef);
+      if (!isAnyPet && !petCls) return `        ForgeActions.Todo("PetAttack(no pet selected or pet not found: ${action.petRef || ''})");`;
       const petCardArgs = resolvePetAttackCardArgs(ctx);
       const amountExpr = resolveAmountExpr(action);
+      const attackingPetFindExpr = isAnyPet
+        ? `fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.PetOwner == fgPlayer.Player && _fgAlly.IsAlive)`
+        : `fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgPlayer.Player)`;
+      const attackingPetFindComment = isAnyPet
+        ? `// [Round 303] "any pet currently out" — same real PetOwner-based ownership check the specific-species lookup uses, without the Monster-is-species narrowing; IsAlive folded into the predicate itself here since, unlike that lookup, more than one candidate can exist`
+        : `// [VERIFIED via decompiling "The Trainer - New Character" — real token attack cards find their own pet this same way, round290 §1]`;
       return `        {
-            var fgAttackingPet = fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgPlayer.Player); // [VERIFIED via decompiling "The Trainer - New Character" — real token attack cards find their own pet this same way, round290 §1]
+            var fgAttackingPet = ${attackingPetFindExpr}; ${attackingPetFindComment}
             if (fgAttackingPet != null && fgAttackingPet.IsAlive)
             {
                 MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance?.GetCreatureNode(fgAttackingPet)?.SetAnimationTrigger("Attack"); // [KNOWN GAP — see pet.takesHitsForYou's sibling round-291/292 finding] a real, but currently Spine-only, no-op for a plain-sprite pet; kept for parity with the reference mod, becomes real once a future round wires a real AnimationPlayer trigger here.
@@ -3527,6 +3574,49 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       const cardCls = ctx.cardClassById && ctx.cardClassById.get(cond.cardRef);
       if (!cardCls) return `ForgeActions.TodoCondition("NoCopiesOfCardInHand(no card selected or card not found: ${cond.cardRef || ''})")`;
       return `!PileType.Hand.GetPile(${resolvePlayerExpr(ctx)}).Cards.Any(c => c is ${cardCls}) /* [BEST EFFORT] see compiler.js's own comment on this case */`;
+    }
+    case 'PetPositionIs': {
+      // [Round 303] Tyler: "then maybe add a 'pet is in 1st/2nd/3rd
+      // position' conditional" — the only real "position" concept anywhere
+      // in this codebase is the one ForgePetPositionPatch itself derives
+      // (see generatePetPositionSupportFile's own header comment): iterate
+      // the owner's real Creature.CombatState.Allies (the SAME collection
+      // SummonPet's own fgExistingPet lookup and PetAttack's own
+      // fgAttackingPet lookup already read from) in order, keeping only
+      // this player's own pets (Creature.PetOwner == the owning Player —
+      // same real field/comparison those two lookups already use), and
+      // lining them up left to right in THAT order — position 1 is
+      // whichever of this player's own pets is first in that filtered
+      // order, matching the real patch's own leftmost slot exactly.
+      // Deliberately does NOT filter IsAlive — neither does the real
+      // position patch (a dead corpse a takesHitsForYou pet leaves behind
+      // still occupies its own visual slot) — so this condition stays
+      // consistent with what's actually on screen, not a "living pets
+      // only" reinterpretation of it.
+      //
+      // No `subject` field (not in SUBJECT_CAPABLE_CONDITION_KINDS) —
+      // `petRef` (below) already says WHICH pet to check, there's no
+      // "whose position" ambiguity the way HasStatusStacks/HpBelowPercent
+      // have. Generalized off `ctx.fgPlayerBound` via
+      // `resolvePlayerExpr(ctx)`, same GENERALIZED_PLAYER_ONLY_CONDITION_
+      // KINDS treatment as HasSpecificRelic/NoCopiesOfCardInHand right
+      // above (real on any normal relic/mechanic/card effect-block
+      // trigger; not Glow/Playability or a Group B modifier hook — see
+      // those two cases' own comments for the full reasoning) —
+      // `resolvePlayerExpr(ctx)` is Player-typed (see its own doc comment
+      // above), so `.Creature.CombatState.Allies` reaches the same real
+      // collection PetAttack's own bare `fgPlayer.CombatState.Allies`
+      // reaches a different, narrower-context way — exactly the
+      // `fgSummonOwner.Creature.CombatState.Allies` pattern SummonPet's own
+      // fgExistingPet lookup already uses for the identical reason (that
+      // action is ALSO generalized off resolvePlayerExpr(ctx), not a bare
+      // fgPlayer local).
+      if (!ctx.fgPlayerBound) return `ForgeActions.TodoCondition("PetPositionIs(no player in scope on this hook)")`;
+      const petCls = ctx.petClassById && ctx.petClassById.get(cond.petRef);
+      if (!petCls) return `ForgeActions.TodoCondition("PetPositionIs(no pet selected or pet not found: ${cond.petRef || ''})")`;
+      const position = Number.isInteger(cond.position) && cond.position >= 1 ? cond.position : 1;
+      const playerExpr = resolvePlayerExpr(ctx);
+      return `${playerExpr}.Creature.CombatState.Allies.Where(_fgAlly => _fgAlly.PetOwner == ${playerExpr}).ToList().FindIndex(_fgAlly => _fgAlly.Monster is ${petCls}) == ${position - 1} /* [VERIFIED — same real Creature.CombatState.Allies/PetOwner ordering ForgePetPositionPatch's own real, decompiled postfix already uses to visually place multiple simultaneous pets, round 286/303 — see generatePetPositionSupportFile's own header comment */`;
     }
 
     // 2026-09-08 (round 52) — Tyler uploaded an updated
@@ -10982,6 +11072,11 @@ module.exports = {
   // PET_SUPPORTED_TRIGGERS above) — one source of truth so validate.js
   // can reject a Pet-subject condition on the wrong trigger up-front.
   CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS,
+  // [Round 303] PetAttack's own reserved "any pet currently out" petRef
+  // sentinel — see its own doc comment above — exported so validate.js
+  // can accept it as a legal petRef value without hand-duplicating the
+  // literal string.
+  PET_ANY_SENTINEL,
   // Same reasoning — the list of real built-in status classes ApplyStatus/
   // RemoveStatus's builtinStatus dropdown can pick from. Derived from
   // BUILTIN_POWER_CLASS_MAP's own keys rather than a separate literal, so
