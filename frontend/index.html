@@ -157,7 +157,15 @@
          one anymore), so it's back to the full ideal width. */
   :root{
     --side-nav-ideal-width:200px;
-    --side-nav-collapsed-width:10px;
+    /* [Round 327] Bumped from 10px -- that width only ever needed to show
+       a bare sliver (nothing was meant to be legible there). Now that the
+       collapsed state shows the section NUMBER (see .side-nav-num), it
+       needs enough room for two JetBrains Mono digits plus a little
+       breathing room. updateSideNavFit() still clamps the actual
+       rendered width down from this at a narrow enough gutter -- see
+       --side-nav-collapsed-computed-width -- so this is a ceiling, not a
+       guarantee. */
+    --side-nav-collapsed-width:34px;
     /* [Round 326] Bumped up from 28px -- that size only had to fit a
        cropped castle icon; showing the WHOLE logo (castle + "Forge the
        Spire" wordmark) legibly needs noticeably more room. */
@@ -203,8 +211,15 @@
      thin sliver of the box itself -- the tab that used to live at this
      same width now floats independently at a fixed size regardless of
      collapse state (see .side-nav-tab), so the box doesn't need to stay
-     wide enough to contain a full-height tab anymore. */
-  .side-nav.collapsed, .side-nav.no-room{ width:var(--side-nav-collapsed-width); }
+     wide enough to contain a full-height tab anymore. [Round 327] Uses
+     the JS-computed --side-nav-collapsed-computed-width when set (same
+     gutter-fitting treatment updateSideNavFit() already gives the
+     EXPANDED width, now also applied to the collapsed one since it grew
+     from a 10px sliver to 34px to fit a real number -- without this, a
+     narrow enough window could let the wider collapsed box overlap real
+     content, the exact thing round 323 was built to prevent), falling
+     back to the static --side-nav-collapsed-width if JS hasn't run yet. */
+  .side-nav.collapsed, .side-nav.no-room{ width:var(--side-nav-collapsed-computed-width, var(--side-nav-collapsed-width)); }
   /* [Round 325] Does the width-clipping .side-nav itself used to do
      directly -- sized to 100% of the (possibly mid-transition) box width
      every frame, same as the parent it replaces for this purpose, just
@@ -239,6 +254,26 @@
   .side-nav-inner{
     width:var(--side-nav-ideal-width);
     padding:30px 0 16px;
+    transition:width .18s ease;
+  }
+  /* [Round 327] Tyler: "when the window is closed you can still click on
+     the hidden items. rather than remove that feature, lets make it so
+     that when it is closed you can see the section numbers." Root cause
+     of the clickable-but-invisible items: .side-nav-inner stayed at the
+     full 200px ideal width even while collapsed, only visually clipped
+     by .side-nav-clip's overflow -- so each link's own leftmost sliver
+     (its padding, before the now-offscreen text) was still genuinely
+     painted and hit-testable inside the collapsed box's narrow visible
+     strip, just with no readable label on it. Now .side-nav-inner (and
+     .side-nav-link below) actually SHRINK to match the collapsed box's
+     real width instead of staying wide and merely clipped, so there's no
+     more mismatch between what's visible and what's clickable -- the
+     link's own hit area now IS exactly its visible area, showing its
+     section number centered in it (see .side-nav-num) rather than a
+     truncated sliver of a name. */
+  .side-nav.collapsed .side-nav-inner,
+  .side-nav.no-room .side-nav-inner{
+    width:var(--side-nav-collapsed-computed-width, var(--side-nav-collapsed-width));
   }
   /* [Round 325] Tyler, on round 324's full-height tab: "the
      collapse/extend button doesn't need to be the full height of the
@@ -297,7 +332,20 @@
      the menu" -- see the .side-nav.collapsed/.no-room override below,
      which fades and shrinks the badge in step with the box's own width
      transition (same .18s ease timing) instead of it floating there
-     independent of collapse state, which is what it did before. */
+     independent of collapse state, which is what it did before.
+     [Round 327] Tyler: "can we remove the area of the circle where it
+     overlaps with the existing box? I want this to look like 1 unified
+     piece." The badge's own 1px border was the culprit -- its circular
+     outline crossed straight through the box's own top border wherever
+     the two overlapped, reading as two separate stacked shapes (a coin
+     placed ON TOP of a card) rather than one continuous silhouette.
+     Removed that border entirely: the badge's fill already matches the
+     box's own gradient exactly, so with no competing outline the box's
+     OWN top border (unchanged, still just a straight line across the
+     full width) simply disappears under the badge's opaque fill where
+     they overlap -- like the box's edge grows a bump rather than a
+     separate piece sitting in front of it. Kept the drop shadow (not an
+     outline, just soft depth) since it doesn't create a hard seam. */
   .side-nav-badge{
     position:absolute; top:0; left:50%;
     /* -70% (not -50%) so only the bottom ~30% of the circle dips below
@@ -314,7 +362,6 @@
     border-radius:50%;
     display:flex; align-items:center; justify-content:center;
     background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
-    border:1px solid var(--border);
     box-shadow:0 2px 6px rgba(0,0,0,.5);
     z-index:1;
     pointer-events:none;
@@ -344,20 +391,50 @@
     text-decoration:none;
     font-size:13px;
     border-left:3px solid transparent;
-    transition:background .15s, color .15s, border-color .15s;
+    transition:background .15s, color .15s, border-color .15s, padding .18s ease, justify-content .18s ease;
     white-space:nowrap;
     overflow:hidden;
   }
-  .side-nav-link span{
+  .side-nav-link .side-nav-label{
     overflow:hidden;
     text-overflow:ellipsis;
     min-width:0;
+  }
+  /* [Round 327] The number is present in every link's markup at all
+     times (renderSideNav() renders both spans, always) -- only its
+     VISIBILITY is state-dependent, toggled below by which class is on
+     .side-nav, not by rebuilding the link list on every collapse/expand.
+     Hidden by default (expanded state shows the full name, same as
+     since round 324). */
+  .side-nav-link .side-nav-num{
+    display:none;
+    color:var(--accent-bright); font-family:'JetBrains Mono',monospace; font-size:11px;
   }
   .side-nav-link:hover{color:var(--parchment); background:rgba(255,255,255,.04);}
   .side-nav-link.active{
     color:var(--parchment);
     background:rgba(75,147,221,.1);
     border-left-color:var(--accent-bright);
+  }
+  /* [Round 327] Tyler: "when it is closed you can see the section
+     numbers. expanding it will remove the numbers and show the whole
+     names like we have now." Collapsed/no-room: show the number
+     (centered, in the now-narrow link -- see .side-nav-inner's own
+     collapsed-width override above), hide the full name. Padding shrinks
+     to match the collapsed link's own much smaller width (the expanded
+     8px/18px would alone be wider than the whole collapsed box). */
+  .side-nav.collapsed .side-nav-link,
+  .side-nav.no-room .side-nav-link{
+    padding:8px 4px;
+    justify-content:center;
+  }
+  .side-nav.collapsed .side-nav-link .side-nav-label,
+  .side-nav.no-room .side-nav-link .side-nav-label{
+    display:none;
+  }
+  .side-nav.collapsed .side-nav-link .side-nav-num,
+  .side-nav.no-room .side-nav-link .side-nav-num{
+    display:inline;
   }
   h1,h2,h3,.display{
     font-family:'Cinzel',serif;
@@ -20126,6 +20203,7 @@ function setSideNavCollapsed(collapsed){
 // re-expands on its own).
 const SIDE_NAV_SAFETY_MARGIN = 12; // breathing room past the gutter's exact edge
 const SIDE_NAV_MIN_USABLE_WIDTH = 120; // below this, text wraps too much to be worth showing
+const SIDE_NAV_COLLAPSED_MIN_WIDTH = 16; // floor for the collapsed width itself, once even that can't fit
 function updateSideNavFit(){
   const nav = document.getElementById('side-nav');
   const main = document.querySelector('main');
@@ -20157,6 +20235,22 @@ function updateSideNavFit(){
   const idealWidth = parseFloat(navStyle.getPropertyValue('--side-nav-ideal-width')) || 200;
   const fitWidth = noRoom ? idealWidth : Math.min(idealWidth, safeWidth);
   nav.style.setProperty('--side-nav-computed-width', fitWidth + 'px');
+  // [Round 327] The collapsed width grew from a 10px sliver (round 325,
+  // meant to show nothing legible) to 34px (fits a real section number),
+  // which a narrow enough gutter can no longer just absorb the way it
+  // could a 10px sliver -- so the collapsed width now gets the SAME
+  // fit-to-gutter treatment as the expanded width above, rather than
+  // assuming it always fits. Below SIDE_NAV_COLLAPSED_MIN_WIDTH the
+  // number itself may start clipping, but staying inside the real gutter
+  // takes priority -- that's round 323's non-negotiable guarantee, and a
+  // window that narrow is an extreme edge case for what is, practically,
+  // a desktop app.
+  const desiredCollapsedWidth = parseFloat(navStyle.getPropertyValue('--side-nav-collapsed-width')) || 34;
+  const collapsedFitWidth = Math.max(
+    SIDE_NAV_COLLAPSED_MIN_WIDTH,
+    Math.min(desiredCollapsedWidth, gutter - SIDE_NAV_SAFETY_MARGIN - tabOverhang)
+  );
+  nav.style.setProperty('--side-nav-collapsed-computed-width', collapsedFitWidth + 'px');
 }
 let sideNavResizeTimer = null;
 window.addEventListener('resize', ()=>{
@@ -20210,15 +20304,18 @@ function renderSideNav(){
     // without needing to clone/mutate the real h2 node to read it.
     // [Round 324] "remove the numbers from each section" (nav only --
     // the real section headers in <main> keep theirs) -- num is still
-    // computed and stripped out of the title text above, just no longer
-    // rendered into the link itself below.
+    // computed and stripped out of the title text above.
+    // [Round 327] ...but no longer removed from the link ENTIRELY: both
+    // spans are always rendered, and CSS (see .side-nav-num/.side-nav-
+    // label) decides which one is visible based on collapse state, so
+    // toggling collapsed/expanded never needs to re-render the list.
     const title = (num ? h2.textContent.replace(num, '') : h2.textContent).trim();
     const a = document.createElement('a');
     a.className = 'side-nav-link';
     a.href = `#${sec.id}`;
     a.dataset.sectionId = sec.id;
     a.title = title;
-    a.innerHTML = `<span>${escapeHtml(title)}</span>`;
+    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(title)}</span>`;
     inner.appendChild(a);
     links.push(a);
   });
