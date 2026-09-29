@@ -9623,7 +9623,19 @@ const CONDITION_KINDS = [
   // "have relic" plus the always-locked "You" subject word.
   { id:'HasSpecificRelic', label:'have relic', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether you currently hold a specific relic from this character\'s own relics list. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
-  { id:'NoCopiesOfCardInHand', label:'No copies of card in hand', real:true, requiresTrigger:'anyRealTrigger',
+  // [Round 314] Tyler: "'no copies of a card in hand' isnt a proper
+  // sentence, add 'have' after the subject." Same verb-phrase fix as
+  // HasSpecificRelic directly above ("You have relic") — this kind was
+  // left in round 311's Category C (already-complete-sentence, no
+  // subject word needed) on the theory that neither "You" nor "Your"
+  // read naturally in front of it, but "have" was the missing piece:
+  // "[You] have no copies of [Strike] in hand" is a real sentence, same
+  // pronoun-subject + have/has shape as HasStatusStacks/HasBlock/
+  // HasSpecificRelic. Label was 'No copies of card in hand' (capital N,
+  // meant to stand alone before round 310 ever put a subject word in
+  // front of it) — now 'have no copies of card in hand', lowercase to
+  // read as a continuation of "You have...".
+  { id:'NoCopiesOfCardInHand', label:'have no copies of card in hand', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks that no copy of a specific card from this character\'s own cards list is currently in your hand. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   // 2026-09-08 (round 52) — Tyler's updated TheBurdenedNewCharacter.dll v3
   // has a real "Earthquake" card whose real, compiled IsPlayable override
@@ -13336,13 +13348,19 @@ function availableConditionKinds(eff){
 //      without duplicating it ("You Your energy remaining").
 //  (C) already-complete sentences — DamageBrokeBlock ("This card's
 //      damage broke the target's block"), EnemyIntent ("Enemy's intent
-//      is..."), NoCopiesOfCardInHand ("No copies of card in hand...") —
-//      where NEITHER "You" nor "Your" reads naturally immediately in
-//      front ("You This card's damage broke..." and "Your This card's
-//      damage broke..." are both wrong). Deliberately left rendering
-//      their current plain pronoun subject ("You") — a real remaining
-//      rough edge, but not one a mechanical you/your swap actually
-//      fixes, so nothing was guessed at here for these three.
+//      is...") — where neither "You" nor "Your" reads naturally
+//      immediately in front ("You This card's damage broke..." and
+//      "Your This card's damage broke..." are both wrong). Deliberately
+//      left rendering their current plain pronoun subject ("You") — a
+//      real remaining rough edge, but not one a mechanical you/your swap
+//      actually fixes, so nothing was guessed at here for these two.
+//      [Round 314] NoCopiesOfCardInHand was originally grouped in here
+//      too, but Tyler: "'no copies of a card in hand' isnt a proper
+//      sentence, add 'have' after the subject" — it actually belongs in
+//      (A) above, same shape as HasSpecificRelic ("[You] have relic"):
+//      "[You] have no copies of card in hand" is a real sentence once
+//      "have" is part of the label instead of missing entirely. See that
+//      kind's own CONDITION_KINDS entry.
 const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PetPositionIs'];
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
