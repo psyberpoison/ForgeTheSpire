@@ -13268,10 +13268,12 @@ function availableConditionKinds(eff){
 // should also change to 'your' if you select 'HP below' or 'energy
 // remaining'." Two small helpers so renderConditionRowFields can swap just
 // the word/option-label that changes, rather than duplicating label text
-// per subject. EnergyRemaining has no subject dropdown at all (it's always
-// the player's own energy — see needsSubject above), so its "Your energy
-// remaining" label above is a plain static string, not something either
-// helper needs to touch.
+// per subject. EnergyRemaining's subject dropdown (see needsSubject below
+// — [Round 310] now shown for every kind, but locked to just "You" for
+// EnergyRemaining specifically, since it's always the player's own
+// energy) is never anything but "You," so its "Your energy remaining"
+// label above is a plain static string, not something either helper
+// needs to touch.
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
   // front of a possessed noun — HpBelowPercent ("...HP below X%") is the
@@ -13405,14 +13407,31 @@ function renderConditionRowFields(row, cond, eff){
   // kind either checks something player-only (EnergyRemaining/StarsRemaining/CardsInHand
   // — no enemy/pet variant of "your hand" or "your energy"/"your stars"
   // makes sense) or checks the PLAYED CARD itself (PlayedCardHasKeyword/
-  // PlayedCardHasTag/PlayedCardHasType — not a creature at all), so no
-  // subject dropdown for those.
+  // PlayedCardHasTag/PlayedCardHasType — not a creature at all).
   // [Round 65] CardPositionInHand is now in SUBJECT_CAPABLE_CONDITION_KINDS
   // itself (frontend copy only — see that const's own comment), so it goes
   // through the exact same needsSubject/availableSubjects path as every
   // other subject-capable kind, no special-casing needed here anymore.
-  const needsSubject = SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind);
-  const subjects = needsSubject ? availableSubjects(eff, cond.kind) : [];
+  // [Round 310] Tyler, shown "Cards in hand" with no subject dropdown at
+  // all: "this still removes the subject." Round 309 only fixed the DATA
+  // side (cond.subject no longer gets deleted) — the dropdown itself was
+  // still conditionally rendered at all (`needsSubject ? ... : ''`
+  // further down), so it visibly vanished from the row the moment you
+  // picked a non-subject-capable kind, which read exactly like "the
+  // subject got removed" even though the value underneath survived.
+  // Fixed by always rendering the subject dropdown, for every kind, so
+  // its position in the row (leftmost, before kind — the same
+  // left-to-right order every subject-capable kind already uses) never
+  // changes. For a kind that's genuinely never subject-capable (no real
+  // Target/Pet variant exists — see the comment block above), the
+  // dropdown now shows exactly one real option, "You" — never a fake
+  // Target/Pet choice that would silently do nothing, matching round
+  // 308's own "don't offer what compiles to nothing" principle, just
+  // applied from the subject side instead of the kind side this time.
+  const needsSubject = true;
+  const subjectCapableForKind = SUBJECT_CAPABLE_CONDITION_KINDS.includes(cond.kind);
+  const SELF_ONLY_SUBJECT = [CONDITION_SUBJECTS.find(s => s.id === 'Self')];
+  const subjects = subjectCapableForKind ? availableSubjects(eff, cond.kind) : SELF_ONLY_SUBJECT;
   // Merged status picker — Tyler's example ("If [you] [have status stacks]
   // of [strength] [=][5]") shows ONE status choice, not a separate
   // vanilla/custom toggle beside it. A searchable combobox, not a plain
