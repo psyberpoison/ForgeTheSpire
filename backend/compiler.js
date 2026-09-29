@@ -636,6 +636,12 @@ const PLAYER_ONLY_ACTIONS = [
   // concept, same bucket as CreateCard/DrawCard/etc. See its own
   // actionToCSharp case for the full evidence trail.
   'SummonPet',
+  // [Round 328] "MovePetPosition" -- reorders one of THIS player's own
+  // pets within Forge's own tracked pet order (ForgePetOrder); picks the
+  // pet to move via its own petRef field (same picker as PetAttack, see
+  // its own actionToCSharp case), same "no real Creature-target concept"
+  // bucket as SummonPet right above.
+  'MovePetPosition',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -864,6 +870,29 @@ const PET_SUPPORTED_TRIGGERS = ['OnPlay', 'OnAnyCardPlayed', 'OnDiscard', 'OnTur
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS etc. See
 // actionToCSharp's "PetAttack" case for what this compiles to.
 const PET_ANY_SENTINEL = '__any_pet__';
+
+// [Round 328] Tyler: "do we have a card effect that moves pet positions?"
+// Research first (direct IL/metadata read of Megacrit.Sts2.Core.Combat.
+// ICombatState/CombatState in Tyler's own installed sts2.dll — see
+// claude/round328-move-pet-position.md for the full evidence trail)
+// confirmed `Allies` is exposed only as IReadOnlyList<Creature> with NO
+// public reorder API — `SetEnemyIndex(Creature, int)` is real and public
+// but ENEMY-only, no ally/pet equivalent exists anywhere in the real
+// engine. `ForgePetPositionPatch` (generatePetPositionSupportFile) derives
+// every pet's on-screen slot fresh from Allies' own raw iteration order
+// every single time ANY creature enters combat, so a one-off visual
+// reposition with no persistent backing state would just get silently
+// reverted the next time anything else spawned. `MovePetPosition` (new
+// this round) instead mutates a new Forge-owned tracked order
+// (`ForgePetOrder`, same support file) that the visual patch AND the
+// `PetPositionIs` condition (see conditionToCSharpRaw) both now read
+// through instead of raw Allies order, so a move actually sticks and the
+// condition agrees with what's on screen. These four values are Tyler's
+// own explicit design choice (shift one slot either direction, or jump
+// straight to either end) — mirrored as a hand-typed literal array in
+// frontend/index.html (no require() there), same one-vocabulary-two-files
+// convention as PET_ANY_SENTINEL above.
+const PET_POSITION_MODES = ['ShiftForward', 'ShiftBack', 'ToFront', 'ToBack'];
 
 // Resolves a condition's `subject` field (see CONDITION_SUBJECTS above) to
 // the local variable a per-creature condition (HasStatusStacks) should
@@ -2332,6 +2361,36 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
             }
         }`;
     }
+    case 'MovePetPosition': {
+      // [Round 328 — Tyler: "do we have a card effect that moves pet
+      // positions?"] See PET_POSITION_MODES' own header comment above for
+      // the full research trail (no real engine reorder API for allies;
+      // ForgePetOrder is Forge's own tracked-order layer, generated
+      // alongside ForgePetPositionPatch in generatePetPositionSupportFile).
+      // Pet resolution mirrors PetAttack's own `isAnyPet`/`petCls` branch
+      // exactly (same PET_ANY_SENTINEL "whichever pet is out" option, same
+      // IsAlive-folded-into-predicate reasoning for the any-pet case) —
+      // but generalized off `resolvePlayerExpr(ctx)` instead of a bare
+      // cardPlayBound-only `fgPlayer` local, since this action has no
+      // creature-target concept (PLAYER_ONLY_ACTIONS, same bucket as
+      // SummonPet right above) and ForgePetOrder.Move is a plain
+      // synchronous static call with no PlayerChoiceContext dependency at
+      // all — real on every relic/mechanic/card effect-block trigger, not
+      // just OnPlay.
+      const isAnyPet = action.petRef === PET_ANY_SENTINEL;
+      const petCls = !isAnyPet && ctx.petClassById && ctx.petClassById.get(action.petRef);
+      if (!isAnyPet && !petCls) return `        ForgeActions.Todo("MovePetPosition(no pet selected or pet not found: ${action.petRef || ''})");`;
+      const movePlayerExpr = resolvePlayerExpr(ctx);
+      const moveFindExpr = isAnyPet
+        ? `fgMoveOwner.Creature.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is IModPet && _fgAlly.PetOwner == fgMoveOwner && _fgAlly.IsAlive)`
+        : `fgMoveOwner.Creature.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgMoveOwner)`;
+      const modeLiteral = PET_POSITION_MODES.includes(action.petPositionMode) ? action.petPositionMode : 'ShiftForward';
+      return `        {
+            var fgMoveOwner = ${movePlayerExpr};
+            var fgMovePet = ${moveFindExpr};
+            ForgePetOrder.Move(fgMoveOwner, fgMoveOwner.Creature.CombatState.Allies, fgMovePet, "${modeLiteral}"); // [Round 328] see generatePetPositionSupportFile's own ForgePetOrder.Move comment — no-ops safely if fgMovePet is null/not currently tracked
+        }`;
+    }
     case 'ModifyCost': {
       // [Round 193] Tyler: "instead of energy reduction while left in
       // hand ... can we add an effect to our existing effect list that
@@ -3628,6 +3687,22 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       // consistent with what's actually on screen, not a "living pets
       // only" reinterpretation of it.
       //
+      // [Round 328] Now reads through ForgePetOrder.GetOrder(...) instead
+      // of a raw `.Where(PetOwner==player)` re-derivation — see
+      // generatePetPositionSupportFile's own header comment for the full
+      // MovePetPosition evidence trail. Tyler's own explicit choice
+      // ("keep condition + visual in sync") for the new MovePetPosition
+      // action to actually be checkable by this condition. Real, positive
+      // side effect: the old raw `.Where` clause filtered only
+      // `PetOwner == player`, NOT `Monster is IModPet` (unlike the visual
+      // patch's own ownerPets build, which always required both) — so a
+      // non-Forge-pet ally sharing this player's PetOwner (if one ever
+      // existed) could previously have silently occupied a position slot
+      // the visual patch never counted it in. ForgePetOrder.GetOrder
+      // requires both filters, same as the visual patch always has,
+      // closing that latent condition/visual mismatch as a side effect of
+      // this round's real ask, not a separately-flagged bug hunt.
+      //
       // No `subject` field (not in SUBJECT_CAPABLE_CONDITION_KINDS) —
       // `petRef` (below) already says WHICH pet to check, there's no
       // "whose position" ambiguity the way HasStatusStacks/HpBelowPercent
@@ -3650,7 +3725,7 @@ function conditionToCSharpRaw(cond, ctx = {}) {
       if (!petCls) return `ForgeActions.TodoCondition("PetPositionIs(no pet selected or pet not found: ${cond.petRef || ''})")`;
       const position = Number.isInteger(cond.position) && cond.position >= 1 ? cond.position : 1;
       const playerExpr = resolvePlayerExpr(ctx);
-      return `${playerExpr}.Creature.CombatState.Allies.Where(_fgAlly => _fgAlly.PetOwner == ${playerExpr}).ToList().FindIndex(_fgAlly => _fgAlly.Monster is ${petCls}) == ${position - 1} /* [VERIFIED — same real Creature.CombatState.Allies/PetOwner ordering ForgePetPositionPatch's own real, decompiled postfix already uses to visually place multiple simultaneous pets, round 286/303 — see generatePetPositionSupportFile's own header comment */`;
+      return `ForgePetOrder.GetOrder(${playerExpr}, ${playerExpr}.Creature.CombatState.Allies).FindIndex(_fgAlly => _fgAlly.Monster is ${petCls}) == ${position - 1} /* [Round 328] now reads Forge's own tracked pet order (ForgePetOrder, same file as ForgePetPositionPatch) instead of a raw Allies re-derivation, so this condition agrees with MovePetPosition's own effect — see generatePetPositionSupportFile's own header comment */`;
     }
 
     // 2026-09-08 (round 52) — Tyler uploaded an updated
@@ -7999,6 +8074,36 @@ function packageUsesActionType(characterPackage, actionType) {
 // needed for round 61's old "multiple pets" open question. `owner ==
 // null || !LocalContext.IsMe(owner)` is ported unchanged too -- only the
 // local viewer's own pets get repositioned, same as the real mod.
+//
+// [Round 328] Adds `ForgePetOrder`, a new Forge-owned static class in this
+// same file. Tyler asked for a card effect that moves a pet's position;
+// research (direct IL/metadata read of Megacrit.Sts2.Core.Combat.
+// ICombatState/CombatState — see PET_POSITION_MODES' own header comment
+// in compiler.js) confirmed there is NO real reorder API for Allies at
+// all (SetEnemyIndex exists for enemies, nothing equivalent for allies).
+// The ORIGINAL decompiled Postfix (unchanged in spirit below) rebuilds
+// `ownerPets` from Allies' raw iteration order from scratch on every call
+// — which means a plain one-off reposition would just get overwritten the
+// next time any creature entered combat. `ForgePetOrder.GetOrder` is now
+// what the Postfix (and, for the `PetPositionIs` condition, plain card/
+// relic/mechanic codegen — see conditionToCSharpRaw's own case) calls
+// instead of re-deriving straight from Allies: it keeps a persistent,
+// Forge-owned order per owner that starts matching Allies' own natural
+// order and only diverges once `MovePetPosition` (new this round, see its
+// own actionToCSharp case) explicitly reorders it. A brand-new pet always
+// joins at the END of the tracked order (Tyler's own explicit choice,
+// matching Allies' own natural append behavior); a pet no longer present
+// in Allies at all (removed from combat entirely) is pruned — but a dead
+// corpse a takesHitsForYou pet leaves behind STAYS tracked, matching the
+// original patch's own "still occupies its own visual slot" behavior
+// (round 303's own note, preserved here). `ForgePetOrder` is deliberately
+// keyed by Player, not gated on LocalContext.IsMe -- unlike the Postfix's
+// own visual redraw (which, exactly as before, only ever repositions the
+// LOCAL viewer's own screen — an existing, pre-Round-328 limitation of the
+// real decompiled patch itself, not a new one), the tracked order and the
+// PetPositionIs condition are both meaningful for ANY player, so the data
+// layer stays general-purpose even though only the local player's pets
+// are ever actually redrawn on screen.
 function generatePetPositionSupportFile(pets, namespace) {
   if (!pets || !pets.length) return null;
 
@@ -8007,6 +8112,7 @@ using Godot;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Context;
 using System;
 using System.Collections.Generic;
@@ -8024,6 +8130,70 @@ namespace ${namespace};
 // [HarmonyPatch] class automatically -- no extra wiring needed.
 public interface IModPet { }
 
+// [Round 328] See generatePetPositionSupportFile's own header comment in
+// compiler.js for the full evidence trail. Forge's own tracked pet order
+// -- the real engine has no public API to reorder CombatState.Allies, so
+// this is what makes a MovePetPosition action's effect actually persist
+// instead of being silently overwritten the next time ForgePetPositionPatch
+// re-derives positions from scratch (which it does on every single
+// creature-added-to-combat event).
+internal static class ForgePetOrder
+{
+    private static readonly Dictionary<Player, List<Creature>> _orders = new Dictionary<Player, List<Creature>>();
+
+    // Always call this before reading OR moving -- rebuilds this owner's
+    // tracked list against the real, current Allies set (this player's own
+    // IModPet allies, dead corpses included, same filter the original
+    // decompiled Postfix uses below) so the returned list is never stale:
+    // newly-appeared pets are appended at the end (matching Allies' own
+    // natural append order), pets no longer present in Allies at all are
+    // dropped.
+    public static List<Creature> GetOrder(Player owner, IReadOnlyList<Creature> allies)
+    {
+        if (owner == null) return new List<Creature>();
+        if (!_orders.TryGetValue(owner, out var order))
+        {
+            order = new List<Creature>();
+            _orders[owner] = order;
+        }
+        var current = new List<Creature>();
+        foreach (var ally in allies)
+        {
+            if (ally?.Monster is IModPet && ally.PetOwner == owner)
+                current.Add(ally);
+        }
+        order.RemoveAll(c => !current.Contains(c));
+        foreach (var c in current)
+        {
+            if (!order.Contains(c)) order.Add(c);
+        }
+        return order;
+    }
+
+    // mode: "ShiftForward" (one slot toward position 1/front), "ShiftBack"
+    // (one slot toward the back), "ToFront" (position 1), "ToBack" (last
+    // position) -- see PET_POSITION_MODES in compiler.js. Safely no-ops if
+    // pet is null or isn't currently tracked (not out/not this owner's).
+    public static void Move(Player owner, IReadOnlyList<Creature> allies, Creature pet, string mode)
+    {
+        if (owner == null || pet == null) return;
+        var order = GetOrder(owner, allies);
+        int idx = order.IndexOf(pet);
+        if (idx < 0) return;
+        order.RemoveAt(idx);
+        int newIdx;
+        switch (mode)
+        {
+            case "ShiftForward": newIdx = Math.Max(0, idx - 1); break;
+            case "ShiftBack": newIdx = Math.Min(order.Count, idx + 1); break;
+            case "ToFront": newIdx = 0; break;
+            case "ToBack": newIdx = order.Count; break;
+            default: newIdx = idx; break;
+        }
+        order.Insert(newIdx, pet);
+    }
+}
+
 [HarmonyPatch(typeof(NCombatRoom), "AddCreature")]
 internal static class ForgePetPositionPatch
 {
@@ -8037,12 +8207,7 @@ internal static class ForgePetPositionPatch
         var ownerNode = __instance.GetCreatureNode(owner.Creature);
         if (ownerNode == null) return;
 
-        var ownerPets = new List<Creature>();
-        foreach (var ally in creature.CombatState.Allies)
-        {
-            if (ally?.Monster is IModPet && ally.PetOwner == owner)
-                ownerPets.Add(ally);
-        }
+        var ownerPets = ForgePetOrder.GetOrder(owner, creature.CombatState.Allies); // [Round 328] Forge's own tracked order, not a fresh re-derivation from Allies -- so a MovePetPosition action's reorder actually sticks across future creature-added-to-combat events instead of being silently overwritten here.
         if (ownerPets.Count == 0) return;
 
         try
@@ -11111,6 +11276,10 @@ module.exports = {
   // can accept it as a legal petRef value without hand-duplicating the
   // literal string.
   PET_ANY_SENTINEL,
+  // [Round 328] MovePetPosition's own petPositionMode enum — see its own
+  // doc comment above — exported so validate.js/frontend can share the
+  // one vocabulary instead of hand-duplicating the 4 literal strings.
+  PET_POSITION_MODES,
   // Same reasoning — the list of real built-in status classes ApplyStatus/
   // RemoveStatus's builtinStatus dropdown can pick from. Derived from
   // BUILTIN_POWER_CLASS_MAP's own keys rather than a separate literal, so

@@ -226,6 +226,9 @@ const ACTION_TYPES = [
   // actionToCSharp "PetAttack" case for the real ForgePetAttackSupport
   // evidence trail.
   'SummonPet', 'PetAttack',
+  // [Round 328] "MovePetPosition" -- see compiler.js's actionToCSharp
+  // "MovePetPosition" case for the real ForgePetOrder.Move evidence trail.
+  'MovePetPosition',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -249,7 +252,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -1019,16 +1022,33 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // "PetAttack" case for what it compiles to. "SummonPet" does NOT
     // accept it -- summoning genuinely needs one specific species (there's
     // no real "summon whichever pet" concept, only "summon THIS one").
-    if (act.type === 'SummonPet' || act.type === 'PetAttack') {
+    // [Round 328] "MovePetPosition" widened into this same block -- same
+    // optional-any-sentinel shape as "PetAttack" ("move whichever pet is
+    // out"), see compiler.js's actionToCSharp "MovePetPosition" case.
+    if (act.type === 'SummonPet' || act.type === 'PetAttack' || act.type === 'MovePetPosition') {
       if (act.petRef === '' || act.petRef === undefined) {
         errors.push(`${p}: action "${act.type}" needs a pet selected — pick one from the dropdown, or add a pet first if none exist yet (Pets section).`);
-      } else if (act.type === 'PetAttack' && act.petRef === PET_ANY_SENTINEL) {
-        // valid -- "any pet currently out" sentinel, PetAttack only.
+      } else if ((act.type === 'PetAttack' || act.type === 'MovePetPosition') && act.petRef === PET_ANY_SENTINEL) {
+        // valid -- "any pet currently out" sentinel, PetAttack/MovePetPosition only.
       } else if (!petIds.has(act.petRef)) {
         errors.push(`${p}.petRef "${act.petRef}" doesn't match any defined pet id.`);
       }
     } else if (act.petRef !== undefined) {
-      errors.push(`${p}: petRef is only meaningful on "SummonPet"/"PetAttack" — action type is "${act.type}".`);
+      errors.push(`${p}: petRef is only meaningful on "SummonPet"/"PetAttack"/"MovePetPosition" — action type is "${act.type}".`);
+    }
+    // [Round 328] petPositionMode -- MovePetPosition only, same "must be
+    // one of the real enum values, or reject if present elsewhere" shape
+    // as pile below. See PET_POSITION_MODES' own doc comment in
+    // compiler.js and the schema's own petPositionMode description for
+    // the full evidence trail.
+    if (act.type === 'MovePetPosition') {
+      if (act.petPositionMode === undefined || act.petPositionMode === '') {
+        errors.push(`${p}: action "MovePetPosition" needs a move selected — pick one from the dropdown.`);
+      } else if (!PET_POSITION_MODES.includes(act.petPositionMode)) {
+        errors.push(`${p}.petPositionMode is "${act.petPositionMode}" — must be one of: ${PET_POSITION_MODES.join(', ')}.`);
+      }
+    } else if (act.petPositionMode !== undefined) {
+      errors.push(`${p}: petPositionMode is only meaningful on "MovePetPosition" — action type is "${act.type}".`);
     }
     // [Round 199] pile -- ClearAfflictionFromPile only, same "must be one
     // of PILE_TYPES, or omitted (defaults to Hand)" shape whileInHand's

@@ -4407,7 +4407,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4417,6 +4417,16 @@ const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses
 // with a real pet id (every real one comes from uid('pet'), always
 // `pet_` + 7 base36 chars, never this literal).
 const PET_ANY_SENTINEL = '__any_pet__';
+// [Round 328] Mirrors backend/compiler.js's own PET_POSITION_MODES literal
+// array, same hand-mirrored-constant convention as PET_ANY_SENTINEL right
+// above — MovePetPosition's own `petPositionMode` dropdown options.
+const PET_POSITION_MODES = ['ShiftForward', 'ShiftBack', 'ToFront', 'ToBack'];
+const PET_POSITION_MODE_LABELS = {
+  ShiftForward: 'Move forward one position',
+  ShiftBack: 'Move back one position',
+  ToFront: 'Move to the front',
+  ToBack: 'Move to the back',
+};
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -4518,8 +4528,9 @@ const ACTION_TYPE_GROUPS = [
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
   // below). [Round 293] "PetAttack" joins it -- same pet-focused concept,
-  // sibling action.
-  { label: 'Pets', color: '#5fa88a', types: ['SummonPet', 'PetAttack'] },
+  // sibling action. [Round 328] "MovePetPosition" joins it too -- same
+  // pet-focused concept, see its own actionToCSharp case.
+  { label: 'Pets', color: '#5fa88a', types: ['SummonPet', 'PetAttack', 'MovePetPosition'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -11409,6 +11420,18 @@ function describeAction(act){
         : ((state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet');
       return `Have ${petName} attack ${targetPhrase} for ${n} damage`;
     }
+    // [Round 328] New action type -- Tyler: "do we have a card effect that
+    // moves pet positions?" See compiler.js's actionToCSharp
+    // MovePetPosition case for the full evidence trail (ForgePetOrder,
+    // Forge's own tracked pet order layer). Same PET_ANY_SENTINEL picker
+    // as PetAttack above.
+    case 'MovePetPosition': {
+      const petName = act.petRef === PET_ANY_SENTINEL
+        ? 'whichever pet is out'
+        : ((state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet');
+      const moveLabel = (PET_POSITION_MODE_LABELS[act.petPositionMode] || PET_POSITION_MODE_LABELS.ShiftForward).toLowerCase();
+      return `${moveLabel[0].toUpperCase()}${moveLabel.slice(1)} for ${petName}`;
+    }
     default: return '';
   }
 }
@@ -14807,9 +14830,11 @@ function ensureActionRefDefaults(act){
   // (state.pets.find(...) — never matches the sentinel) would wrongly
   // stomp a deliberately-chosen "any pet" pick back to a specific pet on
   // every single re-render.
-  if(act.type === 'SummonPet' || act.type === 'PetAttack'){
+  // [Round 328] "MovePetPosition" widened into this same block -- same
+  // optional-any-sentinel shape as "PetAttack" (see backend/validate.js).
+  if(act.type === 'SummonPet' || act.type === 'PetAttack' || act.type === 'MovePetPosition'){
     const petRefIsValid = act.petRef && (
-      (act.type === 'PetAttack' && act.petRef === PET_ANY_SENTINEL) ||
+      ((act.type === 'PetAttack' || act.type === 'MovePetPosition') && act.petRef === PET_ANY_SENTINEL) ||
       !!state.pets.find(pet=>pet.id===act.petRef)
     );
     if(state.pets.length && !petRefIsValid){
@@ -14817,6 +14842,14 @@ function ensureActionRefDefaults(act){
     }
   } else {
     delete act.petRef;
+  }
+  // [Round 328] MovePetPosition's own petPositionMode select -- same
+  // self-healing shape as mode/hpKind elsewhere: falls back to the first
+  // real value if missing/stale, dropped entirely on any other action type.
+  if(act.type === 'MovePetPosition'){
+    if(!PET_POSITION_MODES.includes(act.petPositionMode)) act.petPositionMode = PET_POSITION_MODES[0];
+  } else {
+    delete act.petPositionMode;
   }
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
@@ -15391,6 +15424,28 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Have</span> ${petOptions}<span class="cond-word">attack</span>${targetHtml}<span class="cond-word">for</span>${amountHtml}${useXAmountHtml}<span class="cond-word">damage.</span>`;
       break;
     }
+    // [Round 328] New action type -- Tyler: "do we have a card effect that
+    // moves pet positions?" See compiler.js's actionToCSharp
+    // MovePetPosition case for the full evidence trail (ForgePetOrder,
+    // Forge's own tracked pet order layer, generated alongside
+    // ForgePetPositionPatch). Same picker shape as PetAttack above
+    // (PET_ANY_SENTINEL "whatever pet is out" offered alongside this
+    // character's own named pets), plus a new dedicated petPositionMode
+    // dropdown -- no target/amount atoms, this action has neither (joins
+    // PLAYER_ONLY_ACTIONS, see compiler.js).
+    case 'MovePetPosition': {
+      const petOptions = state.pets.length
+        ? `<select class="a-pet-ref"><option value="${PET_ANY_SENTINEL}" ${act.petRef===PET_ANY_SENTINEL?'selected':''}>Whatever pet is out</option>${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a pet first)</span>`;
+      const modeOptions = `<select class="a-pet-position-mode">
+        <option value="ShiftForward" ${act.petPositionMode==='ShiftForward'?'selected':''}>forward one position</option>
+        <option value="ShiftBack" ${act.petPositionMode==='ShiftBack'?'selected':''}>back one position</option>
+        <option value="ToFront" ${act.petPositionMode==='ToFront'?'selected':''}>to the front</option>
+        <option value="ToBack" ${act.petPositionMode==='ToBack'?'selected':''}>to the back</option>
+      </select>`;
+      sentenceHtml = `<span class="cond-word">Move</span> ${petOptions}${modeOptions}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -15573,6 +15628,10 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // above.
   const petRefSelect = row.querySelector('.a-pet-ref');
   if(petRefSelect) petRefSelect.onchange = e=> act.petRef = e.target.value;
+  // [Round 328] MovePetPosition's own move-select -- no re-render needed,
+  // same "just write the field" treatment petRefSelect above gets.
+  const petPositionModeSelect = row.querySelector('.a-pet-position-mode');
+  if(petPositionModeSelect) petPositionModeSelect.onchange = e=> act.petPositionMode = e.target.value;
   // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
   // needed, same as destinationSelect/costScopeSelect above.
   const pileSelect = row.querySelector('.a-pile');
