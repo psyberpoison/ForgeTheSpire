@@ -121,8 +121,48 @@
      overflow-x, which the spec computes to "auto" rather than "visible"
      once any axis is set -- fixed alongside adding ellipsis truncation
      for a label (like "Enchantments & Afflictions") that's wider than
-     the now-narrower-by-the-tab's-width inner column. */
-  :root{ --side-nav-ideal-width:200px; --side-nav-collapsed-width:26px; }
+     the now-narrower-by-the-tab's-width inner column.
+     [Round 325] Tyler, shown a screenshot of the round-324 result: "lets
+     not extend the top for the logo. lets instead create a small circle
+     at the top like a decoration on top of the navigation pull out. also,
+     the 'collapse/extend' button doesn't need to be the full height of
+     the element. Make it smaller and have it stick off of the side of
+     it, like a pull tab." Two changes:
+       - .side-nav-logo (the wordmark image, which was adding real height
+         to the box) is gone, replaced by .side-nav-badge: a small purely
+         decorative circle straddling the box's own top border (half
+         above it, half below), not a second logo/branding element -- no
+         small circular brand mark exists elsewhere in this app to reuse
+         (the header logo is a rectangular wordmark, not something that
+         crops cleanly into a circle), so this is a plain ornamental
+         accent using the app's own gold/accent colors, flagged here as a
+         best-effort decorative choice rather than something copied from
+         a real STS2 reference.
+       - .side-nav-tab shrank from a full-height strip living INSIDE the
+         box's own width to a small (--side-nav-tab-height tall) handle
+         that actually protrudes PAST the box's right edge by
+         --side-nav-tab-overhang. That protrusion can't be clipped by the
+         box's own overflow:hidden (previously relied on to clip
+         .side-nav-inner during the collapse-width transition) or it would
+         get cut off along with everything else -- so that clipping moved
+         one level deeper, onto a new .side-nav-clip wrapper around just
+         .side-nav-inner, freeing .side-nav itself (and its direct-child
+         .side-nav-tab) from being clipped at all. Since the tab now
+         extends past the box's own computed width, updateSideNavFit()
+         also reserves --side-nav-tab-overhang worth of extra gutter room
+         so the box+tab combination still never overlaps real page
+         content -- the same no-overlap guarantee from round 323, just
+         accounting for one more source of width now. .side-nav-inner no
+         longer needs to reserve space for an internal tab (there isn't
+         one anymore), so it's back to the full ideal width. */
+  :root{
+    --side-nav-ideal-width:200px;
+    --side-nav-collapsed-width:10px;
+    --side-nav-badge-size:22px;
+    --side-nav-tab-height:54px;
+    --side-nav-tab-width:20px;
+    --side-nav-tab-overhang:12px;
+  }
   body{
     margin:0;
     background:
@@ -136,7 +176,14 @@
     position:fixed; top:50%; left:0; transform:translateY(-50%);
     width:var(--side-nav-computed-width, var(--side-nav-ideal-width));
     max-height:80vh;
-    overflow:hidden;
+    /* [Round 325] No longer clips its own children -- .side-nav-tab now
+       needs to visibly protrude past this box's right edge, and
+       .side-nav-badge needs to visibly poke up past its top edge.
+       Clipping .side-nav-inner during the collapse-width transition
+       moved one level deeper onto .side-nav-clip instead (see that
+       rule), so the box itself can stay overflow:visible without the
+       link list spilling out uncontained while collapsing. */
+    overflow:visible;
     background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
     border:1px solid var(--border); border-left:none;
     border-radius:0 var(--radius) var(--radius) 0;
@@ -146,56 +193,71 @@
   }
   /* Collapsed by Tyler's own toggle, OR no-room (the computed gutter is
      too narrow to show a usable nav at all) -- either flag alone forces
-     the same narrow "just the tab" width, overriding the JS-computed
+     the same narrow width, overriding the JS-computed
      --side-nav-computed-width var via normal CSS specificity (two classes
-     beats one, no !important needed). At that width .side-nav-inner is
-     entirely clipped by the outer box's own overflow:hidden, leaving only
-     the tab strip visible -- see .side-nav-tab's own width, deliberately
-     set to this same variable so the two line up exactly. */
+     beats one, no !important needed). [Round 325] This is now just a
+     thin sliver of the box itself -- the tab that used to live at this
+     same width now floats independently at a fixed size regardless of
+     collapse state (see .side-nav-tab), so the box doesn't need to stay
+     wide enough to contain a full-height tab anymore. */
   .side-nav.collapsed, .side-nav.no-room{ width:var(--side-nav-collapsed-width); }
-  /* [Round 324] Narrowed by --side-nav-collapsed-width so real content
-     stops short of the .side-nav-tab strip instead of running under it.
-     overflow-x is now explicitly hidden -- previously only overflow-y was
-     set, and per the CSS spec an unset overflow-x next to a set
-     overflow-y computes to "auto" rather than staying "visible", which is
-     what was producing the horizontal scrollbar under a long section name
-     like "Enchantments & Afflictions" once .side-nav-link's own
-     white-space:nowrap forced it onto a single line wider than the box.
-     Long labels are now clipped with an ellipsis on the link itself
-     instead (see .side-nav-link span). */
-  .side-nav-inner{
-    width:calc(var(--side-nav-ideal-width) - var(--side-nav-collapsed-width));
+  /* [Round 325] Does the width-clipping .side-nav itself used to do
+     directly -- sized to 100% of the (possibly mid-transition) box width
+     every frame, same as the parent it replaces for this purpose, just
+     one level deeper so .side-nav's OTHER children (.side-nav-tab,
+     .side-nav-badge) are free to sit outside its bounds. Also now the
+     actual scroll container for a link list taller than 80vh (moved here
+     from .side-nav-inner, which dropped its own overflow rules -- there's
+     no reason to split "clip the width" and "scroll the height" across
+     two different elements when one can do both). overflow-x stays
+     explicitly hidden for the same reason round 324 needed it on
+     .side-nav-inner: leaving it unset next to a set overflow-y computes
+     to "auto" per the CSS spec, which is what produced that round's
+     horizontal-scrollbar bug under a long section name. */
+  .side-nav-clip{
+    width:100%;
     max-height:80vh;
     overflow-y:auto;
     overflow-x:hidden;
+  }
+  /* [Round 324] A long section name like "Enchantments & Afflictions"
+     still renders on one line (.side-nav-link's own white-space:nowrap)
+     and is clipped with an ellipsis rather than wrapped (see
+     .side-nav-link span) -- the horizontal clipping that keeps it from
+     forcing a scrollbar now lives on .side-nav-clip, the parent wrapper,
+     instead of here. [Round 325] Back to the full ideal width -- no
+     longer needs to leave room for a tab living inside it, since the tab
+     moved out onto .side-nav directly (see .side-nav-tab). */
+  .side-nav-inner{
+    width:var(--side-nav-ideal-width);
     padding:16px 0;
   }
-  /* [Round 324] Tyler: "Instead of an arrow at the top, lets do a tab on
-     the side that expands/contracts the search area." Replaces the old
-     small corner button (.side-nav-toggle, an 18x18 square pinned to the
-     top-right corner) with a full-height grab-handle strip running down
-     the box's own right edge -- still entirely WITHIN the box's own
-     computed width (not protruding past it), so it rides along with
-     whatever width updateSideNavFit() already settled on rather than
-     needing its own separate no-overlap accounting. Kept the element's id
+  /* [Round 325] Tyler, on round 324's full-height tab: "the
+     collapse/extend button doesn't need to be the full height of the
+     element. Make it smaller and have it stick off of the side of it,
+     like a pull tab." Now a small fixed-size handle, vertically centered,
+     positioned with a NEGATIVE right offset so most of it sits past the
+     box's own right edge in the empty gutter beyond -- .side-nav no
+     longer clips its children (see that rule), so this protrusion
+     actually renders instead of being cut off. updateSideNavFit()
+     reserves --side-nav-tab-overhang worth of extra safe-gutter room to
+     match, so this protrusion is already accounted for in round 323's
+     no-overlap guarantee, not fighting it. Kept the element's id
      (side-nav-toggle) so the existing click-handler wiring in
      renderSideNav() didn't need to change, only its class/look. */
   .side-nav-tab{
-    position:absolute; top:0; right:0; bottom:0;
-    width:var(--side-nav-collapsed-width);
+    position:absolute; top:50%; right:calc(-1 * var(--side-nav-tab-overhang));
+    transform:translateY(-50%);
+    width:var(--side-nav-tab-width);
+    height:var(--side-nav-tab-height);
     display:flex; align-items:center; justify-content:center;
     cursor:pointer;
     color:var(--parchment-dim);
-    font-size:13px;
-    /* Solid, not translucent -- this strip is exactly as wide as the
-       whole box in its collapsed state (both driven by
-       --side-nav-collapsed-width), so it needs to fully mask whatever of
-       .side-nav-inner peeks out behind it there. A translucent tint let a
-       faint sliver of the first clipped link's text bleed through. Same
-       gradient as the box itself so the tab reads as part of the box
-       rather than a patch stuck on top of it. */
+    font-size:14px;
     background-image:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
-    border-left:1px solid var(--border);
+    border:1px solid var(--border);
+    border-radius:4px 8px 8px 4px;
+    box-shadow:2px 2px 8px rgba(0,0,0,.4);
     user-select:none;
     transition:background-image .15s, color .15s;
   }
@@ -207,13 +269,27 @@
     color:var(--parchment);
     background-image:linear-gradient(rgba(255,255,255,.07), rgba(255,255,255,.07)), linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
   }
-  .side-nav-logo{
-    display:flex; justify-content:center;
-    padding:14px 12px 16px;
-    margin-bottom:6px;
-    border-bottom:1px solid var(--border);
+  /* [Round 325] Replaces .side-nav-logo (the wordmark image, which added
+     real height to the box's own top). Purely decorative -- see this
+     round's comment up by :root for why this isn't a second copy of the
+     real logo. Straddles the box's own top border via the -50% Y
+     transform (half above it, half below), like a knob/medallion capping
+     the top of the drawer, rather than living inside the box's own
+     content flow and adding to its height. */
+  .side-nav-badge{
+    position:absolute; top:0; left:50%;
+    transform:translate(-50%, -50%);
+    width:var(--side-nav-badge-size); height:var(--side-nav-badge-size);
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 35% 30%, #f0d68a 0%, var(--gold) 55%, #8a6a1a 100%);
+    border:1px solid var(--gold);
+    box-shadow:0 2px 6px rgba(0,0,0,.5), 0 0 6px rgba(201,162,39,.35);
+    color:var(--ink);
+    font-size:11px;
+    line-height:1;
+    z-index:1;
   }
-  .side-nav-logo img{ display:block; height:34px; width:auto; }
   .side-nav-link{
     display:flex; align-items:center;
     padding:8px 18px;
@@ -2721,11 +2797,13 @@
 <body>
 
 <!-- [Round 321] Tyler: "lets make a side navigation bar for the app... always on the side and doesnt move when scrolling. It should have names for each section, and clicking on one should jump you to that section." Left empty here — populated by renderSideNav() from the real section.panel elements in <main> below (their own .num/h2 text), not a hand-maintained parallel list, so a future round that adds/renames/reorders a section can never let this drift out of sync with what actually exists.
-     [Round 323] Tyler: "make it touch the left wall, have it be collapsible to the left, and make sure its width doesn't extend over any of the contents in the page." .side-nav-inner wraps the title/links so the outer .side-nav can shrink its own width (collapsed, or no-room -- see updateSideNavFit()) while clipping that fixed-width inner content via overflow:hidden, without the links themselves reflowing/wrapping mid-collapse.
-     [Round 324] Tyler: "stylize the box... tab on the side that expands/contracts... put the forge the spire logo at the top... remove the numbers... remove the side scrolling bar." The logo img's real src is set by renderSideNav() by copying #app-logo-mark's own src (single source of truth for the logo asset, not a second copy of that ~280KB base64 blob pasted into the markup here). The toggle is now .side-nav-tab, a full-height strip along the box's own right edge (NOT protruding past it) -- so it's still inside the same computed width updateSideNavFit() already caps, no change needed there. -->
+     [Round 323] Tyler: "make it touch the left wall, have it be collapsible to the left, and make sure its width doesn't extend over any of the contents in the page." .side-nav-inner wraps the title/links so the outer .side-nav can shrink its own width (collapsed, or no-room -- see updateSideNavFit()) without the links themselves reflowing/wrapping mid-collapse.
+     [Round 324] Tyler: "stylize the box... tab on the side that expands/contracts... put the forge the spire logo at the top... remove the numbers... remove the side scrolling bar."
+     [Round 325] Tyler: "lets not extend the top for the logo. lets instead create a small circle at the top like a decoration... also, the 'collapse/extend' button doesn't need to be the full height of the element. Make it smaller and have it stick off of the side of it, like a pull tab." .side-nav-logo (the <img> wordmark) is gone -- replaced by .side-nav-badge, a plain decorative circle (no src to set, it's static markup, not sourced from #app-logo-mark). .side-nav-clip is new: the width-clipping .side-nav itself used to do directly moved one level deeper onto this wrapper, freeing .side-nav (and its now-protruding .side-nav-tab/.side-nav-badge children) from being clipped at all. -->
 <nav class="side-nav" id="side-nav">
-  <div class="side-nav-inner">
-    <div class="side-nav-logo"><img id="side-nav-logo-img" alt="Forge the Spire"></div>
+  <div class="side-nav-badge" aria-hidden="true">&#10022;</div>
+  <div class="side-nav-clip">
+    <div class="side-nav-inner"></div>
   </div>
   <div class="side-nav-tab" id="side-nav-toggle" title="Collapse section navigation">&lsaquo;</div>
 </nav>
@@ -20015,10 +20093,20 @@ function updateSideNavFit(){
   const mainStyle = getComputedStyle(main);
   const mainContentLeft = main.getBoundingClientRect().left + (parseFloat(mainStyle.paddingLeft) || 0);
   const gutter = Math.max(0, mainContentLeft);
-  const safeWidth = gutter - SIDE_NAV_SAFETY_MARGIN;
+  const navStyle = getComputedStyle(nav);
+  // [Round 325] .side-nav-tab now protrudes past the box's own right edge
+  // by --side-nav-tab-overhang (see that rule's own comment) instead of
+  // living entirely inside the box's width like round 324's version did.
+  // The box's OWN width is capped below to fit inside the gutter, but the
+  // real rightmost extent of the whole nav element is boxWidth + this
+  // overhang -- so the overhang has to come out of the safe budget too,
+  // or the tab itself could still poke into real content even while the
+  // box "fits".
+  const tabOverhang = parseFloat(navStyle.getPropertyValue('--side-nav-tab-overhang')) || 0;
+  const safeWidth = gutter - SIDE_NAV_SAFETY_MARGIN - tabOverhang;
   const noRoom = safeWidth < SIDE_NAV_MIN_USABLE_WIDTH;
   nav.classList.toggle('no-room', noRoom);
-  const idealWidth = parseFloat(getComputedStyle(nav).getPropertyValue('--side-nav-ideal-width')) || 200;
+  const idealWidth = parseFloat(navStyle.getPropertyValue('--side-nav-ideal-width')) || 200;
   const fitWidth = noRoom ? idealWidth : Math.min(idealWidth, safeWidth);
   nav.style.setProperty('--side-nav-computed-width', fitWidth + 'px');
 }
@@ -20050,18 +20138,6 @@ function renderSideNav(){
   const nav = document.getElementById('side-nav');
   const inner = nav ? nav.querySelector('.side-nav-inner') : null;
   if(!nav || !inner) return;
-
-  // [Round 324] "put the forge the spire logo at the top" -- copies the
-  // real logo's src from the header's own <img id="app-logo-mark"> rather
-  // than pasting a second copy of that base64 image data into this
-  // markup, so there's one source of truth for the logo asset (swap the
-  // header's image and this one updates with it). Fails loud rather than
-  // silently: if #app-logo-mark is ever removed/renamed, the nav's logo
-  // slot is left as a plain broken-image rather than pretending to have
-  // succeeded, which is easier to notice than a silently blank corner.
-  const logoImg = nav.querySelector('#side-nav-logo-img');
-  const headerLogo = document.getElementById('app-logo-mark');
-  if(logoImg && headerLogo) logoImg.src = headerLogo.src;
 
   const sections = Array.from(document.querySelectorAll('main section.panel[id^="section-"]'));
   const links = [];
