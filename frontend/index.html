@@ -13677,50 +13677,27 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   // property write.
   if(subjectEl) subjectEl.onchange = (e)=>{
     const newSubject = e.target.value;
-    // [Tyler, this round] Was `isCardSubject !== wasCardSubject` — a
-    // simple "crossed the card/creature boundary" check that worked fine
-    // when CardPositionInHand was the only card-subject kind (real under
-    // EITHER This Card or That Card, so switching between those two never
-    // needed a kind reset). Now that THAT_CARD_ONLY_CONDITION_KINDS exist
-    // (real under That Card only), a This Card <-> That Card switch can
-    // ALSO strand the current kind — e.g. "Played card is type" stays
-    // selected while subject flips to "This Card," where
-    // conditionKindsForSubject no longer offers it at all. Checking
-    // whether cond.kind is still in the new subject's own valid-kinds
-    // list catches every boundary that can actually strand a kind,
-    // including this new one, instead of hard-coding which subject pairs
-    // are "safe."
+    // [Round 312] Used to only reset the kind when it was no longer valid
+    // under the new subject (kindStillValid check) — kept HasBlock/
+    // DebuffStacksTotal/etc. selected across a Self<->Target<->Pet switch
+    // since those 4 kinds are real under any of them.
+    // [Round 313] Tyler: "for consistency-sake, lets always reset the
+    // conditional when the subject changes. dont try to match the
+    // current condition to the new subject." Every subject switch now
+    // resets to the same fallback kind a genuinely-invalid switch already
+    // used, whether or not the current kind would have technically
+    // survived. See conditionKindsForSubject's own comment for why
+    // "CardPositionInHand" is preferred first when it's actually offered
+    // (This Card/That Card switches) — that preference is a good-default
+    // choice for the new subject, not an attempt to preserve whatever was
+    // previously selected, so it's unaffected by this round.
     const validKinds = conditionKindsForSubject(eff, newSubject);
-    const kindStillValid = validKinds.some(k => k.id === cond.kind);
-    if(!kindStillValid){
-      // [2026-09-25 fix] Was `isCardSubject ? 'CardPositionInHand' : ...` —
-      // hardcoded CardPositionInHand as the fallback for ANY This Card/
-      // That Card switch, which was correct back when it was the ONLY
-      // card-subject kind. Since round 282 widened THAT_CARD_ONLY_
-      // CONDITION_KINDS' own trigger reachability (PlayedCardHasKeyword/
-      // Tag/Type now valid under "That Card" on AfterCardGeneratedFor
-      // Combat/AfterCardDiscarded/OnExhaust, where CardPositionInHand
-      // itself stays invalid — no real hand-position tracker there), that
-      // hardcoded fallback could pick a kind NOT in validKinds at all —
-      // cond.kind then matched none of the c-kind <select>'s own options
-      // (built from validKinds two lines below), so the browser silently
-      // defaulted the dropdown to its first option's label while the
-      // actual fields rendered still followed the real (mismatched)
-      // cond.kind — Tyler: "swapping to 'that card' doesn't properly
-      // update the following values." Fixed by only preferring
-      // CardPositionInHand when it's ACTUALLY in validKinds (preserves
-      // the exact existing OnAnyCardPlayed behavior), else falling
-      // through to validKinds[0] like the non-card-subject branch always
-      // did — one rule instead of a hardcoded special case.
-      const fallbackKindId = validKinds.some(k => k.id === 'CardPositionInHand')
-        ? 'CardPositionInHand'
-        : (validKinds[0] ? validKinds[0].id : cond.kind);
-      Object.keys(cond).forEach(k=> delete cond[k]);
-      Object.assign(cond, blankCondition(fallbackKindId));
-      cond.subject = newSubject;
-    } else {
-      cond.subject = newSubject;
-    }
+    const fallbackKindId = validKinds.some(k => k.id === 'CardPositionInHand')
+      ? 'CardPositionInHand'
+      : (validKinds[0] ? validKinds[0].id : cond.kind);
+    Object.keys(cond).forEach(k=> delete cond[k]);
+    Object.assign(cond, blankCondition(fallbackKindId));
+    cond.subject = newSubject;
     renderConditionRowFields(row, cond, eff);
     wireConditionRowHandlers(row, cond, eff, container, j, onChange);
   };
