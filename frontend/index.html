@@ -69,18 +69,28 @@
   }
   *{box-sizing:border-box;}
   /* [Round 321] Tyler: "lets make a side navigation bar for the app...
-     always on the side and doesn't move when scrolling." A permanent
-     left rail, same shape as a typical app-shell sidebar (VSCode's
-     activity bar, a dashboard's nav column) — NOT an overlay that only
-     shows in whatever empty margin main's own centering happens to leave
-     (that margin shrinks to nothing on a narrower window). --side-nav-width
-     is reserved unconditionally via body's own padding-left below, so
-     header/banners/main all shift right together and the rail can never
-     cover real content, at any window width. */
-  :root{ --side-nav-width:220px; }
+     always on the side and doesn't move when scrolling." First pass made
+     it a permanent full-height app-shell rail (like VSCode's activity
+     bar), reserving its own width via body's padding-left so header/
+     banners/main all shifted right to make room.
+     [Round 322] Tyler: "i dont want it to take up the full left side, and
+     I dont want to push all the elements to the right by adding this. I
+     want to keep the page contents the exact same, but i want to add
+     this as an overlay element on the left. Think a box on the side of
+     the screen, but not the full height of the app." So: body's
+     padding-left is GONE (page contents back to their pre-round-321
+     layout, byte-for-byte the same as before this whole feature existed)
+     and .side-nav is now a floating card — vertically centered, sized to
+     its own content (not top:0/bottom:0 stretched), sitting ON TOP of
+     whatever's underneath (an overlay, per Tyler's own word) rather than
+     claiming permanent layout space. Reuses section.panel's own
+     background-gradient/border/radius/shadow recipe so it reads as the
+     same kind of "card" as everything else in this app instead of a
+     different visual language. --side-nav-width unchanged/still used
+     below, just no longer forces the page to make room for it. */
+  :root{ --side-nav-width:200px; }
   body{
     margin:0;
-    padding-left:var(--side-nav-width);
     background:
       radial-gradient(ellipse at top, #101d30 0%, var(--ink) 65%);
     color:var(--parchment);
@@ -89,21 +99,25 @@
   }
   html{scroll-behavior:smooth;}
   .side-nav{
-    position:fixed; top:0; left:0; bottom:0; width:var(--side-nav-width);
+    position:fixed; top:50%; left:20px; transform:translateY(-50%);
+    width:var(--side-nav-width);
+    max-height:80vh;
     overflow-y:auto;
-    background:var(--stone);
-    border-right:1px solid var(--border);
-    padding:22px 0 40px;
+    background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 30px rgba(0,0,0,.45);
+    padding:16px 0;
     z-index:50;
   }
   .side-nav .side-nav-title{
     font-family:'Cinzel',serif; letter-spacing:.06em; font-weight:700;
     font-size:11px; text-transform:uppercase; color:var(--parchment-dim);
-    padding:0 20px 14px; margin-bottom:8px; border-bottom:1px solid var(--border);
+    padding:0 18px 12px; margin-bottom:6px; border-bottom:1px solid var(--border);
   }
   .side-nav-link{
     display:flex; align-items:center; gap:10px;
-    padding:9px 20px;
+    padding:8px 18px;
     color:var(--parchment-dim);
     text-decoration:none;
     font-size:13px;
