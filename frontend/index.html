@@ -158,7 +158,11 @@
   :root{
     --side-nav-ideal-width:200px;
     --side-nav-collapsed-width:10px;
-    --side-nav-badge-size:28px;
+    /* [Round 326] Bumped up from 28px -- that size only had to fit a
+       cropped castle icon; showing the WHOLE logo (castle + "Forge the
+       Spire" wordmark) legibly needs noticeably more room. */
+    --side-nav-badge-size:64px;
+    --side-nav-badge-padding:8px;
     --side-nav-tab-height:54px;
     --side-nav-tab-width:20px;
     --side-nav-tab-overhang:12px;
@@ -227,10 +231,14 @@
      forcing a scrollbar now lives on .side-nav-clip, the parent wrapper,
      instead of here. [Round 325] Back to the full ideal width -- no
      longer needs to leave room for a tab living inside it, since the tab
-     moved out onto .side-nav directly (see .side-nav-tab). */
+     moved out onto .side-nav directly (see .side-nav-tab). [Round 326]
+     Extra top padding (30px, up from the uniform 16px) clears the
+     bottom ~30% of .side-nav-badge that dips below the box's top border
+     at its round-326 size -- without it the first link's own text sat
+     underneath the badge, confirmed by a zoomed-in screenshot. */
   .side-nav-inner{
     width:var(--side-nav-ideal-width);
-    padding:16px 0;
+    padding:30px 0 16px;
   }
   /* [Round 325] Tyler, on round 324's full-height tab: "the
      collapse/extend button doesn't need to be the full height of the
@@ -270,40 +278,64 @@
     background-image:linear-gradient(rgba(255,255,255,.07), rgba(255,255,255,.07)), linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
   }
   /* [Round 325, corrected] Replaces .side-nav-logo (the wordmark image,
-     which added real height to the box's own top). Tyler: "what happened
-     to the logo? i didnt say to remove it entirely" -- the first version
-     of this rule used an invented flat gold circle instead of the real
-     logo, which was a misread of "create a small circle... like a
-     decoration": the actual header logo (#app-logo-mark) is ALREADY
-     circular at its core -- a spire/castle emblem inside a circular arc,
-     with the "Forge the Spire" wordmark overlaid below it -- so the
-     right move was to crop down to that existing circular emblem, not
-     invent an unrelated shape. Its background-image is set from
-     #app-logo-mark's own src in renderSideNav() (same single-source-of-
-     truth approach round 324 used for the logo), with background-size/
-     background-position doing the crop: the source webp is 700x591px,
-     and the clean text-free square at its top-center runs from
-     x:[240,460] y:[0,220] (found by inspecting the actual asset --
-     everything below y=220 starts overlapping the wordmark text). The
-     percentages below are the standard CSS crop-via-background-size math
-     for that region (100 * imgDimension/cropDimension for size, 100 *
-     cropOffset/(imgDimension-cropDimension) for position) -- not
-     arbitrary numbers, they map to those exact source pixels regardless
-     of the badge's own rendered size. Straddles the box's own top border
-     via the -50% Y transform (half above it, half below), like a
+     which added real height to the box's own top). The actual header
+     logo (#app-logo-mark) is ALREADY circular at its core -- a
+     spire/castle emblem inside a circular arc, with the "Forge the
+     Spire" wordmark overlaid below it. Straddles the box's own top
+     border via the -50% Y transform (half above it, half below), like a
      knob/medallion capping the top of the drawer, rather than living
-     inside the box's own content flow and adding to its height. */
+     inside the box's own content flow and adding to its height.
+     [Round 326] Tyler, after seeing the round-325-fix crop (just the
+     castle emblem, no text): "make it the whole logo with a little bit
+     of a circle padding around it." Swapped the background-image crop
+     for a real <img> (its src set from #app-logo-mark in renderSideNav,
+     same as before) sized to fill this circle's padding-box and shown
+     with object-fit:contain -- the WHOLE logo (castle + wordmark)
+     scales down to fit inside, and this rule's own padding is the
+     "circle padding" round the outside of it, rather than the image
+     filling the disc edge to edge. Also: "make it also collapse with
+     the menu" -- see the .side-nav.collapsed/.no-room override below,
+     which fades and shrinks the badge in step with the box's own width
+     transition (same .18s ease timing) instead of it floating there
+     independent of collapse state, which is what it did before. */
   .side-nav-badge{
     position:absolute; top:0; left:50%;
-    transform:translate(-50%, -50%);
+    /* -70% (not -50%) so only the bottom ~30% of the circle dips below
+       the box's top border into the link list -- at this badge's larger
+       round-326 size (64px, up from round 325's 28px) a dead-center
+       50/50 split let roughly half the circle (32px) overlap the first
+       link's own text, confirmed by a zoomed-in screenshot. .side-nav-
+       inner's own top padding (below) is sized to clear whatever still
+       overlaps at this offset. */
+    transform:translate(-50%, -70%);
     width:var(--side-nav-badge-size); height:var(--side-nav-badge-size);
+    box-sizing:border-box;
+    padding:var(--side-nav-badge-padding);
     border-radius:50%;
-    background-repeat:no-repeat;
-    background-size:318.18% 268.64%;
-    background-position:50% 0%;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
     border:1px solid var(--border);
     box-shadow:0 2px 6px rgba(0,0,0,.5);
     z-index:1;
+    pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+  }
+  .side-nav-badge img{
+    width:100%; height:100%;
+    object-fit:contain;
+    display:block;
+  }
+  /* [Round 326] Collapses (fades + shrinks) together with the box itself
+     instead of staying put at a fixed size while everything else tucks
+     away -- same trigger classes .updateSideNavFit()/setSideNavCollapsed
+     already toggle on .side-nav, so no new JS wiring needed, just a
+     second thing they now visually affect. Keeps the base rule's own
+     translate(-50%,-70%) so it keeps shrinking IN PLACE (centered on the
+     same point) rather than jumping position as it scales down. */
+  .side-nav.collapsed .side-nav-badge,
+  .side-nav.no-room .side-nav-badge{
+    opacity:0;
+    transform:translate(-50%, -70%) scale(.4);
   }
   .side-nav-link{
     display:flex; align-items:center;
@@ -2814,9 +2846,10 @@
 <!-- [Round 321] Tyler: "lets make a side navigation bar for the app... always on the side and doesnt move when scrolling. It should have names for each section, and clicking on one should jump you to that section." Left empty here — populated by renderSideNav() from the real section.panel elements in <main> below (their own .num/h2 text), not a hand-maintained parallel list, so a future round that adds/renames/reorders a section can never let this drift out of sync with what actually exists.
      [Round 323] Tyler: "make it touch the left wall, have it be collapsible to the left, and make sure its width doesn't extend over any of the contents in the page." .side-nav-inner wraps the title/links so the outer .side-nav can shrink its own width (collapsed, or no-room -- see updateSideNavFit()) without the links themselves reflowing/wrapping mid-collapse.
      [Round 324] Tyler: "stylize the box... tab on the side that expands/contracts... put the forge the spire logo at the top... remove the numbers... remove the side scrolling bar."
-     [Round 325] Tyler: "lets not extend the top for the logo. lets instead create a small circle at the top like a decoration... also, the 'collapse/extend' button doesn't need to be the full height of the element. Make it smaller and have it stick off of the side of it, like a pull tab." .side-nav-logo (the full-size <img> wordmark) is gone -- replaced by .side-nav-badge, a small circular crop of the SAME logo (its background-image is set from #app-logo-mark's src in renderSideNav(), the crop math is in that rule's own comment) rather than an invented shape. .side-nav-clip is new: the width-clipping .side-nav itself used to do directly moved one level deeper onto this wrapper, freeing .side-nav (and its now-protruding .side-nav-tab/.side-nav-badge children) from being clipped at all. -->
+     [Round 325] Tyler: "lets not extend the top for the logo. lets instead create a small circle at the top like a decoration... also, the 'collapse/extend' button doesn't need to be the full height of the element. Make it smaller and have it stick off of the side of it, like a pull tab." .side-nav-logo (the full-size <img> wordmark) is gone -- replaced by .side-nav-badge. .side-nav-clip is new: the width-clipping .side-nav itself used to do directly moved one level deeper onto this wrapper, freeing .side-nav (and its now-protruding .side-nav-tab/.side-nav-badge children) from being clipped at all.
+     [Round 326] Tyler: "make it the whole logo with a little bit of a circle padding around it. make it also collapse with the menu." .side-nav-badge now holds a real <img> (src set from #app-logo-mark in renderSideNav(), see that rule) showing the WHOLE logo via object-fit:contain, with the rule's own padding providing the "circle padding" gap -- previously it only showed a cropped castle icon. It also fades/shrinks in step with the box's own collapse via a CSS rule keyed off the same .collapsed/.no-room classes (see .side-nav-badge's own comment), rather than staying at a fixed size independent of the rest of the nav. -->
 <nav class="side-nav" id="side-nav">
-  <div class="side-nav-badge" aria-hidden="true"></div>
+  <div class="side-nav-badge" aria-hidden="true"><img id="side-nav-badge-img" alt=""></div>
   <div class="side-nav-clip">
     <div class="side-nav-inner"></div>
   </div>
@@ -20154,17 +20187,15 @@ function renderSideNav(){
   const inner = nav ? nav.querySelector('.side-nav-inner') : null;
   if(!nav || !inner) return;
 
-  // [Round 325] The badge's background-image is set here from the header
-  // logo's own src (#app-logo-mark) -- same single-source-of-truth
-  // approach round 324 used, just as a CSS background-image instead of
-  // an <img src>, since .side-nav-badge crops it via background-size/
-  // background-position (see that rule's own comment for the crop math).
-  // Fails loud rather than silently: if #app-logo-mark is ever removed
-  // or renamed, the badge is left with no background-image (a plain
-  // circle) rather than pretending to have succeeded.
-  const badge = nav.querySelector('.side-nav-badge');
+  // [Round 326] The badge's <img> src is set here from the header logo's
+  // own src (#app-logo-mark) -- same single-source-of-truth approach
+  // round 324 used for the (since-removed) full-size logo. Fails loud
+  // rather than silently: if #app-logo-mark is ever removed or renamed,
+  // the badge is left with no image (a plain empty circle) rather than
+  // pretending to have succeeded.
+  const badgeImg = nav.querySelector('#side-nav-badge-img');
   const headerLogo = document.getElementById('app-logo-mark');
-  if(badge && headerLogo) badge.style.backgroundImage = `url("${headerLogo.src}")`;
+  if(badgeImg && headerLogo) badgeImg.src = headerLogo.src;
 
   const sections = Array.from(document.querySelectorAll('main section.panel[id^="section-"]'));
   const links = [];
