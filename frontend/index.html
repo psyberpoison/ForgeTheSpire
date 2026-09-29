@@ -68,13 +68,56 @@
     --radius:3px;
   }
   *{box-sizing:border-box;}
+  /* [Round 321] Tyler: "lets make a side navigation bar for the app...
+     always on the side and doesn't move when scrolling." A permanent
+     left rail, same shape as a typical app-shell sidebar (VSCode's
+     activity bar, a dashboard's nav column) — NOT an overlay that only
+     shows in whatever empty margin main's own centering happens to leave
+     (that margin shrinks to nothing on a narrower window). --side-nav-width
+     is reserved unconditionally via body's own padding-left below, so
+     header/banners/main all shift right together and the rail can never
+     cover real content, at any window width. */
+  :root{ --side-nav-width:220px; }
   body{
     margin:0;
+    padding-left:var(--side-nav-width);
     background:
       radial-gradient(ellipse at top, #101d30 0%, var(--ink) 65%);
     color:var(--parchment);
     font-family:'Spectral',serif;
     min-height:100vh;
+  }
+  html{scroll-behavior:smooth;}
+  .side-nav{
+    position:fixed; top:0; left:0; bottom:0; width:var(--side-nav-width);
+    overflow-y:auto;
+    background:var(--stone);
+    border-right:1px solid var(--border);
+    padding:22px 0 40px;
+    z-index:50;
+  }
+  .side-nav .side-nav-title{
+    font-family:'Cinzel',serif; letter-spacing:.06em; font-weight:700;
+    font-size:11px; text-transform:uppercase; color:var(--parchment-dim);
+    padding:0 20px 14px; margin-bottom:8px; border-bottom:1px solid var(--border);
+  }
+  .side-nav-link{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 20px;
+    color:var(--parchment-dim);
+    text-decoration:none;
+    font-size:13px;
+    border-left:3px solid transparent;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .side-nav-link:hover{color:var(--parchment); background:rgba(255,255,255,.04);}
+  .side-nav-link.active{
+    color:var(--parchment);
+    background:rgba(75,147,221,.1);
+    border-left-color:var(--accent-bright);
+  }
+  .side-nav-link .side-nav-num{
+    color:var(--accent-bright); font-family:'JetBrains Mono',monospace; font-size:11px; flex:0 0 auto;
   }
   h1,h2,h3,.display{
     font-family:'Cinzel',serif;
@@ -2559,6 +2602,11 @@
 </style>
 </head>
 <body>
+
+<!-- [Round 321] Tyler: "lets make a side navigation bar for the app... always on the side and doesnt move when scrolling. It should have names for each section, and clicking on one should jump you to that section." Left empty here — populated by renderSideNav() from the real section.panel elements in <main> below (their own .num/h2 text), not a hand-maintained parallel list, so a future round that adds/renames/reorders a section can never let this drift out of sync with what actually exists. -->
+<nav class="side-nav" id="side-nav">
+  <div class="side-nav-title">Sections</div>
+</nav>
 
 <header class="top">
   <div>
@@ -19770,7 +19818,77 @@ function openGamePathModal(current){
   };
 }
 
+// [Round 321] Tyler: "lets make a side navigation bar for the app...
+// always on the side and doesn't move when scrolling. It should have
+// names for each section, and clicking on one should jump you to that
+// section." Builds the sidebar's links directly from the real
+// section.panel[id^="section-"] elements already in <main> -- each
+// link's number/title comes straight from that section's own .num/h2
+// text, not a hand-maintained parallel list, so this can never drift out
+// of sync with whatever sections actually exist if a future round
+// renames/reorders/adds/removes one. Plain #anchor hrefs do the actual
+// jump (html{scroll-behavior:smooth} in the stylesheet is what makes it
+// glide instead of snap); the IntersectionObserver below only adds the
+// "you are here" active-link highlight, same as any persistent nav rail
+// is expected to have -- it never drives the scroll itself, so it can't
+// fight with a real click-triggered jump.
+function renderSideNav(){
+  const nav = document.getElementById('side-nav');
+  if(!nav) return;
+  const sections = Array.from(document.querySelectorAll('main section.panel[id^="section-"]'));
+  const links = [];
+  sections.forEach(sec=>{
+    const h2 = sec.querySelector('.panel-head h2');
+    if(!h2) return;
+    const numEl = h2.querySelector('.num');
+    const num = numEl ? numEl.textContent.trim() : '';
+    // h2.textContent is "01 Character & Art" (a real space text node
+    // separates the .num span from the title in the source markup) --
+    // stripping the number substring back out leaves just the title,
+    // without needing to clone/mutate the real h2 node to read it.
+    const title = (num ? h2.textContent.replace(num, '') : h2.textContent).trim();
+    const a = document.createElement('a');
+    a.className = 'side-nav-link';
+    a.href = `#${sec.id}`;
+    a.dataset.sectionId = sec.id;
+    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span>${escapeHtml(title)}</span>`;
+    nav.appendChild(a);
+    links.push(a);
+  });
+  if(!sections.length || !('IntersectionObserver' in window)) return;
+  const orderedIds = sections.map(sec=>sec.id);
+  const visible = new Set();
+  const setActive = (id)=>{
+    links.forEach(a=> a.classList.toggle('active', a.dataset.sectionId === id));
+  };
+  // Picks the TOPMOST section (in document order) currently inside the
+  // "active zone" rather than trusting whichever IntersectionObserver
+  // entry happened to fire last in a batch -- entries order isn't
+  // something to rely on when several sections cross the threshold in
+  // the same scroll frame (e.g. a fast scroll/jump past a short one).
+  const updateActive = ()=>{
+    const firstVisible = orderedIds.find(id=> visible.has(id));
+    setActive(firstVisible || orderedIds[0]);
+  };
+  // rootMargin's -70% bottom shrinks the observed viewport down to just
+  // its top 30% -- a section only counts "current" once its own top has
+  // scrolled up into that band, the standard scroll-spy trick (waiting
+  // for a section to be fully centered/visible would leave the LAST
+  // section stuck un-highlightable once the page can't scroll it any
+  // higher than partway up the viewport).
+  const observer = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting) visible.add(entry.target.id);
+      else visible.delete(entry.target.id);
+    });
+    updateActive();
+  }, { rootMargin:'0px 0px -70% 0px', threshold:0 });
+  sections.forEach(sec=> observer.observe(sec));
+  updateActive();
+}
+
 /* ---------- init ---------- */
+renderSideNav();
 hydrateCharacterForm();
 renderCards();
 renderRelics();
