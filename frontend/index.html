@@ -4997,6 +4997,17 @@ const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","Re
 // =="test"), not real playable cards -- see compiler.js:CARD_POOL_CLASS_MAP's
 // own comment for the full evidence trail.
 const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent"];
+
+// [2026-09-30 follow-up #2] DiscoverCard's own SpecificCards card-search
+// widget needs a fresh, document-unique <datalist> id every time its row
+// renders -- more than one DiscoverCard/SpecificCards row can exist in the
+// DOM at once (different effects, or even the same effect), and a plain
+// per-row counter like the action's own array index `j` can collide
+// across different effect blocks. A simple ever-incrementing module-level
+// counter is the whole fix; row.innerHTML fully replaces a row's DOM
+// subtree on every render, so a stale id from an earlier render of the
+// SAME row is never still in the document to collide with either.
+let discoverCardSearchSeq = 0;
 function validTargetsForAction(actionType){
   // [Round 330] Mirrors compiler.js:validTargetsForAction exactly — see
   // that function's own comment for the full "why GainBlock now gets
@@ -16034,37 +16045,60 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         <option value="OwnCharacter" ${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'selected' : ''}>Your Own Character's Pool</option>
         ${CARD_POOL_VALUES.map(p => `<option value="${p}" ${act.discoverPool === p ? 'selected' : ''}>${p}</option>`).join('')}
       </select>`;
-      // A plain checkbox per this character's own defined cards (any
-      // rarity -- Discover isn't Token-only like CreateCard's own tokenRef
-      // picker, see discoverCardRefs' own schema description). No existing
-      // "array of card ids" UI convention anywhere else in this app to
-      // reuse (CreateCard/TransformDeckCards/etc. are all single-card
-      // pickers) -- new, minimal checkbox-list pattern.
-      const selectedRefs = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
-      const cardRefsPickerHtml = state.cards.length
-        ? `<div class="a-discover-cardrefs-picker" style="display:flex; flex-wrap:wrap; gap:4px 12px; margin:4px 0;">
-            ${state.cards.map(c => `<label class="a-check-label"><input type="checkbox" class="a-discover-cardref-check" value="${escapeAttr(c.id)}" ${selectedRefs.has(c.id) ? 'checked' : ''}> ${escapeHtml(c.name || 'Untitled')}</label>`).join('')}
-          </div>`
-        : `<div class="hint-small">— no cards defined yet —</div>`;
+      // [2026-09-30 follow-up #2] Tyler: "if 'specific cards' is selected
+      // then we dont need to put the whole 'only attacks/skill/etc'
+      // section following it since the creator is picking cards
+      // manually." Type/tag filters only render (and are readable) for
+      // the Pool source now -- cleared when switching to SpecificCards,
+      // see wireActionRowHandlers' own discoverSourceKindSelect handler.
+      // They stay fully real/composable at the schema+compiler.js level
+      // (unchanged) -- this is a UI simplification only, not a capability
+      // removal.
       const hasCardTypeFilter = !!act.discoverCardType;
-      const cardTypeFilterHtml = `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards,</span>`;
+      const cardTypeFilterHtml = sourceKind === 'Pool'
+        ? `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards,</span>`
+        : '';
       // Tag filter -- same checkbox-enables-disabled-select +
       // allGameplayTags() convention as renderCostReductionRows'/
       // ModifyShuffleOrder's own tag filters (round 165 / 2026-09-23).
-      // Composable with either sourceKind above, per schema's own
-      // discoverTagFilter paragraph.
       const discoverTagOptions = allGameplayTags();
       const hasTagFilter = !!act.discoverTagFilter;
-      const tagFilterHtml = `<label class="a-check-label" title="Only offer cards tagged with one of this character's own gameplay tags."><input type="checkbox" class="a-discover-tagfilter-check" ${hasTagFilter ? 'checked' : ''} ${discoverTagOptions.length ? '' : 'disabled'}> tagged</label> ${discoverTagOptions.length
-        ? `<select class="a-discover-tagfilter" ${hasTagFilter ? '' : 'disabled'}>${discoverTagOptions.map(t => `<option value="${escapeAttr(t)}" ${act.discoverTagFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`
-        : `<select class="a-discover-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`} <span class="cond-word">,</span>`;
+      const tagFilterHtml = sourceKind === 'Pool'
+        ? `<label class="a-check-label" title="Only offer cards tagged with one of this character's own gameplay tags."><input type="checkbox" class="a-discover-tagfilter-check" ${hasTagFilter ? 'checked' : ''} ${discoverTagOptions.length ? '' : 'disabled'}> tagged</label> ${discoverTagOptions.length
+          ? `<select class="a-discover-tagfilter" ${hasTagFilter ? '' : 'disabled'}>${discoverTagOptions.map(t => `<option value="${escapeAttr(t)}" ${act.discoverTagFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`
+          : `<select class="a-discover-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`} <span class="cond-word">,</span>`
+        : '';
+      // Search-and-add card picker -- Tyler: "don't add a checkbox for
+      // every card, add a search bar that will add cards picked to a
+      // list." Same native <datalist>-backed search-and-commit pattern
+      // the card editor's own Label/Tag pickers already use
+      // (setupCompactTagPicker), adapted to match real card NAMES and
+      // resolve them to ids; picked cards render as the app's existing
+      // .chip-row/.chip/.chip-x (round 213-era CSS, already used for
+      // Label/Tag chips) rather than a new widget.
+      const pickedRefIds = Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : [];
+      const cardSearchListId = `discover-cardsearch-${discoverCardSearchSeq++}`;
+      const cardRefsChipsHtml = pickedRefIds.length
+        ? `<div class="chip-row a-discover-cardrefs-chips">${pickedRefIds.map(id => {
+            const cname = (state.cards.find(c => c.id === id) || {}).name || 'Untitled';
+            return `<span class="chip">${escapeHtml(cname)} <span class="chip-x a-discover-cardref-remove" data-id="${escapeAttr(id)}">✕</span></span>`;
+          }).join('')}</div>`
+        : `<div class="chip-row a-discover-cardrefs-chips"><span class="chip-empty">no cards picked yet</span></div>`;
+      const cardRefsPickerHtml = state.cards.length
+        ? `<div class="a-discover-cardrefs-picker" style="margin:4px 0;">
+            <input type="text" class="a-discover-cardsearch" placeholder="Search your cards to add..." list="${cardSearchListId}" autocomplete="off" maxlength="80">
+            <datalist id="${cardSearchListId}"></datalist>
+            ${cardRefsChipsHtml}
+          </div>`
+        : `<div class="hint-small">— no cards defined yet —</div>`;
       const canSkipHtml = `<label class="a-check-label" title="If unchecked, the player must pick one of the offered cards -- no skip."><input type="checkbox" class="a-discover-canskip" ${act.discoverCanSkip === false ? '' : 'checked'}> Can be skipped</label>`;
       const freeCostHtml = `<select class="a-discover-freecost" title="Make the discovered card free -- calls the same real CardModel.SetToFreeThisTurn()/SetToFreeThisCombat() methods the one real vanilla Discovery card itself uses.">
         <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>and it costs normal Energy</option>
         <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>and it's free this turn</option>
         <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
       </select>`;
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${cardTypeFilterHtml} ${tagFilterHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
+      const filterAreaHtml = (cardTypeFilterHtml || tagFilterHtml) ? ` ${cardTypeFilterHtml}${tagFilterHtml}` : ' ';
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${filterAreaHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
       break;
     }
     default:
@@ -16321,23 +16355,76 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   const discoverSourceKindSelect = row.querySelector('.a-discover-sourcekind');
   if(discoverSourceKindSelect) discoverSourceKindSelect.onchange = e=>{
     act.discoverSourceKind = e.target.value;
-    if(act.discoverSourceKind !== 'SpecificCards') delete act.discoverCardRefs;
-    else delete act.discoverPool;
+    if(act.discoverSourceKind !== 'SpecificCards'){
+      delete act.discoverCardRefs;
+    } else {
+      delete act.discoverPool;
+      // [2026-09-30 follow-up #2] Tyler: "we dont need [the type/tag
+      // filter] since the creator is picking cards manually" -- cleared
+      // on entry to SpecificCards the same way discoverPool already is,
+      // rather than left set-but-hidden (no invisible-filter state).
+      delete act.discoverCardType;
+      delete act.discoverTagFilter;
+    }
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
-  // discoverCardRefs -- plain checkbox list, no re-render needed (doesn't
-  // change which other fields this row shows, same as afflictionRefSelect/
-  // enchantmentRefSelect above); each checkbox just pushes/removes its own
-  // card id from the array.
-  row.querySelectorAll('.a-discover-cardref-check').forEach(cb=>{
-    cb.onchange = e=>{
-      const refs = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
-      if(e.target.checked) refs.add(e.target.value);
-      else refs.delete(e.target.value);
-      act.discoverCardRefs = Array.from(refs);
-    };
-  });
+  // [2026-09-30 follow-up #2] discoverCardRefs -- search-and-add picker,
+  // replacing the original one-checkbox-per-card list. Same native
+  // <datalist>-backed "type a real name, Enter/select commits" pattern as
+  // setupCompactTagPicker's own Label/Tag inputs (see that function's own
+  // comment), just matching against state.cards by name instead of a
+  // freeform tags array. No full row re-render needed for add/remove --
+  // only the chip row + datalist options (which must exclude whatever's
+  // already picked) are touched in place.
+  const cardSearchInput = row.querySelector('.a-discover-cardsearch');
+  if(cardSearchInput){
+    const cardSearchListEl = row.querySelector(`#${cardSearchInput.getAttribute('list')}`);
+    const chipsEl = row.querySelector('.a-discover-cardrefs-chips');
+    function refreshCardSearchOptions(){
+      const picked = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
+      cardSearchListEl.innerHTML = state.cards
+        .filter(c => !picked.has(c.id))
+        .map(c => `<option value="${escapeAttr(c.name || 'Untitled')}">`).join('');
+    }
+    function refreshChips(){
+      const picked = Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : [];
+      chipsEl.innerHTML = picked.length
+        ? picked.map(id => {
+            const cname = (state.cards.find(c => c.id === id) || {}).name || 'Untitled';
+            return `<span class="chip">${escapeHtml(cname)} <span class="chip-x a-discover-cardref-remove" data-id="${escapeAttr(id)}">✕</span></span>`;
+          }).join('')
+        : `<span class="chip-empty">no cards picked yet</span>`;
+      chipsEl.querySelectorAll('.a-discover-cardref-remove').forEach(x=>{
+        x.onclick = ()=>{
+          const refs = (Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []).filter(id => id !== x.dataset.id);
+          act.discoverCardRefs = refs;
+          refreshChips();
+          refreshCardSearchOptions();
+        };
+      });
+    }
+    function commitCardSearch(){
+      const raw = cardSearchInput.value.trim();
+      if(!raw) return;
+      const picked = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
+      // Exact, case-insensitive match against a real, not-yet-picked card
+      // name only -- same "don't add garbage from a typo" discipline
+      // setupCompactTagPicker's own commit() uses, adapted since a card
+      // reference (unlike a freeform tag) has to resolve to a REAL id.
+      const matchCard = state.cards.find(c => !picked.has(c.id) && (c.name || 'Untitled').toLowerCase() === raw.toLowerCase());
+      if(matchCard){
+        act.discoverCardRefs = [...picked, matchCard.id];
+        cardSearchInput.value = '';
+        refreshChips();
+        refreshCardSearchOptions();
+      }
+    }
+    refreshCardSearchOptions();
+    cardSearchInput.addEventListener('change', commitCardSearch);
+    cardSearchInput.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); commitCardSearch(); } });
+    refreshChips();
+  }
   // Same "checkbox enables a disabled select" convention as
   // renderCostReductionRows' own typeFilterCheck/typeFilterSel (round 166,
   // Tyler: "add two checkboxes below the sentence to filter by type or
