@@ -894,17 +894,20 @@ const PET_ANY_SENTINEL = '__any_pet__';
 // convention as PET_ANY_SENTINEL above.
 const PET_POSITION_MODES = ['ShiftForward', 'ShiftBack', 'ToFront', 'ToBack'];
 
-// [2026-09-29 round 328b] Which of the two ways "MovePetPosition" picks
-// the pet to move — see that action's own actionToCSharp case for the
-// full evidence trail. Retires round 328's original PET_ANY_SENTINEL
-// ("whatever pet is out") option on this action specifically: Tyler
-// pointed out it's ambiguous for a multi-pet character ("could hit
-// multiple pets at the same time" — really, always resolved to a single
-// but unpredictable FirstOrDefault pet). "Specific" (default) keeps the
-// original by-species petRef picker; "Position" instead looks up
-// whichever pet CURRENTLY occupies a given 1-based slot in ForgePetOrder's
-// own tracked order — unambiguous regardless of species.
-const PET_SELECT_KINDS = ['Specific', 'Position'];
+// [2026-09-29 round 328b, RETIRED round 328e — same session] Briefly a
+// "petSelectKind" toggle existed here ("Specific" by-species vs
+// "Position" by-current-slot) to let a MovePetPosition action pick a pet
+// by its current slot instead of by name, replacing round 328's original
+// PET_ANY_SENTINEL ("whatever pet is out") option. Tyler, after using it:
+// "lets just scrap the whole position targeting all together. it would
+// cause too much confusion. Keep it to either move 1 or move all
+// positions." MovePetPosition is back to plain by-species petRef
+// selection only (see actionToCSharp's case below) — PET_ANY_SENTINEL is
+// still never accepted there (that part of round 328b's fix stands; only
+// the by-slot ALTERNATIVE selection mode is gone). PET_POSITION_MODES
+// above is unaffected — those four values are the "move 1 position" vs
+// "move all positions" (jump to the very front/back) choice Tyler's own
+// framing describes, never the confusing part.
 
 // Resolves a condition's `subject` field (see CONDITION_SUBJECTS above) to
 // the local variable a per-creature condition (HasStatusStacks) should
@@ -2387,37 +2390,23 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // all — real on every relic/mechanic/card effect-block trigger, not
       // just OnPlay.
       //
-      // [Round 328b — SUPERSEDES round 328's original PET_ANY_SENTINEL
-      // "whichever pet is out" option, same session] Tyler: "this is
-      // intended for characters with multiple pets, so a 'move whatever
-      // pet is out to the front' could hit multiple pets at the same
-      // time... lets instead change that to 'whatever pet in in the
-      // [position] position'." Two selection modes now, via
-      // `action.petSelectKind`:
-      // - "Specific" (default) — same by-species FirstOrDefault lookup
-      //   PetAttack's own specific-pet branch uses.
-      // - "Position" — looks up whichever pet CURRENTLY occupies a given
-      //   1-based slot in ForgePetOrder's own tracked order (the SAME
-      //   list/indexing PetPositionIs's own condition codegen reads —
-      //   see that case, a few hundred lines below), regardless of
-      //   species. Unambiguous even with several different pets out at
-      //   once, unlike the old "whichever's first" sentinel. Out-of-range
-      //   safely resolves to null, same "no-op if not found" behavior
-      //   ForgePetOrder.Move already has for a missing/dead pet.
-      const byPosition = action.petSelectKind === 'Position'; // see PET_SELECT_KINDS' own doc comment
-      const petCls = !byPosition && ctx.petClassById && ctx.petClassById.get(action.petRef);
-      if (!byPosition && !petCls) return `        ForgeActions.Todo("MovePetPosition(no pet selected or pet not found: ${action.petRef || ''})");`;
-      const movePosition = Number.isInteger(action.position) && action.position >= 1 ? action.position : 1;
+      // [Round 328b — briefly SUPERSEDED, same session, by a
+      // petSelectKind "Specific"/"Position" toggle letting the author pick
+      // a pet by its current slot instead of by name. RETIRED again in
+      // round 328e, same session — Tyler, after using it: "lets just
+      // scrap the whole position targeting all together. it would cause
+      // too much confusion. Keep it to either move 1 or move all
+      // positions." Back to plain by-species selection only, same
+      // FirstOrDefault lookup PetAttack's own specific-pet branch uses.
+      // PET_ANY_SENTINEL is still never accepted here (that part of round
+      // 328b's original fix stands — see its own comment on `petRef` in
+      // the schema) — a multi-pet character picks exactly which pet moves
+      // by name, same as SummonPet/PetAttack's specific-pet branch, no
+      // by-slot indirection to reason about.
+      const petCls = ctx.petClassById && ctx.petClassById.get(action.petRef);
+      if (!petCls) return `        ForgeActions.Todo("MovePetPosition(no pet selected or pet not found: ${action.petRef || ''})");`;
       const movePlayerExpr = resolvePlayerExpr(ctx);
       const modeLiteral = PET_POSITION_MODES.includes(action.petPositionMode) ? action.petPositionMode : 'ShiftForward';
-      if (byPosition) {
-        return `        {
-            var fgMoveOwner = ${movePlayerExpr};
-            var fgMoveOrder = ForgePetOrder.GetOrder(fgMoveOwner, fgMoveOwner.Creature.CombatState.Allies); // [Round 328b] same tracked order/indexing PetPositionIs's own condition reads — see that case's own comment
-            var fgMovePet = (${movePosition - 1} >= 0 && ${movePosition - 1} < fgMoveOrder.Count) ? fgMoveOrder[${movePosition - 1}] : null;
-            ForgePetOrder.Move(fgMoveOwner, fgMoveOwner.Creature.CombatState.Allies, fgMovePet, "${modeLiteral}"); // [Round 328] see generatePetPositionSupportFile's own ForgePetOrder.Move comment — no-ops safely if fgMovePet is null/not currently tracked
-        }`;
-      }
       return `        {
             var fgMoveOwner = ${movePlayerExpr};
             var fgMovePet = fgMoveOwner.Creature.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgMoveOwner);
@@ -11313,9 +11302,6 @@ module.exports = {
   // doc comment above — exported so validate.js/frontend can share the
   // one vocabulary instead of hand-duplicating the 4 literal strings.
   PET_POSITION_MODES,
-  // [Round 328b] MovePetPosition's own petSelectKind enum — see its own
-  // doc comment above.
-  PET_SELECT_KINDS,
   // Same reasoning — the list of real built-in status classes ApplyStatus/
   // RemoveStatus's builtinStatus dropdown can pick from. Derived from
   // BUILTIN_POWER_CLASS_MAP's own keys rather than a separate literal, so

@@ -4427,15 +4427,16 @@ const PET_POSITION_MODE_LABELS = {
   ToFront: 'Move to the front',
   ToBack: 'Move to the back',
 };
-// [2026-09-29 round 328b] Mirrors backend/compiler.js's own
-// PET_SELECT_KINDS literal array — MovePetPosition's own petSelectKind
-// dropdown options, replacing round 328's original PET_ANY_SENTINEL
-// ("whatever pet is out") option on this action specifically. Tyler:
-// "this is intended for characters with multiple pets, so a 'move
-// whatever pet is out to the front' could hit multiple pets at the same
-// time... lets instead change that to 'whatever pet in in the [position]
-// position'."
-const PET_SELECT_KINDS = ['Specific', 'Position'];
+// [2026-09-29 round 328b, RETIRED round 328e — same session] A
+// PET_SELECT_KINDS const briefly lived here, mirroring backend/
+// compiler.js's own (also since removed) — MovePetPosition's own
+// petSelectKind toggle, letting the author pick a pet by current slot
+// instead of by name. Tyler, after using it: "lets just scrap the whole
+// position targeting all together. it would cause too much confusion.
+// Keep it to either move 1 or move all positions." MovePetPosition picks
+// its pet by name only now (petRef, see ensureActionRefDefaults/
+// renderActionRowFields' MovePetPosition cases below), same shape
+// SummonPet already uses.
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -11432,18 +11433,16 @@ function describeAction(act){
     // [Round 328] New action type -- Tyler: "do we have a card effect that
     // moves pet positions?" See compiler.js's actionToCSharp
     // MovePetPosition case for the full evidence trail (ForgePetOrder,
-    // Forge's own tracked pet order layer).
-    // [2026-09-29 round 328b — SUPERSEDES round 328's original
-    // PET_ANY_SENTINEL "whichever pet is out" phrasing] Tyler: "this is
-    // intended for characters with multiple pets, so a 'move whatever pet
-    // is out to the front' could hit multiple pets at the same time...
-    // lets instead change that to 'whatever pet in in the [position]
-    // position'." Branches on petSelectKind now instead of the retired
-    // any-sentinel check.
+    // Forge's own tracked pet order layer). [Round 328b, then RETIRED
+    // round 328e -- same session] A by-current-slot selection mode
+    // (petSelectKind/position) briefly lived here instead of a plain
+    // petRef lookup -- Tyler: "lets just scrap the whole position
+    // targeting all together. it would cause too much confusion." Back to
+    // naming the pet directly, same shape PetAttack's own specific-pet
+    // branch above uses (minus any any-sentinel option -- never offered
+    // on this action).
     case 'MovePetPosition': {
-      const petName = act.petSelectKind === 'Position'
-        ? `whichever pet is in position ${Number.isInteger(act.position) && act.position>=1 ? act.position : 1}`
-        : ((state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet');
+      const petName = (state.pets.find(pet=>pet.id===act.petRef) || {}).name || 'a pet';
       const moveLabel = (PET_POSITION_MODE_LABELS[act.petPositionMode] || PET_POSITION_MODE_LABELS.ShiftForward).toLowerCase();
       return `${moveLabel[0].toUpperCase()}${moveLabel.slice(1)} for ${petName}`;
     }
@@ -14850,12 +14849,14 @@ function ensureActionRefDefaults(act){
   // (state.pets.find(...) — never matches the sentinel) would wrongly
   // stomp a deliberately-chosen "any pet" pick back to a specific pet on
   // every single re-render.
-  // [Round 328b] "MovePetPosition" is handled in its own dedicated block
-  // below instead, since its petRef is now conditional on petSelectKind
-  // and no longer accepts PET_ANY_SENTINEL at all -- see that block's own
-  // comment. Deliberately NOT part of this shared block, unlike round
-  // 328's original version.
-  if(act.type === 'SummonPet' || act.type === 'PetAttack'){
+  // [Round 328b] "MovePetPosition" briefly self-healed in its own
+  // dedicated block below instead of this shared one, since its petRef
+  // requirement was conditional on a petSelectKind toggle. RETIRED again
+  // round 328e, same session -- Tyler: "lets just scrap the whole
+  // position targeting all together." Back in this shared block, needing
+  // a real named pet exactly like SummonPet -- still never accepts
+  // PET_ANY_SENTINEL (see backend/validate.js).
+  if(act.type === 'SummonPet' || act.type === 'PetAttack' || act.type === 'MovePetPosition'){
     const petRefIsValid = act.petRef && (
       (act.type === 'PetAttack' && act.petRef === PET_ANY_SENTINEL) ||
       !!state.pets.find(pet=>pet.id===act.petRef)
@@ -14863,48 +14864,29 @@ function ensureActionRefDefaults(act){
     if(state.pets.length && !petRefIsValid){
       act.petRef = state.pets[0].id;
     }
-  } else if(act.type !== 'MovePetPosition'){
+  } else {
     delete act.petRef;
   }
   // [Round 328] MovePetPosition's own petPositionMode select -- same
   // self-healing shape as mode/hpKind elsewhere: falls back to the first
   // real value if missing/stale, dropped entirely on any other action type.
+  // [Round 328e] Tyler's own framing for these four values: "move 1" or
+  // "move all positions" -- unaffected by that round's revert.
   if(act.type === 'MovePetPosition'){
     if(!PET_POSITION_MODES.includes(act.petPositionMode)) act.petPositionMode = PET_POSITION_MODES[0];
   } else {
     delete act.petPositionMode;
   }
-  // [2026-09-29 round 328b — SUPERSEDES round 328's original PET_ANY_
-  // SENTINEL ("whatever pet is out") option on MovePetPosition, same
-  // session] Tyler: "this is intended for characters with multiple pets,
-  // so a 'move whatever pet is out to the front' could hit multiple pets
-  // at the same time... lets instead change that to 'whatever pet in in
-  // the [position] position'." petSelectKind picks which shape applies:
-  // "Specific" (default) keeps the original by-species petRef picker
-  // (self-healed the same way SummonPet's own petRef is, just without the
-  // any-sentinel carve-out -- that option is retired for this action);
-  // "Position" instead uses the new `position` field (a plain positive
-  // integer, self-healed to 1 if missing/invalid, same "1 = frontmost"
-  // convention PetPositionIs's own condition-level position field uses).
-  // The two are mutually exclusive -- switching kind clears the other's
-  // field, same "never show a control that looks populated while the
-  // underlying data belongs to a different mode" discipline CreateCard's
-  // tokenRefKind/tokenRef/tokenVanillaRef trio already uses.
-  if(act.type === 'MovePetPosition'){
-    if(!PET_SELECT_KINDS.includes(act.petSelectKind)) act.petSelectKind = 'Specific';
-    if(act.petSelectKind === 'Position'){
-      delete act.petRef;
-      if(typeof act.position !== 'number' || !Number.isInteger(act.position) || act.position < 1) act.position = 1;
-    } else {
-      delete act.position;
-      if(state.pets.length && (!act.petRef || !state.pets.find(pet=>pet.id===act.petRef))){
-        act.petRef = state.pets[0].id;
-      }
-    }
-  } else {
-    delete act.petSelectKind;
-    delete act.position;
-  }
+  // [2026-09-29 round 328b, RETIRED round 328e — same session] A
+  // petSelectKind/position pair briefly self-healed here (a by-current-
+  // slot alternative to naming the pet directly). Tyler: "lets just scrap
+  // the whole position targeting all together. it would cause too much
+  // confusion. Keep it to either move 1 or move all positions." Neither
+  // field is used by any action type anymore -- unconditionally stripped
+  // so a character saved during round 328b/c/d doesn't keep carrying
+  // stale data around.
+  delete act.petSelectKind;
+  delete act.position;
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
   // entries already use, defaults to "Hand" (matching Reckless.cs's own
@@ -15484,54 +15466,26 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // Forge's own tracked pet order layer, generated alongside
     // ForgePetPositionPatch). No target/amount atoms, this action has
     // neither (joins PLAYER_ONLY_ACTIONS, see compiler.js).
-    // [2026-09-29 round 328b — SUPERSEDES round 328's original single
-    // PET_ANY_SENTINEL "whatever pet is out" picker option] Tyler: "this
-    // is intended for characters with multiple pets, so a 'move whatever
-    // pet is out to the front' could hit multiple pets at the same
-    // time... lets instead change that to 'whatever pet in in the
-    // [position] position'." A new petSelectKind dropdown now picks
-    // between the original by-species petRef picker ("Specific" -- same
-    // shape SummonPet's own picker has, minus the any-sentinel option,
-    // which is retired for this action) and a plain 1-based position
-    // number input ("Position" -- same "1 = frontmost" convention
-    // PetPositionIs's own condition uses), same "kind toggle swaps which
-    // sibling control shows" shape CreateCard's tokenRefKind uses.
+    // [2026-09-29 round 328b, then RETIRED round 328e — both same
+    // session] A petSelectKind toggle (plus, for round 328c/d, a tooltip
+    // and live-clamped number input) briefly lived here, letting the
+    // author pick a pet by current slot instead of by name. Tyler, after
+    // using it: "lets just scrap the whole position targeting all
+    // together. it would cause too much confusion. Keep it to either move
+    // 1 or move all positions." Back to a plain by-species picker, same
+    // shape SummonPet's own picker has, minus the any-sentinel option
+    // (never offered on this action -- see backend/validate.js).
     case 'MovePetPosition': {
-      const selectKindOptions = `<select class="a-pet-select-kind">
-        <option value="Specific" ${act.petSelectKind!=='Position'?'selected':''}>a specific pet</option>
-        <option value="Position" ${act.petSelectKind==='Position'?'selected':''}>whatever pet is in position</option>
-      </select>`;
-      // [2026-09-29 round 328c — Tyler: "for pet position effects, add a
-      // tooltip showing that 1 is left and so on and so forth. make sure
-      // to not accept position values less than the actual minimum"]
-      // `title` + the preview span mirror PetPositionIs's own
-      // condition-side position input exactly — see needsPetPositionRef's
-      // own rendering above for the sibling this was copied from. Minimum
-      // enforcement (`min="1"` here, plus the real Math.max(1, ...) clamp
-      // in wireActionRowHandlers below) mirrors that same input's own
-      // oninput handler — the HTML `min` attribute alone doesn't block a
-      // typed 0/negative value, only spinner-arrow use, so the JS clamp is
-      // what actually does the enforcing.
-      // [2026-09-29 round 328d — SUPERSEDES round 328c's own per-value
-      // "(1st)"/"(2nd)" ordinal preview/tooltip] Tyler: "updating the text
-      // to just say xst, or xrd doesnt help. tell the user that 1 is the
-      // leftmost space. the higher the number, the further to the right
-      // they go" — both now state the actual rule directly instead of an
-      // ordinal suffix, same fixed-caption change made to
-      // PetPositionIs's own sibling input above.
-      const pickerHtml = act.petSelectKind === 'Position'
-        ? `<input type="number" class="a-pet-position-src" min="1" step="1" value="${Number.isInteger(act.position) && act.position>=1 ? act.position : 1}" style="width:56px; flex:none;" title="1 is the leftmost space. The higher the number, the further right they go.">
-          <span class="cond-word a-pet-position-src-preview" style="opacity:.75; font-style:italic">(1 = leftmost, higher = further right)</span>`
-        : (state.pets.length
-          ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
-          : `<span class="cond-word hint-small">(create a pet first)</span>`);
+      const petOptions = state.pets.length
+        ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
+        : `<span class="cond-word hint-small">(create a pet first)</span>`;
       const modeOptions = `<select class="a-pet-position-mode">
         <option value="ShiftForward" ${act.petPositionMode==='ShiftForward'?'selected':''}>forward one position</option>
         <option value="ShiftBack" ${act.petPositionMode==='ShiftBack'?'selected':''}>back one position</option>
         <option value="ToFront" ${act.petPositionMode==='ToFront'?'selected':''}>to the front</option>
         <option value="ToBack" ${act.petPositionMode==='ToBack'?'selected':''}>to the back</option>
       </select>`;
-      sentenceHtml = `<span class="cond-word">Move</span> ${selectKindOptions} ${pickerHtml}${modeOptions}<span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Move</span> ${petOptions}${modeOptions}<span class="cond-word">.</span>`;
       break;
     }
     default:
@@ -15720,39 +15674,13 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // same "just write the field" treatment petRefSelect above gets.
   const petPositionModeSelect = row.querySelector('.a-pet-position-mode');
   if(petPositionModeSelect) petPositionModeSelect.onchange = e=> act.petPositionMode = e.target.value;
-  // [2026-09-29 round 328b] MovePetPosition's own petSelectKind toggle --
-  // UNLIKE petRefSelect/petPositionModeSelect above, this DOES need a
-  // re-render: switching between "a specific pet" and "whatever pet is in
-  // position" swaps which sibling control (petOptions dropdown vs. the
-  // position number input) this row shows, same "swap sibling controls"
-  // shape the .a-type select's own onchange above has, just scoped to
-  // this one field instead of the whole row.
-  const petSelectKindSelect = row.querySelector('.a-pet-select-kind');
-  if(petSelectKindSelect) petSelectKindSelect.onchange = e=>{
-    act.petSelectKind = e.target.value;
-    ensureActionRefDefaults(act);
-    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
-    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
-  };
-  // [2026-09-29 round 328b, floor-clamp added round 328c]
-  // MovePetPosition's own Position-mode 1-based slot input -- no
-  // re-render needed, same "just write the field" treatment
-  // petRefSelect/petPositionModeSelect above get. Switched from onchange
-  // (fires on blur) to oninput (fires as the user types/uses the spinner
-  // arrows) and from a reset-to-1-on-invalid check to the same
-  // Math.max(1, parseInt(...)||1) clamp petPositionEl's own condition-side
-  // handler uses right above in this file (see wireConditionRowHandlers)
-  // -- the HTML min="1" attribute on this input only blocks the spinner
-  // arrows from going below 1, NOT a typed "0" or "-3", so this JS clamp
-  // is what actually enforces the floor Tyler asked for ("make sure to
-  // not accept position values less than the actual minimum").
-  // [2026-09-29 round 328d] The preview span is now a fixed explanatory
-  // caption (see its own render above) instead of a per-value ordinal, so
-  // it no longer needs updating as the value changes.
-  const petPositionSrcInput = row.querySelector('.a-pet-position-src');
-  if(petPositionSrcInput) petPositionSrcInput.oninput = e=>{
-    act.position = Math.max(1, parseInt(e.target.value, 10) || 1);
-  };
+  // [2026-09-29 round 328b, RETIRED round 328e — same session] A
+  // petSelectKind toggle select and a Position-mode number input briefly
+  // needed wiring here too (the toggle needed a re-render, since it swapped
+  // which sibling control this row showed). Tyler: "lets just scrap the
+  // whole position targeting all together." Both controls are gone --
+  // petRefSelect/petPositionModeSelect above are the only two fields this
+  // action needs again.
   // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
   // needed, same as destinationSelect/costScopeSelect above.
   const pileSelect = row.querySelector('.a-pile');
