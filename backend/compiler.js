@@ -3403,7 +3403,24 @@ function cascadingTriggerBody(card, trigger, resolvedTiers, refMaps, ctxOverride
   // the one consumer so far, and resolvePlayerExpr's comment for the
   // broader "fgPlayer is always bound" argument this flag makes explicit
   // rather than assumed per-call-site.
-  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed', cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded: the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for one.
+  // [Round 331d] `trigger === 'OnPlay' && card.target === 'RandomEnemy'`
+  // joins OnAnyCardPlayed here — a NEW real crash surface, not a copy-paste
+  // of round 29's reasoning. For every OTHER card.target value, the base
+  // game's own TryPlayCard guard (confirmed via direct IL read: `if
+  // (TargetType == AnyEnemy && target == null) CancelPlayCard();` — same
+  // for AnyAlly) means this card's own OnPlay NEVER runs with a null
+  // fgTarget when SingleEnemy/SingleAlly action targets are in play — the
+  // play itself is cancelled first. "Random Enemy" as a card's own target
+  // has NO such engine-side guarantee: the engine treats it exactly like
+  // AllEnemies/Self/None (no click required, cardPlay.Target left null —
+  // see CARD_TARGET_TYPE_MAP's own comment), and the random pick that
+  // fills fgTarget instead (this same file's randomEnemyCardTargetPrelude,
+  // prepended to onPlayBody) can genuinely come back null if
+  // HittableEnemies is empty when the card is played. Real risk, same
+  // "guard, don't trust the old fgTarget! null-forgiving cast" fix round 29
+  // already established for SingleEnemy/SingleAlly — see actionToCSharp's
+  // own targetMayBeNull guard block, which this flag is what triggers here.
+  const ctx = { cardPlayBound: true, thisIsCard: true, fgPlayerBound: true, targetMayBeNull: trigger === 'OnAnyCardPlayed' || (trigger === 'OnPlay' && card.target === 'RandomEnemy'), cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById, ...(ctxOverrides || {}) }; // targetMayBeNull [Fix, round 29] — this function also generates a card's OWN AfterCardPlayed override (CARD_TRIGGER_HOOKS.OnAnyCardPlayed's fullCardPlayBinding branch), reacting to ANY other card's play; cardPlay.Target is exactly as borrowed/nullable there as it is for a relic/mechanic hook — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. `trigger === 'OnPlay'` (this card's own play) stays false/unguarded FOR EVERY card.target EXCEPT "RandomEnemy" (see comment directly above) — the base game itself only constructs a real cardPlay for a targeted card once a real target is chosen, so cardPlay.Target is safe there whenever this card's own `target` field calls for a real click.
   const baseEffects = (card.effects || []).filter(e => e.trigger === trigger);
   const baseBody = baseEffects.length ? effectsToCSharp(baseEffects, ctx) : null;
   if (!resolvedTiers.length) return baseBody;
@@ -5907,6 +5924,20 @@ const CARD_TARGET_TYPE_MAP = {
   None: 'None',
   SingleAlly: 'AnyAlly', // [Round 331] player clicks one ally to target, mirrors SingleEnemy/AnyEnemy exactly — see comment block above
   AllAllies: 'AllAllies', // [Round 331] card-level "all allies" — same string as the pre-existing action-level AllAllies target (round 330), but a separate enum/namespace (card.target vs action.target); no collision.
+  // [Round 331d] Tyler: "lets add the new random enemy at the target
+  // level" — real TargetType.RandomEnemy (round 6's own enum list) mapped
+  // here for semantic fidelity (it's the honest, correct real TargetType
+  // for this card, same as every other entry in this map), even though —
+  // unlike SingleEnemy/SingleAlly — nothing in the real click-to-target UI
+  // actually resolves a random enemy for you: NCardPlay.TryPlayCard (direct
+  // IL read) explicitly passes cardPlay.Target = null for every TargetType
+  // except AnyEnemy(2)/AnyAlly(6). generateCardSource's own
+  // randomEnemyCardTargetPrelude is what actually makes this work — it
+  // picks the real random enemy and both reassigns fgTarget AND writes it
+  // back onto cardPlay.Target, entirely independent of this map (this map
+  // only ever feeds CustomCardModel's constructor, a separate concern from
+  // what fgTarget resolves to at runtime).
+  RandomEnemy: 'RandomEnemy',
 };
 
 function cardTargetToRealTargetType(schemaTarget) {
@@ -6707,11 +6738,46 @@ function generateCardSource(card, namespace, poolClassName, cardArtOverride, ref
   // MaxUpgradeLevel share this single resolved list.
   const resolvedTiers = resolveUpgradeTiers(card);
 
+  // [Round 331d] card.target "RandomEnemy" — Card.cs.template's OnPlay
+  // unconditionally binds `var fgTarget = cardPlay.Target;` (fixed template
+  // text, the same for every card), which is [VERIFIED] correct whenever
+  // this card's own top-level target is SingleEnemy/SingleAlly (the base
+  // game's own TryPlayCard guard refuses to even start the play if that
+  // comes back null — see this function's ctx-construction comment in
+  // cascadingTriggerBody). "Random Enemy" has no such engine support: the
+  // real targeting UI (NMouseCardPlay.TryPlayCard, direct IL read) treats
+  // it exactly like AllEnemies/Self/None — no click, cardPlay.Target left
+  // null (see CARD_TARGET_TYPE_MAP's own comment for the full evidence
+  // trail) — so Forge picks ONE random enemy itself, here, reassigning the
+  // template's own `fgTarget` local before any real effect code runs.
+  // Picked ONCE for the whole card play (not re-rolled per action) so
+  // every action on this card targeting "SingleEnemy" ("this card's own
+  // bound target" — same resolveTargetExpr resolution a player-picked
+  // Single Enemy card's actions already share) hits the SAME enemy — Tyler
+  // explicitly confirmed this design (2026-09-30: "one random enemy for
+  // the whole card"), not each action re-rolling independently (that's
+  // what the pre-existing PER-ACTION "Random Enemy" target, round 16, is
+  // already for). Also writes the pick back onto the real `cardPlay.Target`
+  // (CardPlay.set_Target is [VERIFIED] real/public, direct IL read) so any
+  // OTHER system reading cardPlay.Target for this same play (e.g. another
+  // relic's OnAnyCardPlayed hook) sees the real picked enemy instead of
+  // null — keeps Forge's own pick and the engine's own CardPlay object in
+  // sync, same reasoning a player's own click already keeps them in sync
+  // for SingleEnemy/SingleAlly. `fgTarget != null` can genuinely be false
+  // here (HittableEnemies empty when played) — see cascadingTriggerBody's
+  // own targetMayBeNull:true for this exact (trigger,card.target)
+  // combination, which is what makes every SingleEnemy-targeting action
+  // below null-guard itself instead of trusting the old `fgTarget!`
+  // null-forgiving cast.
+  const randomEnemyCardTargetPrelude = card.target === 'RandomEnemy'
+    ? '        fgTarget = ForgeActions.PickRandomEnemy(fgPlayer.CombatState.HittableEnemies); // [Round 331d] this card\'s own target is "Random Enemy" — see generateCardSource\'s own comment on this block for the full evidence trail\n        if (fgTarget != null) cardPlay.Target = fgTarget;'
+    : '';
+
   // Advanced Options' cost-reduction rules targeting OnPlay fold into
   // this same method body, right after any real effects — see
   // costReductionTodoLines above.
   const onPlayCostLines = costReductionTodoLines(card, 'OnPlay');
-  const body = [cascadingTriggerBody(card, 'OnPlay', resolvedTiers, refMaps), onPlayCostLines.join('\n')].filter(Boolean).join('\n') || '        // no OnPlay effects defined';
+  const body = [randomEnemyCardTargetPrelude, cascadingTriggerBody(card, 'OnPlay', resolvedTiers, refMaps), onPlayCostLines.join('\n')].filter(Boolean).join('\n') || '        // no OnPlay effects defined';
 
   // Extra trigger methods (OnDiscard/OnTurnEndInHand) — one real override
   // method per distinct trigger actually used on this card (by the base

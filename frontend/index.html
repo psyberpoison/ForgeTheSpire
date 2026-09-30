@@ -12027,7 +12027,7 @@ function openCardEditor(cardId){
                 </div>
               </div>
               <div id="m-rarity-row"><label>Rarity</label><select id="m-rarity">${optList(rarityOptionsForType(card.type, card.rarity), card.rarity)}</select></div>
-              <div id="m-target-row"><label>Target</label><select id="m-target">${cardTargetOptList(["SingleEnemy","AllEnemies","Self","None","SingleAlly","AllAllies"], card.target)}</select></div>
+              <div id="m-target-row"><label>Target</label><select id="m-target">${cardTargetOptList(["SingleEnemy","AllEnemies","Self","None","SingleAlly","AllAllies","RandomEnemy"], card.target)}</select></div>
             </div>
             <div class="basetag-row">
               <label title="A fixed, built-in card tag that lets base-game or other-mod logic which specifically checks for it (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are your own freeform labels.">Base card tag:</label>
@@ -13028,7 +13028,17 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
   // this value as an opaque parameter, never inspects it, so widening its
   // type is safe without touching any of them — targetOptList is the only
   // real consumer (see its own updated comment).
-  const cardIsSingleTarget = costsXCard && costsXCard.target === 'SingleEnemy' ? 'enemy'
+  // [Round 331d] "RandomEnemy" also reads 'enemy' here — an action's own
+  // "SingleEnemy" option means exactly "this card's own bound target" on a
+  // RandomEnemy-targeted card too (compiler.js:generateCardSource's
+  // randomEnemyCardTargetPrelude binds fgTarget to the one randomly-picked
+  // enemy before any action runs, same fgTarget! resolution a
+  // player-clicked Single Enemy card's actions already share) — so it gets
+  // the same "This Card's Target" relabel, never the misleading "An Enemy"
+  // default. The action-level "RandomEnemy" OPTION stays available and
+  // distinct on such a card — it means "roll a fresh, independent random
+  // enemy for just this action," the pre-existing round-16 behavior.
+  const cardIsSingleTarget = costsXCard && (costsXCard.target === 'SingleEnemy' || costsXCard.target === 'RandomEnemy') ? 'enemy'
     : costsXCard && costsXCard.target === 'SingleAlly' ? 'ally'
     : false;
   listElId = listElId || 'effects-list';
@@ -20045,14 +20055,29 @@ function triggerOptList(values, selected){
 // [Round 331] Same fallback-to-raw-value shape as triggerOptList above,
 // for the CARD's own top-level target dropdown (id="m-target", distinct
 // from an action's own target — see ACTION_TARGET_LABELS/targetOptList).
-// Only the two brand-new ally options get a friendly label here — the
-// pre-existing SingleEnemy/AllEnemies/Self/None options keep showing their
-// raw value exactly as they always have (no unrequested UI-text change).
 // "Target Ally" is Tyler's own wording (2026-09-30: "...'target ally'
 // options, that way the card can target correctly").
+// [Round 331b] Originally only the two brand-new ally options got a label
+// here, leaving SingleEnemy/AllEnemies/Self/None showing their raw,
+// unspaced enum string — Tyler: "the targets 'singleenemy' and
+// 'allenemies' dont have a space between their words". Every option now
+// gets a real label; SingleEnemy/AllEnemies/Self reuse the exact same
+// wording ACTION_TARGET_LABELS already uses for the same values (so "An
+// Enemy"/"All Enemies"/"Yourself" read identically whether they're this
+// card's own target or one of its actions' targets). "No Target" for
+// "None" is new wording (that value has no ACTION_TARGET_LABELS
+// counterpart — it's never a valid ACTION target, only a card's own).
+// [Round 331c] "RandomEnemy" added — see compiler.js:CARD_TARGET_TYPE_MAP's
+// own comment for why it needed real research (not just a label) before
+// being added as a selectable option at all.
 const CARD_TARGET_LABELS = {
+  SingleEnemy: 'An Enemy',
+  AllEnemies: 'All Enemies',
+  Self: 'Yourself',
+  None: 'No Target',
   SingleAlly: 'Target Ally',
   AllAllies: 'All Allies',
+  RandomEnemy: 'A Random Enemy',
 };
 function cardTargetOptList(values, selected){
   return values.map(v=>`<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(CARD_TARGET_LABELS[v] || v)}</option>`).join('');

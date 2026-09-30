@@ -41,7 +41,18 @@ const CARD_RARITIES = ['Basic', 'Common', 'Uncommon', 'Rare', 'Ancient', 'Event'
 // TargetType.RandomAlly in the real enum, and Tyler chose not to fake one
 // with a Forge-side trick (2026-09-30 sign-off); random-ally selection
 // stays action-level-only (round 330).
-const CARD_TARGETS = ['SingleEnemy', 'AllEnemies', 'Self', 'None', 'SingleAlly', 'AllAllies'];
+// [Round 331d] "RandomEnemy" added — Tyler: "lets add the new random enemy
+// at the target level". Unlike RandomAlly above, TargetType.RandomEnemy
+// IS a real enum member, but (direct IL read of NCardPlay.TryPlayCard)
+// the real click-to-target UI does NOT auto-resolve it — cardPlay.Target
+// comes back null exactly like AllEnemies/Self/None. compiler.js's
+// generateCardSource picks a real random enemy itself (ForgeActions.
+// PickRandomEnemy over CombatState.HittableEnemies) once per card play —
+// Tyler's own explicit choice (2026-09-30) over letting each action
+// re-roll independently — and writes it back onto the real
+// cardPlay.Target too, so every action on the card that targets "this
+// card's own bound target" (SingleEnemy) hits that same enemy.
+const CARD_TARGETS = ['SingleEnemy', 'AllEnemies', 'Self', 'None', 'SingleAlly', 'AllAllies', 'RandomEnemy'];
 const RELIC_RARITIES = ['Starter', 'Common', 'Uncommon', 'Rare', 'Shop', 'Event', 'Ancient'];
 // [VERIFIED via reflect-baselib round 9] a full After*/On*/Before* hook
 // sweep of CustomCardModel (the same sweep round 2 ran on CustomRelicModel)
