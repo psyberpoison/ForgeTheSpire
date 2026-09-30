@@ -30,7 +30,18 @@
 
 const CARD_TYPES = ['Attack', 'Skill', 'Power', 'Status', 'Curse'];
 const CARD_RARITIES = ['Basic', 'Common', 'Uncommon', 'Rare', 'Ancient', 'Event', 'Token', 'Status', 'Curse', 'Quest'];
-const CARD_TARGETS = ['SingleEnemy', 'AllEnemies', 'Self', 'None'];
+// [Round 331] SingleAlly/AllAllies (card-level) added — a card's own top-
+// level target can now be a single player-selected ally, or every ally at
+// once, alongside the pre-existing enemy/self/none options. Both map to
+// real, functionally-confirmed TargetType members (AnyAlly/AllAllies) — see
+// compiler.js:CARD_TARGET_TYPE_MAP's evidence-trail comment for the direct
+// sts2.dll IL reads (NMouseCardPlay's TargetSelection dispatcher and
+// NTargetManager.AllowedToTargetCreature's real ally-side + not-self
+// filter). "RandomAlly" is deliberately NOT here — there's no
+// TargetType.RandomAlly in the real enum, and Tyler chose not to fake one
+// with a Forge-side trick (2026-09-30 sign-off); random-ally selection
+// stays action-level-only (round 330).
+const CARD_TARGETS = ['SingleEnemy', 'AllEnemies', 'Self', 'None', 'SingleAlly', 'AllAllies'];
 const RELIC_RARITIES = ['Starter', 'Common', 'Uncommon', 'Rare', 'Shop', 'Event', 'Ancient'];
 // [VERIFIED via reflect-baselib round 9] a full After*/On*/Before* hook
 // sweep of CustomCardModel (the same sweep round 2 ran on CustomRelicModel)
@@ -772,14 +783,17 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       errors.push(`${p}: action "${act.type}" can't target "${act.target}" — valid targets are: ${validTargets.join(', ')}.` +
         (PLAYER_ONLY_ACTIONS.includes(act.type) ? ` ("${act.type}" acts on the player's own hand/deck/discard/energy/gold — there's no way to do this to an enemy.)` : '') +
         (SELF_ONLY_ACTIONS.includes(act.type) ? ` ("${act.type}" only ever targets the player's own creature by design — see compiler.js:SELF_ONLY_ACTIONS.)` : ''));
-    } else if (act.target === 'SingleEnemy' && xContext.trigger !== undefined && TARGETLESS_BOUND_HOOK_TRIGGERS.has(xContext.trigger)) {
+    } else if ((act.target === 'SingleEnemy' || act.target === 'SingleAlly') && xContext.trigger !== undefined && TARGETLESS_BOUND_HOOK_TRIGGERS.has(xContext.trigger)) {
       // Round 19 — this hook's own body never declares an fgTarget local
       // (see TARGETLESS_BOUND_HOOK_TRIGGERS' definition above and
       // compiler.js:generateHookEffects' 3-way branch), so "SingleEnemy"
       // here would compile to a reference to an undeclared variable — a
       // real CS0103, not a silently-wrong no-op. Rejected clearly instead,
       // same convention as every other trigger-scoped check in this file.
-      errors.push(`${p}: action "${act.type}" can't target "SingleEnemy" on trigger "${xContext.trigger}" — this hook only exposes one real Creature (bound as fgPlayer), no second party to target. Use "Self" instead.`);
+      // [Round 331] SingleAlly joins this same check — it resolves through
+      // the identical fgTarget local (see compiler.js:resolveTargetExpr),
+      // so it's exactly as unsafe on one of these hooks as SingleEnemy is.
+      errors.push(`${p}: action "${act.type}" can't target "${act.target}" on trigger "${xContext.trigger}" — this hook only exposes one real Creature (bound as fgPlayer), no second party to target. Use "Self" instead.`);
     } else if (act.type === 'DealDamage' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // Round 21 — see NO_CHOICE_CONTEXT_HOOK_TRIGGERS' own comment above.
       // Every DealDamage call (any target) needs a real `choiceContext` to

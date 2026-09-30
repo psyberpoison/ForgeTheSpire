@@ -823,11 +823,19 @@ function validTargetsForAction(actionType) {
   // restore enemy-targeting (that was his own earlier explicit choice, see
   // SELF_ONLY_ACTIONS' own comment); it joins AllAllies/RandomAlly instead,
   // same "real Creature-target call, just restricted by design" reasoning.
-  if (actionType === 'GainBlock') return ['Self', 'AllAllies', 'RandomAlly'];
+  // [Round 331] ...and SingleAlly — "give Block to the ally this card
+  // targeted" is a real, sensible combination once a card's own top-level
+  // target can be SingleAlly (see CARD_TARGET_TYPE_MAP's evidence trail).
+  if (actionType === 'GainBlock') return ['Self', 'AllAllies', 'RandomAlly', 'SingleAlly'];
   if (SELF_ONLY_ACTIONS.includes(actionType)) return ['Self'];
   const base = ['SingleEnemy', 'AllEnemies', 'Self', 'RandomEnemy'];
   // [Round 330] see ALLY_CREATURE_TARGETABLE_ACTIONS' own comment above.
-  return ALLY_CREATURE_TARGETABLE_ACTIONS.includes(actionType) ? [...base, 'AllAllies', 'RandomAlly'] : base;
+  // [Round 331] SingleAlly joins AllAllies/RandomAlly here — Tyler's own
+  // words: "cards effects that can target an ally need the 'single ally'
+  // option that is the target of the card". Same action-type list as
+  // AllAllies/RandomAlly (round 330): whichever actions can already target
+  // an ally at all can now also target THIS card's own bound ally.
+  return ALLY_CREATURE_TARGETABLE_ACTIONS.includes(actionType) ? [...base, 'AllAllies', 'RandomAlly', 'SingleAlly'] : base;
 }
 
 // --- condition SUBJECT (who a per-creature condition like HasStatusStacks
@@ -1027,6 +1035,15 @@ function resolveTargetExpr(target) {
   // in hooks not yet seen.
   if (target === 'Self') return 'fgPlayer';
   if (target === 'SingleEnemy') return 'fgTarget!';
+  // [Round 331] SingleAlly — action-level "this card's own bound ally
+  // target" (Tyler's own words: "the 'single ally' option that is the
+  // target of the card"). Resolves through the IDENTICAL `fgTarget!` local
+  // SingleEnemy already uses: cardPlay.Target is bound from the real
+  // engine's own AnyAlly targeting flow exactly the same way it's bound for
+  // AnyEnemy (see CARD_TARGET_TYPE_MAP's evidence-trail comment) — there is
+  // no separate "ally target" local, just the one Creature the player
+  // actually clicked, whichever side it was on.
+  if (target === 'SingleAlly') return 'fgTarget!';
   return null;
 }
 
@@ -1811,10 +1828,14 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // inside the null check, so the recursive call's own `forcedTargetExpr
     // !== null` skips this branch and every other hook (targetMayBeNull
     // unset/false) is completely unaffected.
-    if (action.target === 'SingleEnemy' && ctx.targetMayBeNull) {
+    if ((action.target === 'SingleEnemy' || action.target === 'SingleAlly') && ctx.targetMayBeNull) {
+      // [Round 331] SingleAlly joins SingleEnemy in this guard — same
+      // borrowed, possibly-null cardPlay.Target, same fgTarget local, same
+      // real crash risk (an OnAnyCardPlayed-style hook reacting to an
+      // untargeted card play).
       const inner = actionToCSharp(action, ctx, 'fgTarget');
       return [
-        '        { // [Fix, round 29] SingleEnemy target borrowed from cardPlay.Target on an OnAnyCardPlayed-style hook — can be null for an untargeted card play, guarded instead of trusting the old `fgTarget!` null-forgiving cast (see actionToCSharp\'s own comment on this block)',
+        '        { // [Fix, round 29; extended round 331 for SingleAlly] SingleEnemy/SingleAlly target borrowed from cardPlay.Target on an OnAnyCardPlayed-style hook — can be null for an untargeted card play, guarded instead of trusting the old `fgTarget!` null-forgiving cast (see actionToCSharp\'s own comment on this block)',
         '            if (fgTarget != null)',
         '            {',
         inner,
@@ -5834,11 +5855,58 @@ ${body}
 // shared with effect actions' target vocabulary, see ACTION_TARGETS in
 // frontend/index.html). Translating here keeps the schema/frontend on
 // Forge's own consistent naming rather than exposing BaseLib's directly.
+//
+// [Round 331, 2026-09-30] SingleAlly -> AnyAlly and AllAllies (card-level)
+// added — closing the gap the round-6 note above already flagged (AnyAlly/
+// AllAllies were confirmed-real members but never wired up). Both are now
+// confirmed FUNCTIONALLY real, not just reflected enum names, via direct IL
+// reads of the real targeting pipeline on the real sts2.dll:
+//   - NMouseCardPlay.<TargetSelection>d__25.MoveNext: reads
+//     CardModel.TargetType, computes `(TargetType == 2 /* AnyEnemy */ ||
+//     TargetType == 6 /* AnyAlly */)` and routes TRUE into
+//     SingleCreatureTargeting(targetMode, targetType) — the EXACT SAME
+//     single-click-to-target UI flow SingleEnemy/AnyEnemy already uses.
+//     Everything else (Self/AllEnemies/RandomEnemy/AllAllies/AnyPlayer/
+//     None/...) falls through to MultiCreatureTargeting instead.
+//   - NTargetManager.AllowedToTargetCreature: switches on
+//     `_validTargetsType` (== StartTargeting's targetType param, passed
+//     straight through from CardModel.TargetType). The AnyAlly (6) case
+//     requires `creature.IsPlayer && !creature.IsDead &&
+//     !LocalContext.IsMe(creature.Player)` — i.e. the ENGINE ITSELF filters
+//     to a live player-side creature EXCLUDING the local player's own
+//     creature. This is a real, working "any ally but yourself" filter,
+//     built into the base game — not something Forge has to fake (compare
+//     to the action-level RandomAlly/AllAllies wrappers from round 330,
+//     which DO have to build this filter themselves in Forge-authored C#,
+//     because there's no equivalent CombatState-level API; the card-level
+//     AnyAlly targeting UI gets it for free from the real engine instead).
+//     AllEnemies (3) and RandomEnemy (4) both hit this switch's
+//     ArgumentOutOfRangeException branch — confirming (as expected)
+//     AllowedToTargetCreature is a SingleCreatureTargeting-only predicate,
+//     never called for the multi/auto-pick target types.
+//   - Selected creature/player-state node resolves down to a real
+//     `Creature` (isinst NCreature, or isinst NMultiplayerPlayerState ->
+//     .Player.Creature for a teammate picked via their player-state node in
+//     multiplayer) and is written into the same `_target` field NCardPlay
+//     exposes as `cardPlay.Target` — the exact same binding SingleEnemy's
+//     `fgTarget = cardPlay.Target` (Card.cs.template) already relies on.
+//     No new binding code needed: an AnyAlly-targeted card's OnPlay gets a
+//     real, non-null (whenever really targeted) ally Creature in fgTarget
+//     via the EXISTING codegen, for free.
+//
+// "RandomAlly" was explicitly NOT added as a card-level target — there is
+// no TargetType.RandomAlly in the real enum (RandomEnemy has no ally-side
+// counterpart), and Tyler chose (2026-09-30, AskUserQuestion) not to fake
+// one with a Forge-side Self-then-auto-pick trick. Random-ally selection
+// stays an ACTION-level-only concept (round 330's RandomAlly action
+// target/playerTarget), never a card's own top-level target.
 const CARD_TARGET_TYPE_MAP = {
   SingleEnemy: 'AnyEnemy',
   AllEnemies: 'AllEnemies',
   Self: 'Self',
   None: 'None',
+  SingleAlly: 'AnyAlly', // [Round 331] player clicks one ally to target, mirrors SingleEnemy/AnyEnemy exactly — see comment block above
+  AllAllies: 'AllAllies', // [Round 331] card-level "all allies" — same string as the pre-existing action-level AllAllies target (round 330), but a separate enum/namespace (card.target vs action.target); no collision.
 };
 
 function cardTargetToRealTargetType(schemaTarget) {
