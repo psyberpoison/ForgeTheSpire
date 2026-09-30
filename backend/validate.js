@@ -264,6 +264,12 @@ const ACTION_TYPES = [
   // [Round 328] "MovePetPosition" -- see compiler.js's actionToCSharp
   // "MovePetPosition" case for the real ForgePetOrder.Move evidence trail.
   'MovePetPosition',
+  // [2026-09-30, item #3 of the gap-analysis 35] "DiscoverCard" -- see
+  // compiler.js's actionToCSharp "DiscoverCard" case and
+  // schema/character.schema.json's own DiscoverCard paragraph on the
+  // action `type` enum for the real MegaCrit.Sts2.Core.Models.Cards.
+  // Discovery evidence trail.
+  'DiscoverCard',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -287,7 +293,14 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+// [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
+// one real Discovery card's own default pool) plus every real
+// CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
+// discoverPool enum spells out literally (kept in sync by hand there,
+// since JSON Schema can't reference a JS const — see that field's own
+// description for the full evidence trail).
+const DISCOVER_POOL_VALUES = ['OwnCharacter', ...Object.keys(CARD_POOL_CLASS_MAP)];
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -1000,11 +1013,46 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // "Hand", tokenRefKind -> "custom") so these are only type/cross-
     // reference-checked when present, not required outright — mirrors how
     // leniently compiler.js's own "CreateCard" case already reads them.
+    // [2026-09-30] "destination" is now ALSO meaningful on "DiscoverCard"
+    // (same real CardPileCmd.AddGeneratedCardToCombat call, see
+    // compiler.js's actionToCSharp "DiscoverCard" case) — tokenRefKind/
+    // tokenRef/tokenVanillaRef below stay CreateCard-only, DiscoverCard has
+    // no fixed-card-reference concept (it offers a live pool, not one
+    // specific card).
     if (act.destination !== undefined && !['Hand', 'DrawPile', 'Discard'].includes(act.destination)) {
       errors.push(`${p}.destination "${act.destination}" is not one of: Hand, DrawPile, Discard.`);
     }
-    if (act.destination !== undefined && act.type !== 'CreateCard') {
-      errors.push(`${p}: destination is only meaningful on "CreateCard" — action type is "${act.type}".`);
+    if (act.destination !== undefined && act.type !== 'CreateCard' && act.type !== 'DiscoverCard') {
+      errors.push(`${p}: destination is only meaningful on "CreateCard"/"DiscoverCard" — action type is "${act.type}".`);
+    }
+    // discoverCount / discoverPool / discoverCardType / discoverCanSkip /
+    // discoverFreeCost — DiscoverCard only (2026-09-30). All optional with
+    // a compiler.js-side fallback (discoverCount -> 3, discoverPool ->
+    // "OwnCharacter", discoverCanSkip -> true, discoverCardType/
+    // discoverFreeCost -> unrestricted/none), same lenient shape as
+    // destination/tokenRefKind above — see schema/character.schema.json's
+    // own per-field descriptions for the full real-sts2.dll evidence trail.
+    if (act.discoverCount !== undefined) {
+      if (!Number.isInteger(act.discoverCount) || act.discoverCount < 1 || act.discoverCount > 20) {
+        errors.push(`${p}.discoverCount must be a whole number between 1 and 20 if present.`);
+      }
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverCount is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+    }
+    if (act.discoverPool !== undefined) {
+      if (!DISCOVER_POOL_VALUES.includes(act.discoverPool)) errors.push(`${p}.discoverPool "${act.discoverPool}" is not one of: ${DISCOVER_POOL_VALUES.join(', ')}.`);
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverPool is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+    }
+    if (act.discoverCardType !== undefined) {
+      if (!CARD_TYPES.includes(act.discoverCardType)) errors.push(`${p}.discoverCardType "${act.discoverCardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverCardType is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+    }
+    if (act.discoverCanSkip !== undefined) {
+      if (typeof act.discoverCanSkip !== 'boolean') errors.push(`${p}.discoverCanSkip must be a boolean if present.`);
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverCanSkip is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+    }
+    if (act.discoverFreeCost !== undefined) {
+      if (!['ThisTurn', 'ThisCombat'].includes(act.discoverFreeCost)) errors.push(`${p}.discoverFreeCost "${act.discoverFreeCost}" is not one of: ThisTurn, ThisCombat.`);
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverFreeCost is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
     }
     if (act.tokenRefKind !== undefined) {
       if (!['custom', 'vanilla'].includes(act.tokenRefKind)) errors.push(`${p}.tokenRefKind "${act.tokenRefKind}" is not one of: custom, vanilla.`);

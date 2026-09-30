@@ -642,6 +642,13 @@ const PLAYER_ONLY_ACTIONS = [
   // its own actionToCSharp case), same "no real Creature-target concept"
   // bucket as SummonPet right above.
   'MovePetPosition',
+  // [2026-09-30] "DiscoverCard" -- offering a few cards to choose from has
+  // no real Creature-target concept either (same bucket as CreateCard,
+  // which it shares its `destination`/PileType/CardPilePosition codegen
+  // with) -- see schema/character.schema.json's own DiscoverCard paragraph
+  // on the action `type` enum for the full real-sts2.dll evidence trail
+  // (MegaCrit.Sts2.Core.Models.Cards.Discovery's own OnPlay).
+  'DiscoverCard',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -797,6 +804,23 @@ const CARD_POOL_CLASS_MAP = {
   Regent: 'MegaCrit.Sts2.Core.Models.CardPools.RegentCardPool',
   Deprived: 'MegaCrit.Sts2.Core.Models.CardPools.DeprivedCardPool',
 };
+
+// [Round 24, hoisted to module scope 2026-09-30] real PileType/
+// CardPilePosition pair per `destination` — originally a local const inside
+// CreateCard's own actionToCSharp case; hoisted here unchanged (byte-
+// identical values) so "DiscoverCard" (2026-09-30) can share it via the
+// exact same real `CardPileCmd.AddGeneratedCardToCombat(CardModel,
+// PileType, Player, CardPilePosition)` call CreateCard already uses,
+// rather than drifting two independently-maintained copies. Position is
+// Forge's own authoring choice, not reflected evidence: DrawPile uses
+// Random (matching ShuffleCardIntoDraw's own "shuffle in" semantics for
+// that same pile); Hand/Discard use Top (the only sensible constant for
+// piles without a "shuffle" framing) — EXCEPT DiscoverCard's own real
+// vanilla precedent (the Discovery card) uses CardPilePosition.Bottom for
+// Hand, not Top; see DiscoverCard's own actionToCSharp case for why it
+// doesn't reuse POSITION_BY_DEST.Hand unchanged.
+const PILE_TYPE_BY_DEST = { Hand: 'Hand', DrawPile: 'Draw', Discard: 'Discard' };
+const POSITION_BY_DEST = { Hand: 'Top', DrawPile: 'Random', Discard: 'Top' };
 
 // Some real STS2 cards upgrade more than once (Card+, Card++, ...) — Tyler:
 // "This should allow for up to 4 upgrades unless we later find out that the
@@ -2288,8 +2312,6 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // Player resolution uses resolvePlayerExpr(ctx) — see its own
       // comment (this action isn't restricted to cardPlayBound contexts).
       const dest = ['Hand', 'DrawPile', 'Discard'].includes(action.destination) ? action.destination : 'Hand';
-      const PILE_TYPE_BY_DEST = { Hand: 'Hand', DrawPile: 'Draw', Discard: 'Discard' };
-      const POSITION_BY_DEST = { Hand: 'Top', DrawPile: 'Random', Discard: 'Top' };
       const which = action.tokenRefKind === 'vanilla'
         ? `vanilla:${action.tokenVanillaRef || '?'}`
         : `card:${action.tokenRef || '?'}`;
@@ -2314,6 +2336,78 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         `            await MegaCrit.Sts2.Core.Commands.CardPileCmd.AddGeneratedCardToCombat(fgNewCard, ${pileTypeExpr}, ${playerExpr}, ${positionExpr}); // [BEST EFFORT]`,
         `        }`,
       ].join('\n');
+    }
+    case 'DiscoverCard': {
+      // [2026-09-30, item #3 of the gap-analysis 35] "Discover" mechanic --
+      // Tyler: "discover is what it is called when the character is given
+      // a few cards to choose from to add to the deck for that combat
+      // only... The cards can be from a pool, like characters or
+      // colorless. they can also be limited to a card type... often
+      // paired with a mechanic of 'discover a card, it is free this
+      // combat/turn'." [VERIFIED via direct ECMA-335 IL disassembly of the
+      // real installed sts2.dll] MegaCrit.Sts2.Core.Models.Cards.Discovery
+      // is a real, concrete, shipped CardModel whose own OnPlay does
+      // exactly this real call chain -- see schema/character.schema.json's
+      // own DiscoverCard paragraph on the action `type` enum for the full
+      // evidence trail (every method/enum referenced below independently
+      // confirmed real this round). No `this`/cardPlay-bound requirement
+      // anywhere in this chain (unlike DiscardCard's own FromHandForDiscard
+      // prompt branch, which needs a literal `this`) -- resolvePlayerExpr(
+      // ctx) and choiceContext are both real in every context this case
+      // can run from (a card's own OnPlay, a relic hook, or a mechanic
+      // hook), so there's no ctx.thisIsCard/cardPlayBound gate here.
+      const playerExpr = resolvePlayerExpr(ctx);
+      const count = Number.isInteger(action.discoverCount) && action.discoverCount >= 1 ? action.discoverCount : 3;
+      // "OwnCharacter" (default) is the one real Discovery card's own exact
+      // pool -- ${playerExpr}.Character.CardPool, per-player-correct in
+      // co-op. Every other value reuses the SAME real CARD_POOL_CLASS_MAP/
+      // ModelDb.CardPool<T>() accessor round 213's cardRewardPoolAppend
+      // already established (see that map's own comment for its evidence).
+      const discoverPoolExpr = (action.discoverPool && action.discoverPool !== 'OwnCharacter' && CARD_POOL_CLASS_MAP[action.discoverPool])
+        ? `MegaCrit.Sts2.Core.Models.ModelDb.CardPool<${CARD_POOL_CLASS_MAP[action.discoverPool]}>()`
+        : `${playerExpr}.Character.CardPool`;
+      // Optional type filter -- Forge's own .Where(...) on top of the real,
+      // confirmed CardModel.Type getter (see schema's own discoverCardType
+      // paragraph); GetUnlockedCards/GetDistinctForCombat have no
+      // type-filter parameter of their own to pass this through to.
+      const typeFilterExpr = action.discoverCardType
+        ? `.Where(fgDiscoverC => fgDiscoverC.Type == MegaCrit.Sts2.Core.Entities.Cards.CardType.${action.discoverCardType})`
+        : '';
+      // Real `canSkip` bool parameter of CardSelectCmd.FromChooseACardScreen
+      // -- the one real Discovery card always passes true; Tyler chose to
+      // make this author-configurable (schema's own discoverCanSkip
+      // paragraph) rather than hardcode it. Omitted/undefined defaults true.
+      const canSkipExpr = action.discoverCanSkip === false ? 'false' : 'true';
+      const dest = ['Hand', 'DrawPile', 'Discard'].includes(action.destination) ? action.destination : 'Hand';
+      const pileTypeExpr = `MegaCrit.Sts2.Core.Entities.Cards.PileType.${PILE_TYPE_BY_DEST[dest]}`;
+      // [2026-09-30] Hand uses CardPilePosition.Bottom here, NOT
+      // POSITION_BY_DEST.Hand ("Top") -- the real vanilla Discovery card's
+      // own exact, [VERIFIED] position for its Hand destination is Bottom,
+      // unlike CreateCard's Hand=Top, which was always Forge's own
+      // unevidenced guess (see PILE_TYPE_BY_DEST/POSITION_BY_DEST's own
+      // hoisting comment above). DrawPile/Discard have no real
+      // DiscoverCard-specific evidence either way, so they fall back to
+      // CreateCard's own established guesses unchanged.
+      const positionExpr = `MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.${dest === 'Hand' ? 'Bottom' : POSITION_BY_DEST[dest]}`;
+      // Both real, [VERIFIED] CardModel instance methods, genuinely
+      // different scopes -- see schema's own discoverFreeCost paragraph.
+      // Omitted means no free-cost call at all (Tyler's own "often paired
+      // with", not "always").
+      const freeCostLine = action.discoverFreeCost === 'ThisTurn'
+        ? `            fgDiscoverPick.SetToFreeThisTurn(); // [VERIFIED] real CardModel.SetToFreeThisTurn() — the one real Discovery card's own exact call`
+        : action.discoverFreeCost === 'ThisCombat'
+        ? `            fgDiscoverPick.SetToFreeThisCombat(); // [VERIFIED] real CardModel.SetToFreeThisCombat() — a separate, wider-scoped real sibling method`
+        : '';
+      return [
+        `        var fgDiscoverPool = ${discoverPoolExpr}.GetUnlockedCards(${playerExpr}.UnlockState, ${playerExpr}.RunState.CardMultiplayerConstraint)${typeFilterExpr}; // [VERIFIED] see compiler.js's own comment on this case`,
+        `        var fgDiscoverChoices = MegaCrit.Sts2.Core.Factories.CardFactory.GetDistinctForCombat(${playerExpr}, fgDiscoverPool, ${count}, ${playerExpr}.RunState.Rng.CombatCardGeneration).ToList(); // [VERIFIED]`,
+        `        var fgDiscoverPick = await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromChooseACardScreen(choiceContext, fgDiscoverChoices, ${playerExpr}, ${canSkipExpr}); // [VERIFIED]`,
+        `        if (fgDiscoverPick != null)`,
+        `        {`,
+        freeCostLine,
+        `            await MegaCrit.Sts2.Core.Commands.CardPileCmd.AddGeneratedCardToCombat(fgDiscoverPick, ${pileTypeExpr}, ${playerExpr}, ${positionExpr}); // [VERIFIED]`,
+        `        }`,
+      ].filter(Boolean).join('\n');
     }
     case 'ShuffleCardIntoDraw':
       // [BEST EFFORT] upgraded round 24 (2026-08-30) — Tyler: "Shuffle card
@@ -11737,6 +11831,12 @@ module.exports = {
   // doc comment above — exported so validate.js/frontend can share the
   // one vocabulary instead of hand-duplicating the 4 literal strings.
   PET_POSITION_MODES,
+  // [2026-09-30] CARD_POOL_CLASS_MAP — see its own doc comment above —
+  // exported so validate.js can build DiscoverCard's own discoverPool
+  // enum (its keys, plus the "OwnCharacter" default) from the SAME real
+  // pool-name list round 213's cardRewardPoolAppend already established,
+  // instead of a second hand-typed copy that could drift.
+  CARD_POOL_CLASS_MAP,
   // [Round 329] amountFormula's own vocabulary — see AMOUNT_FORMULA_SOURCES'
   // own doc comment above — exported so validate.js/frontend share the one
   // source of truth for which term sources exist, which need a subject,

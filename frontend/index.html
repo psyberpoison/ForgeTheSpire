@@ -4427,7 +4427,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4551,6 +4551,7 @@ const ACTION_TYPE_LABELS = {
   EndTurn: 'End Turn',
   ModifyOrbSlots: 'Modify Orb Slots',
   ReturnToHand: 'Return This Card To Hand',
+  DiscoverCard: 'Discover a Card',
 };
 // [Round 157] Tyler: "this menu looks a little difficult to navigate"
 // (screenshot of the action-TYPE dropdown — a single flat list of 16
@@ -4591,7 +4592,10 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards'] },
+  // [2026-09-30] "DiscoverCard" joins Card Effects -- same "generate/
+  // manipulate a card mid-combat" bucket as CreateCard/ShuffleCardIntoDraw,
+  // not a distinct-enough concept to warrant its own group the way Pets did.
+  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards', 'DiscoverCard'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
   // below). [Round 293] "PetAttack" joins it -- same pet-focused concept,
@@ -4634,6 +4638,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   TransformDeckCards: 'transform deck cards into',
   SummonPet: 'summon pet companion monster',
   PetAttack: 'pet attack damage companion monster',
+  DiscoverCard: 'discover choose a card pool colorless free this turn combat',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -4935,7 +4940,16 @@ const STATUS_DESCRIPTIONS = {
 // compiler.js:validTargetsForAction (imported into validate.js) rejects
 // outright at generate/download time -- caught by round 199's own
 // pipeline test.
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet"];
+// [2026-09-30 drive-by fix] "MovePetPosition" was missing from this mirror
+// despite compiler.js:PLAYER_ONLY_ACTIONS including it since round 328
+// ("Joins PLAYER_ONLY_ACTIONS (no real Creature-target concept...)") —
+// real drift, not intentional: this list's own type-change handler never
+// forced act.target to "Self" for a freshly-added MovePetPosition action,
+// same class of bug this list's own comment above already documents for a
+// different earlier miss. Added here alongside "DiscoverCard" (brand-new
+// this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
+// comment).
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -11624,6 +11638,19 @@ function describeAction(act){
       const moveLabel = (PET_POSITION_MODE_LABELS[act.petPositionMode] || PET_POSITION_MODE_LABELS.ShiftForward).toLowerCase();
       return `${moveLabel[0].toUpperCase()}${moveLabel.slice(1)} for ${petName}`;
     }
+    // [2026-09-30, item #3 of the gap-analysis 35] "DiscoverCard" -- see
+    // compiler.js's actionToCSharp "DiscoverCard" case and
+    // schema/character.schema.json's own DiscoverCard paragraph for the
+    // full real-sts2.dll evidence trail.
+    case 'DiscoverCard': {
+      const discoverCount = Number.isInteger(act.discoverCount) ? act.discoverCount : 3;
+      const poolPhrase = (!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'your character’s' : `the ${act.discoverPool}`;
+      const typePhrase = act.discoverCardType ? ` ${act.discoverCardType}` : '';
+      const destPhrase = act.destination === 'DrawPile' ? 'your draw pile' : act.destination === 'Discard' ? 'your discard pile' : 'your hand';
+      const skipPhrase = act.discoverCanSkip === false ? ' (must pick one)' : '';
+      const freePhrase = act.discoverFreeCost === 'ThisTurn' ? ' for free this turn' : act.discoverFreeCost === 'ThisCombat' ? ' for free this combat' : '';
+      return `Discover ${discoverCount}${typePhrase} card${discoverCount===1?'':'s'} from ${poolPhrase} pool, add the pick to ${destPhrase}${freePhrase}${skipPhrase}`;
+    }
     default: return '';
   }
 }
@@ -15192,6 +15219,12 @@ function ensureActionRefDefaults(act){
     }
   }
 
+  // [2026-09-30] DiscoverCard shares CreateCard's own `destination` default
+  // -- same real AddGeneratedCardToCombat call either action compiles to.
+  if(act.type === 'DiscoverCard' && act.destination === undefined){
+    act.destination = 'Hand';
+  }
+
   if(act.type === 'CreateCard'){
     if(act.destination === undefined) act.destination = 'Hand';
     if(act.tokenRefKind !== 'vanilla') act.tokenRefKind = 'custom';
@@ -15949,6 +15982,38 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Move</span> ${petOptions}${modeOptions}<span class="cond-word">.</span>`;
       break;
     }
+    // [2026-09-30, item #3 of the gap-analysis 35] "DiscoverCard" -- see
+    // compiler.js's actionToCSharp "DiscoverCard" case and
+    // schema/character.schema.json's own DiscoverCard paragraph for the
+    // full real-sts2.dll evidence trail. discoverCount is a plain number
+    // input (not the amount/amountIsX/per-stack scaling atoms -- "how many
+    // cards to show" isn't a combat-scaling value, see schema's own
+    // discoverCount description). discoverPool reuses CARD_POOL_VALUES
+    // (round 213) plus a new "Your Own Character's Pool" default option.
+    // discoverCardType is an optional filter -- same "checkbox enables a
+    // disabled select" convention Tyler picked for costReductions'
+    // cardTypeFilter (round 166: "add two checkboxes below the sentence to
+    // filter by type or tag" -- see renderCostReductionRows' own
+    // typeFilterCheck/typeFilterSel for the precedent this mirrors).
+    // destination reuses CreateCard's own createCardDestOptList (Tyler's
+    // own pick, "Recommended": author's choice of Hand/DrawPile/Discard,
+    // same real AddGeneratedCardToCombat call either action compiles to).
+    case 'DiscoverCard': {
+      const discoverPoolHtml = `<select class="a-discover-pool" title="Which real card pool to draw the discover options from.">
+        <option value="OwnCharacter" ${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'selected' : ''}>Your Own Character's Pool</option>
+        ${CARD_POOL_VALUES.map(p => `<option value="${p}" ${act.discoverPool === p ? 'selected' : ''}>${p}</option>`).join('')}
+      </select>`;
+      const hasCardTypeFilter = !!act.discoverCardType;
+      const cardTypeFilterHtml = `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards,</span>`;
+      const canSkipHtml = `<label class="a-check-label" title="If unchecked, the player must pick one of the offered cards -- no skip."><input type="checkbox" class="a-discover-canskip" ${act.discoverCanSkip === false ? '' : 'checked'}> Can be skipped</label>`;
+      const freeCostHtml = `<select class="a-discover-freecost" title="Make the discovered card free -- calls the same real CardModel.SetToFreeThisTurn()/SetToFreeThisCombat() methods the one real vanilla Discovery card itself uses.">
+        <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>and it costs normal Energy</option>
+        <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>and it's free this turn</option>
+        <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
+      </select>`;
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${discoverPoolHtml}${cardTypeFilterHtml} <span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${canSkipHtml} ${freeCostHtml}<span class="cond-word">.</span>`;
+      break;
+    }
     default:
       sentenceHtml = '';
   }
@@ -16065,6 +16130,9 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
+    // [2026-09-30] DiscoverCard's own fields -- destination is already
+    // cleared above (shared with CreateCard, same field name).
+    delete act.discoverCount; delete act.discoverPool; delete act.discoverCardType; delete act.discoverCanSkip; delete act.discoverFreeCost;
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
@@ -16182,6 +16250,37 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // get.
   const hpKindSelect = row.querySelector('.a-hpkind');
   if(hpKindSelect) hpKindSelect.onchange = e=> act.hpKind = e.target.value;
+
+  // [2026-09-30] DiscoverCard's own fields -- destination is already
+  // wired above (shared .a-destination class with CreateCard).
+  const discoverCountInput = row.querySelector('.a-discover-count');
+  if(discoverCountInput) discoverCountInput.oninput = e=>{
+    const v = parseInt(e.target.value, 10);
+    act.discoverCount = (Number.isInteger(v) && v >= 1 && v <= 20) ? v : 3;
+  };
+  const discoverPoolSelect = row.querySelector('.a-discover-pool');
+  if(discoverPoolSelect) discoverPoolSelect.onchange = e=> act.discoverPool = e.target.value;
+  // Same "checkbox enables a disabled select" convention as
+  // renderCostReductionRows' own typeFilterCheck/typeFilterSel (round 166,
+  // Tyler: "add two checkboxes below the sentence to filter by type or
+  // tag") -- no re-render needed, just toggle .disabled directly.
+  const discoverTypeFilterSel = row.querySelector('.a-discover-cardtype');
+  const discoverTypeFilterCheck = row.querySelector('.a-discover-typefilter-check');
+  if(discoverTypeFilterCheck){
+    discoverTypeFilterCheck.onchange = e=>{
+      discoverTypeFilterSel.disabled = !e.target.checked;
+      if(e.target.checked) act.discoverCardType = discoverTypeFilterSel.value;
+      else delete act.discoverCardType;
+    };
+  }
+  if(discoverTypeFilterSel) discoverTypeFilterSel.onchange = e=> act.discoverCardType = e.target.value;
+  const discoverCanSkipCheck = row.querySelector('.a-discover-canskip');
+  if(discoverCanSkipCheck) discoverCanSkipCheck.onchange = e=> act.discoverCanSkip = e.target.checked;
+  const discoverFreeCostSelect = row.querySelector('.a-discover-freecost');
+  if(discoverFreeCostSelect) discoverFreeCostSelect.onchange = e=>{
+    if(e.target.value) act.discoverFreeCost = e.target.value;
+    else delete act.discoverFreeCost;
+  };
 
   const amountInput = row.querySelector('.a-amount');
   if(amountInput) amountInput.oninput = e=> act.amount = parseFloat(e.target.value)||0;
