@@ -12027,7 +12027,7 @@ function openCardEditor(cardId){
                 </div>
               </div>
               <div id="m-rarity-row"><label>Rarity</label><select id="m-rarity">${optList(rarityOptionsForType(card.type, card.rarity), card.rarity)}</select></div>
-              <div id="m-target-row"><label>Target</label><select id="m-target">${cardTargetOptList(["SingleEnemy","AllEnemies","Self","None","SingleAlly","AllAllies","RandomEnemy"], card.target)}</select></div>
+              <div id="m-target-row"><label>Target</label><select id="m-target">${cardTargetOptList(["SingleEnemy","AllEnemies","RandomEnemy","None","SingleAlly","AllAllies","Self"], card.target)}</select></div>
             </div>
             <div class="basetag-row">
               <label title="A fixed, built-in card tag that lets base-game or other-mod logic which specifically checks for it (e.g. Strike-synergy relics) recognize this card. A different, narrower mechanism than the Tags/gameplay-tag chips below, which are your own freeform labels.">Base card tag:</label>
