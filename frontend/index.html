@@ -1112,6 +1112,16 @@
   .action-row-usex{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:4px;}
   .action-row-usex .a-usex-label{height:18px; line-height:18px;}
   .action-row-usex .a-usex-label input[type=checkbox]{width:14px; height:14px; margin:0; flex:none; align-self:center;}
+  /* [2026-09-30 follow-up #4] DiscoverCard's free-cost/type-filter/
+     tag-filter selects moved into their own .action-row-usex row (no
+     longer mid-sentence, see that render case's own comment) as bare
+     top-level children rather than nested inside an .a-usex-label the
+     way playerTargetHtml's select is -- without this, they'd fall
+     through to the page's global select{width:100%; padding:9px 11px;
+     font-size:14px} rule, oversized against their sibling checkboxes in
+     the same compact row. Same sizing .action-row-sentence select
+     already gets, just scoped to this row too. */
+  .action-row-usex select{font-size:12.5px; padding:4px 7px; width:auto; flex:0 0 auto;}
   .action-row-sentence select, .action-row-sentence input[type=number]{font-size:12.5px; padding:4px 7px; min-width:0; width:auto; flex:0 0 auto;}
   /* [Round 88] The old action-row-sentence-only appearance:none/line-height
      rule (rounds 85-87) is now covered by the global `select{}` rule added
@@ -15754,6 +15764,15 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // row template assembly further down, same pattern playerTargetHtml
   // etc. already use.
   let discoverCardRefsBlockHtml = '';
+  // [2026-09-30 follow-up #4] Tyler: "discovering cards from a pool
+  // should instead read 'Discover [x] cards [from a pool] to your
+  // [hand]'. then the checkbox options should go beneath the sentence."
+  // DiscoverCard's type/tag filter, free-cost select, and can-skip
+  // checkbox all move out of sentenceHtml into their own below-sentence
+  // row -- same declared-before-the-switch, assigned-in-the-case,
+  // slotted-into-the-row-template-after pattern discoverCardRefsBlockHtml
+  // just above already established.
+  let discoverOptionsBlockHtml = '';
   switch(act.type){
     // Kept as its own hand-built sentence (not amountForTargetSentence) —
     // the only type with BOTH an amount and a hit-count. Tyler's original
@@ -16084,9 +16103,18 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // They stay fully real/composable at the schema+compiler.js level
       // (unchanged) -- this is a UI simplification only, not a capability
       // removal.
+      // [2026-09-30 follow-up #4] Tyler: "discovering cards from a pool
+      // should instead read 'Discover [x] cards [from a pool] to your
+      // [hand]'. then the checkbox options should go beneath the
+      // sentence." Type/tag filter no longer render mid-sentence
+      // (dropped the trailing "cards,"/"," connective words they used to
+      // carry the sentence forward with) -- they're now standalone
+      // controls in the below-sentence options row alongside
+      // freeCostHtml/canSkipHtml, same .action-row-usex treatment round
+      // 75 gave DealDamage's own checkboxes.
       const hasCardTypeFilter = !!act.discoverCardType;
       const cardTypeFilterHtml = sourceKind === 'Pool'
-        ? `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards,</span>`
+        ? `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> Only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards</span>`
         : '';
       // Tag filter -- same checkbox-enables-disabled-select +
       // allGameplayTags() convention as renderCostReductionRows'/
@@ -16094,9 +16122,9 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const discoverTagOptions = allGameplayTags();
       const hasTagFilter = !!act.discoverTagFilter;
       const tagFilterHtml = sourceKind === 'Pool'
-        ? `<label class="a-check-label" title="Only offer cards tagged with one of this character's own gameplay tags."><input type="checkbox" class="a-discover-tagfilter-check" ${hasTagFilter ? 'checked' : ''} ${discoverTagOptions.length ? '' : 'disabled'}> tagged</label> ${discoverTagOptions.length
+        ? `<label class="a-check-label" title="Only offer cards tagged with one of this character's own gameplay tags."><input type="checkbox" class="a-discover-tagfilter-check" ${hasTagFilter ? 'checked' : ''} ${discoverTagOptions.length ? '' : 'disabled'}> Tagged</label> ${discoverTagOptions.length
           ? `<select class="a-discover-tagfilter" ${hasTagFilter ? '' : 'disabled'}>${discoverTagOptions.map(t => `<option value="${escapeAttr(t)}" ${act.discoverTagFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`
-          : `<select class="a-discover-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`} <span class="cond-word">,</span>`
+          : `<select class="a-discover-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`}`
         : '';
       // Search-and-add card picker -- Tyler: "don't add a checkbox for
       // every card, add a search bar that will add cards picked to a
@@ -16122,13 +16150,27 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
           </div>`
         : `<div class="hint-small" style="margin-top:6px;">— no cards defined yet —</div>`;
       const canSkipHtml = `<label class="a-check-label" title="If unchecked, the player must pick one of the offered cards -- no skip."><input type="checkbox" class="a-discover-canskip" ${act.discoverCanSkip === false ? '' : 'checked'}> Can be skipped</label>`;
+      // [2026-09-30 follow-up #4] Option text de-sentence-ified ("and it
+      // costs normal Energy" -> "Costs normal Energy", etc.) now that this
+      // select lives in the standalone options row below the sentence
+      // rather than continuing it as a trailing clause.
       const freeCostHtml = `<select class="a-discover-freecost" title="Make the discovered card free -- calls the same real CardModel.SetToFreeThisTurn()/SetToFreeThisCombat() methods the one real vanilla Discovery card itself uses.">
-        <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>and it costs normal Energy</option>
-        <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>and it's free this turn</option>
-        <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
+        <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>Costs normal Energy</option>
+        <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>Free this turn</option>
+        <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>Free this combat</option>
       </select>`;
-      const filterAreaHtml = (cardTypeFilterHtml || tagFilterHtml) ? ` ${cardTypeFilterHtml}${tagFilterHtml}` : ' ';
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${filterAreaHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>`;
+      // [2026-09-30 follow-up #4] Tyler: "discovering cards from a pool
+      // should instead read 'Discover [x] cards [from a pool] to your
+      // [hand]'. then the checkbox options should go beneath the
+      // sentence." Sentence now carries only the "what/how many/from
+      // where/to where" core -- count, source kind (+ which pool, Pool
+      // mode only), destination. Everything else (type/tag filter, free
+      // cost, can-skip) moves to discoverOptionsBlockHtml, its own row
+      // below the sentence (declared near sentenceHtml above, slotted
+      // into the row template below next to the other below-sentence
+      // blocks).
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select><span class="cond-word">.</span>`;
+      discoverOptionsBlockHtml = `<div class="action-row-usex">${cardTypeFilterHtml}${tagFilterHtml}${freeCostHtml}${canSkipHtml}</div>`;
       // [2026-09-30 follow-up #3] Tyler: "the search box is the wrong
       // size, and the cards added overlap it, and both of them are too
       // high." Root cause: this picker was appended inline at the end of
@@ -16203,6 +16245,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
+    ${discoverOptionsBlockHtml}
     ${discoverCardRefsBlockHtml}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
     ${hasFormula ? `<div class="a-formula-slot"></div>` : ''}
