@@ -4990,8 +4990,13 @@ const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","Re
 
 // [Round 213] Mirrors compiler.js:CARD_POOL_CLASS_MAP's keys -- real
 // MegaCrit.Sts2.Core.Models.CardPools.* subclasses, confirmed via direct
-// TypeDef listing of the real, installed sts2.dll.
-const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent","Deprived"];
+// TypeDef listing of the real, installed sts2.dll. [REMOVED 2026-09-30]
+// "Deprived" dropped -- direct IL disassembly of DeprivedCardPool.
+// GenerateAllCards() showed it's MegaCrit's own internal QA/mock fixture
+// (13 generic MockCardModel placeholders, get_IsMock()==true, get_Title()
+// =="test"), not real playable cards -- see compiler.js:CARD_POOL_CLASS_MAP's
+// own comment for the full evidence trail.
+const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent"];
 function validTargetsForAction(actionType){
   // [Round 330] Mirrors compiler.js:validTargetsForAction exactly — see
   // that function's own comment for the full "why GainBlock now gets

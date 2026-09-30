@@ -792,6 +792,30 @@ const VANILLA_TOKEN_CARD_CLASS_MAP = {
 // combat card rewards), DeprecatedCardPool (its own real name says not to
 // use it), MockCardPool (internal test fixture, same reasoning
 // TestCharCardPool-style scratch classes are never exposed to authors).
+//
+// [REMOVED 2026-09-30] `Deprived: 'MegaCrit.Sts2.Core.Models.CardPools.
+// DeprivedCardPool'` was included here from round 213 through round 332's
+// own DiscoverCard follow-up, on the strength of it being a real, concrete
+// CardPools.* subclass -- but it was never actually a sensible reward/
+// discover pool target, same family as MockCardPool above. Tyler asked
+// what "Deprived" was (a DiscoverCard pool option); direct IL disassembly
+// of DeprivedCardPool.GenerateAllCards() [confirmed this round] showed it
+// builds 13 generic MockCardModel placeholders via a private MockCard(
+// CardRarity) helper (cycling through Common/Uncommon/Rare three times,
+// plus one each of Quest/Curse/Status) -- not real, named, playable
+// cards. get_IsMock() literally returns true and get_Title() literally
+// returns the string "test". It's MegaCrit's own internal QA/UI-testing
+// fixture for exercising every card rarity tier, not real content --
+// round 213's own research simply didn't catch it at the time (its class
+// name alone doesn't say "mock" the way MockCardPool's does). Removed
+// outright rather than left in: an author picking it would get 13
+// nameless filler cards with no real effects, a silent dead end this
+// project's own "fail loud, not silent" standard doesn't ship. Round-213's
+// cardRewardPoolAppend modifier shape and DiscoverCard's own discoverPool
+// both read this same map, so removing it here closes the gap in both
+// places at once -- see frontend/index.html's own CARD_POOL_VALUES (its
+// hand-mirrored copy of this map's keys) and schema/character.schema.
+// json's discoverPool enum, both updated to match.
 const CARD_POOL_CLASS_MAP = {
   Colorless: 'MegaCrit.Sts2.Core.Models.CardPools.ColorlessCardPool',
   Curse: 'MegaCrit.Sts2.Core.Models.CardPools.CurseCardPool',
@@ -802,7 +826,6 @@ const CARD_POOL_CLASS_MAP = {
   Defect: 'MegaCrit.Sts2.Core.Models.CardPools.DefectCardPool',
   Necrobinder: 'MegaCrit.Sts2.Core.Models.CardPools.NecrobinderCardPool',
   Regent: 'MegaCrit.Sts2.Core.Models.CardPools.RegentCardPool',
-  Deprived: 'MegaCrit.Sts2.Core.Models.CardPools.DeprivedCardPool',
 };
 
 // [Round 24, hoisted to module scope 2026-09-30] real PileType/
