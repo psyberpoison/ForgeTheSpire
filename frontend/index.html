@@ -4943,6 +4943,18 @@ const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard
 // checks both lists (see renderActionRowFields/wireActionRowHandlers) so
 // GainBlock's target dropdown is hidden exactly like the player-only types'.
 const SELF_ONLY_ACTIONS = ["GainBlock"];
+// [Round 330] Mirrors compiler.js:ALLY_CREATURE_TARGETABLE_ACTIONS exactly
+// — the 5 action types AllAllies/RandomAlly join AllEnemies/RandomEnemy
+// for, on top of GainBlock (handled separately in validTargetsForAction
+// below, same "SELF_ONLY_ACTIONS is its own special case" shape as before
+// this round).
+const ALLY_CREATURE_TARGETABLE_ACTIONS = ["DealDamage","ModifyStatus","RemoveAllStatuses","ModifyHp","StunEnemy"];
+// [Round 330] Mirrors compiler.js:PLAYER_ALLY_TARGETABLE_ACTIONS exactly —
+// the 5 PLAYER_ONLY_ACTIONS types that also accept a `playerTarget` field
+// (Self/RandomAlly/AllAllies), see renderActionRowFields' own playerTarget
+// picker and backend/compiler.js's PLAYER_ALLY_TARGETABLE_ACTIONS comment
+// for the full "why these 5" reasoning.
+const PLAYER_ALLY_TARGETABLE_ACTIONS = ["ModifyEnergy","ModifyGold","DrawCard","DiscardCard","CreateCard"];
 // [UNVERIFIED — list itself] mirrors compiler.js:VANILLA_TOKEN_CARDS
 // exactly — a best-effort guess at real STS1/STS2 built-in Status/Curse
 // card names, NOT a reflect-baselib-confirmed list (no round has gone
@@ -4964,7 +4976,14 @@ const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","Re
 // TypeDef listing of the real, installed sts2.dll.
 const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent","Deprived"];
 function validTargetsForAction(actionType){
-  return (PLAYER_ONLY_ACTIONS.includes(actionType) || SELF_ONLY_ACTIONS.includes(actionType)) ? ["Self"] : ["SingleEnemy","AllEnemies","Self","RandomEnemy"];
+  // [Round 330] Mirrors compiler.js:validTargetsForAction exactly — see
+  // that function's own comment for the full "why GainBlock now gets
+  // AllAllies/RandomAlly but never enemy targets" reasoning.
+  if(PLAYER_ONLY_ACTIONS.includes(actionType)) return ["Self"];
+  if(actionType === "GainBlock") return ["Self","AllAllies","RandomAlly"];
+  if(SELF_ONLY_ACTIONS.includes(actionType)) return ["Self"];
+  const base = ["SingleEnemy","AllEnemies","Self","RandomEnemy"];
+  return ALLY_CREATURE_TARGETABLE_ACTIONS.includes(actionType) ? [...base,"AllAllies","RandomAlly"] : base;
 }
 
 // Real bundled placeholder art for the energy orb, superseding the old
@@ -5532,13 +5551,26 @@ function migrateLegacyStatusActions(pkg){
         if(act.cardRef && !act.tokenRef) act.tokenRef = act.cardRef;
         delete act.cardRef;
       }
-      // GainBlock is now SELF_ONLY_ACTIONS — Tyler: "Gain block should only
-      // ever be for yourself... We can remove the target dropdown box."
-      // Force any old non-Self saved target so nothing stale lingers past
-      // the point the UI stops offering a way to change it.
-      if(act.type === 'GainBlock'){
-        act.target = 'Self';
-      }
+      // [Round 330 — REMOVED the old forced-Self reset here] From
+      // 2026-08-25 through round 329, GainBlock was SELF_ONLY_ACTIONS with
+      // no other legal target at all, so this migration step force-reset
+      // any stale non-Self saved target on every single load — Tyler:
+      // "Gain block should only ever be for yourself... We can remove the
+      // target dropdown box." Round 330 ("Give Block to allies too")
+      // legitimately widened GainBlock's valid targets to Self/AllAllies/
+      // RandomAlly (see compiler.js:validTargetsForAction's own GainBlock
+      // branch) — this migration function runs unconditionally on EVERY
+      // load (see its own call sites), so leaving the old unconditional
+      // `act.target = 'Self'` reset in place here would have silently
+      // wiped a legitimately-authored AllAllies/RandomAlly target back to
+      // Self the moment the package was reloaded, defeating the whole
+      // feature. A genuinely stale, no-longer-valid GainBlock target (e.g.
+      // an old "SingleEnemy"/"AllEnemies" from before GainBlock was ever
+      // self-restricted at all) is still caught and repaired the normal,
+      // general way every other action's target is — see
+      // fixActionTargetForTrigger/hiddenTargetsForTrigger and
+      // sanitizeActionsArray's own pre-compile sweep — no bespoke
+      // per-type reset needed here anymore.
       // ShuffleCardIntoDraw no longer takes an amount/card reference at all
       // — Tyler: "only allowing the card that is being played to go back
       // into draw." Force Self target (was already player-only) and drop
@@ -10161,6 +10193,15 @@ const CONDITION_KINDS = [
   // "Pet is in position 1 (1st) — Bulbasaur".
   { id:'PetPositionIs', label:'is in position', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks whether a specific one of this character\'s own pets currently sits in a given position (1st/2nd/3rd...), matching the same left-to-right order pets visually line up in on screen. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
+  // [Round 330] Multiplayer/co-op scope Tyler approved in full (gap
+  // analysis v1.2.1 "Players in run >= N condition") — see
+  // backend/compiler.js:conditionToCSharpRaw's PlayersInRun case for the
+  // full ICombatState.Players evidence trail. Same 'anyRealTrigger'
+  // treatment as OrbSlotCount/HasSpecificRelic/etc. right above (needs a
+  // real fgPlayer Creature local for .CombatState, unavailable on Glow/
+  // Playability or a Group B modifier hook).
+  { id:'PlayersInRun', label:'players in run', real:true, requiresTrigger:'anyRealTrigger',
+    hint:'Checks how many players are in this run right now — real in single-player too (always 1 there). Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
 ];
 // [Round 320] Tyler, shown the kind dropdown's full 15-item open popup
 // (subject "Self"): "lets colorize and categorize this menu." Purely a
@@ -10186,7 +10227,7 @@ const CONDITION_KINDS = [
 // somehow isn't listed here, never expected to actually fire.
 const CONDITION_KIND_CATEGORIES = [
   { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','HasBlock','DebuffStacksTotal'] },
-  { id:'resources', label:'Your Resources', color:'var(--bb-gold)', kindIds:['EnergyRemaining','StarsRemaining','CardsInHand','CardsPlayedThisTurn','AttacksPlayedThisTurn','OrbSlotCount','HandCardTypeCheck'] },
+  { id:'resources', label:'Your Resources', color:'var(--bb-gold)', kindIds:['EnergyRemaining','StarsRemaining','CardsInHand','CardsPlayedThisTurn','AttacksPlayedThisTurn','OrbSlotCount','HandCardTypeCheck','PlayersInRun'] },
   { id:'relicsCards', label:'Relics & Cards', color:'var(--bb-purple)', kindIds:['HasSpecificRelic','NoCopiesOfCardInHand'] },
   { id:'cardReference', label:'Card Reference', color:'var(--bb-green)', kindIds:['CardPositionInHand','PlayedCardHasKeyword','PlayedCardHasTag','PlayedCardHasType'] },
   { id:'pet', label:'Pet', color:'var(--teal)', kindIds:['PetIsOut','PetPositionIs'] },
@@ -11239,8 +11280,21 @@ function describeTargetPhrase(target){
     case 'AllEnemies': return 'all enemies';
     case 'RandomEnemy': return 'a random enemy';
     case 'Self': return 'yourself';
+    // [Round 330] Multiplayer/co-op ally targeting.
+    case 'AllAllies': return 'all allies';
+    case 'RandomAlly': return 'a random ally';
     default: return 'the target';
   }
+}
+// [Round 330] "Ally PLAYER-resource targeting" — shared suffix for
+// describeAction's 5 PLAYER_ALLY_TARGETABLE_ACTIONS cases (DrawCard/
+// ModifyEnergy/ModifyGold/DiscardCard/CreateCard), same "only spell it out
+// for the non-default case" convention GainBlock's own target phrase uses
+// above (describeAction's 'GainBlock' case).
+function describePlayerTargetSuffix(act){
+  if(act.playerTarget === 'RandomAlly') return ' for a random ally';
+  if(act.playerTarget === 'AllAllies') return ' for all allies';
+  return '';
 }
 function describeStatusNameList(names){
   const list = names.filter(Boolean);
@@ -11393,10 +11447,14 @@ function describeAction(act){
   const n = hasFormula ? '(formula)' : ((act.amountIsX || act.amountIsStarX) ? 'X' : amt);
   switch(act.type){
     case 'DealDamage': return `Deal ${n} damage to ${targetPhrase}${describeActionHitCount(act)}${describeActionScaling(act)}`;
-    // Self-only as of this round (Tyler: "Gain block should only ever be
-    // for yourself") — no more "for <target>" phrase, describeActionScaling
-    // still applies (per-stack scaling survived the self-only restriction).
-    case 'GainBlock': return `Gain ${n} Block${describeActionScaling(act)}`;
+    // Self-only from 2026-08-25 through round 329 (Tyler: "Gain block should
+    // only ever be for yourself") — [Round 330] Tyler approved "Give Block
+    // to allies too" — target is "Self"/"AllAllies"/"RandomAlly" now (never
+    // enemies, that restriction still stands — see backend/compiler.js:
+    // validTargetsForAction's own GainBlock branch). "For yourself" is
+    // dropped for the common Self case (matches the pre-330 wording
+    // exactly), and only spelled out for the two new ally targets.
+    case 'GainBlock': return `Gain ${n} Block${act.target === 'Self' ? '' : ` for ${targetPhrase}`}${describeActionScaling(act)}`;
     // Replaces the old separate ApplyStatus/RemoveStatus/ApplyCustomStatus/
     // RemoveCustomStatus descriptions — one combined statusEntries[] list,
     // mode-gated verb/preposition (Tyler: "Modify status... a box... for
@@ -11413,7 +11471,7 @@ function describeAction(act){
     // renderActionRowFields' DrawCard case for the full story: "draw next
     // turn" is a status application (Apply Status -> DrawCardsNextTurn),
     // not a DrawCard variant.
-    case 'DrawCard': return `Draw ${n} card${n===1?'':'s'}`;
+    case 'DrawCard': return `Draw ${n} card${n===1?'':'s'}${describePlayerTargetSuffix(act)}`;
     // [Round 160] Mode-gated verb (Gain/Lose), same shape as ModifyGold
     // right below — round 159's sign-based version is superseded (see
     // ACTION_TYPES' own comment). doubleEnergy (Tyler: "a check box for
@@ -11423,7 +11481,7 @@ function describeAction(act){
     // from before.
     case 'ModifyEnergy': {
       if (act.doubleEnergy) return 'Double your current Energy';
-      return `${act.mode === 'Lose' ? 'Lose' : 'Gain'} ${n} Energy`;
+      return `${act.mode === 'Lose' ? 'Lose' : 'Gain'} ${n} Energy${describePlayerTargetSuffix(act)}`;
     }
     // Replaces the old separate LoseHp/HealHp descriptions — mode-gated
     // verb (Tyler: "a dropdown in the sentence for 'gain' or 'lose'"),
@@ -11441,10 +11499,10 @@ function describeAction(act){
     // Replaces the old GainGold-only description — mode-gated verb, `Lose`
     // a brand-new capability this round (Tyler: "Gold should get the same
     // treatment" as ModifyHp's Gain/Lose split).
-    case 'ModifyGold': return `${act.mode === 'Lose' ? 'Lose' : 'Gain'} ${n} Gold`;
+    case 'ModifyGold': return `${act.mode === 'Lose' ? 'Lose' : 'Gain'} ${n} Gold${describePlayerTargetSuffix(act)}`;
     // Tyler: "Discard and exhaust should get an option to make them
     // randomly selected."
-    case 'DiscardCard': return `Discard ${n} card${n===1?'':'s'}${act.random ? ' at random' : ''}`;
+    case 'DiscardCard': return `Discard ${n} card${n===1?'':'s'}${act.random ? ' at random' : ''}${describePlayerTargetSuffix(act)}`;
     case 'ExhaustCard': return `Exhaust ${n} card${n===1?'':'s'}${act.random ? ' at random' : ''}`;
     // Replaces the old separate CreateCardInHand/CreateCardInDrawPile
     // descriptions — Tyler: "Create " [x] " copies of " [token] " to your "
@@ -11457,7 +11515,7 @@ function describeAction(act){
       const tokenName = act.tokenRefKind === 'vanilla'
         ? (act.tokenVanillaRef || 'a status card')
         : ((state.cards.find(c=>c.id===act.tokenRef) || {}).name || 'a card');
-      return `Create ${n} cop${n===1?'y':'ies'} of ${tokenName} in ${destPhrase}`;
+      return `Create ${n} cop${n===1?'y':'ies'} of ${tokenName} in ${destPhrase}${act.playerTarget==='RandomAlly'?" (a random ally's)":act.playerTarget==='AllAllies'?" (every ally's)":''}`;
     }
     // No longer takes an amount/card reference at all — Tyler: "Shuffle
     // card into draw should instead be 'shuffle this card into your draw
@@ -11601,6 +11659,8 @@ function describeCondition(cond, trigger){
     case 'HandCardTypeCheck': return `${cond.mode==='All'?'all':'any'} of the cards in your hand ${cond.mode==='All'?'are':'is'} a ${cond.cardType}`;
     case 'AttacksPlayedThisTurn': return `the Attacks you've played this turn ${cond.comparator==='eq'?'is':'are'} ${cmp} ${cond.value}`;
     case 'OrbSlotCount': return `your orb slot count is ${cmp} ${cond.value}`;
+    // [Round 330] see this kind's own CONDITION_KINDS entry.
+    case 'PlayersInRun': return `the number of players in this run is ${cmp} ${cond.value}`;
     case 'EnemyIntent': return `the target's intent is ${cond.intentKind}`;
     case 'HasSpecificRelic': return `you have ${(state.relics.find(r=>r.id===cond.relicRef) || {}).name || 'the relic'}`;
     case 'NoCopiesOfCardInHand': return `there are no copies of ${(state.cards.find(c=>c.id===cond.cardRef) || {}).name || 'that card'} in your hand`;
@@ -13962,7 +14022,10 @@ function availableConditionKinds(eff){
 //      subjectOptionLabel's final `return subject.label` below) — the
 //      specific pet's NAME is what carries the "whose" information, via
 //      its own trailing petRef select, same as PetIsOut.
-const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck'];
+// [Round 330] PlayersInRun added — "Your players in run" reads naturally
+// enough (like "your party size"/"your squad headcount"), same possessive
+// noun-phrase shape as EnergyRemaining/OrbSlotCount right next to it.
+const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PlayersInRun'];
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
   // front of a possessed noun — see POSSESSIVE_SUBJECT_CONDITION_KINDS'
@@ -14663,6 +14726,9 @@ const ACTION_TARGET_LABELS = {
   AllEnemies: 'All Enemies',
   Self: 'Yourself',
   RandomEnemy: 'A Random Enemy',
+  // [Round 330] Multiplayer/co-op ally targeting.
+  AllAllies: 'All Allies',
+  RandomAlly: 'A Random Ally',
 };
 function targetOptList(actionType, selected, trigger, mode, cardIsSingleTarget){
   // Round 23 — hiddenTargetsForTrigger's exclusions never apply to the
@@ -15428,15 +15494,19 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   const dealDamageUseXHtml = dealDamageAmountUseXHtml + dealDamageHitCountUseXHtml;
   // Legible target dropdown (ACTION_TARGET_LABELS/targetOptList, see their
   // own comment) — not rendered at all for PLAYER_ONLY_ACTIONS (Draw/
-  // GainEnergy/ModifyGold/Discard/Exhaust/CreateCard/Shuffle*) or
-  // SELF_ONLY_ACTIONS (GainBlock — Tyler: "Gain block should only ever be
-  // for yourself... We can remove the target dropdown box."): those only
+  // GainEnergy/ModifyGold/Discard/Exhaust/CreateCard/Shuffle*): those only
   // ever have exactly one valid target ("Self" — validTargetsForAction), so
   // a dropdown with a single, unchangeable option would just be clutter,
   // not a real choice — act.target still gets forced to "Self" by the
   // type-change handler in wireActionRowHandlers regardless of whether a
-  // selector is shown for it here.
-  const hidesTarget = PLAYER_ONLY_ACTIONS.includes(act.type) || SELF_ONLY_ACTIONS.includes(act.type);
+  // selector is shown for it here. [Round 330 — SUPERSEDES the old
+  // SELF_ONLY_ACTIONS exclusion here] GainBlock now has a REAL 3-way choice
+  // (Self/AllAllies/RandomAlly — Tyler approved "Give Block to allies too"),
+  // so it needs the dropdown again despite still being in SELF_ONLY_ACTIONS
+  // (that list/name still correctly means "never enemy-targetable," not
+  // "never shows a dropdown" — see compiler.js:SELF_ONLY_ACTIONS' own
+  // comment for why the two lists stay separate).
+  const hidesTarget = PLAYER_ONLY_ACTIONS.includes(act.type) || (SELF_ONLY_ACTIONS.includes(act.type) && act.type !== 'GainBlock');
   const targetHtml = hidesTarget ? '' : `<select class="a-target as-target">${targetOptList(act.type, act.target, trigger, act.mode, cardIsSingleTarget)}</select>`;
   // scaleToggleHtml/scaleExtensionHtml stay exactly as they were for the
   // OTHER scale-capable types (GainBlock/ModifyHp/ModifyStatus) — inline
@@ -15469,6 +15539,23 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ? `<label class="a-usex-label" title="Multiply the hit count by a chosen creature's current stack count of a status — e.g. hit count 1 + Poison = 'hit once per Poison stack'."><input type="checkbox" class="a-hitcount-scale-toggle" ${hitCountIsScaling?'checked':''}> Hits Scales With Stacks</label>`
     : '';
   const dealDamageScaleRowHtml = dealDamageAmountScaleToggleHtml + dealDamageHitCountScaleToggleHtml;
+  // [Round 330] "Ally PLAYER-resource targeting" — Tyler's gap-analysis
+  // ask, "Give energy/cards/... to ONE ally." A standalone row below the
+  // sentence, same convention as dealDamageScaleRowHtml/dealDamageUseXHtml
+  // above, rather than threading a new dropdown into each of these 5
+  // action types' own individual sentence-building switch cases below —
+  // one shared picker, one shared wiring block (see wireActionRowHandlers'
+  // .a-playertarget handler). Only ever shown for
+  // PLAYER_ALLY_TARGETABLE_ACTIONS (ModifyEnergy/ModifyGold/DrawCard/
+  // DiscardCard/CreateCard) — every other action type either has its own
+  // real Creature-target dropdown (targetHtml above) or no target concept
+  // at all. Defaults to "Self" (act.playerTarget undefined or 'Self' —
+  // unchanged existing behavior, see backend/compiler.js:resolvePlayerExpr's
+  // own ctx.forcedPlayerExpr branch).
+  const playerAllyTargetEligible = PLAYER_ALLY_TARGETABLE_ACTIONS.includes(act.type);
+  const playerTargetHtml = playerAllyTargetEligible
+    ? `<label class="a-usex-label" title="Which player this affects — never enemies, this action has no real Creature-target concept.">For <select class="a-playertarget"><option value="Self" ${(!act.playerTarget || act.playerTarget==='Self')?'selected':''}>Yourself</option><option value="RandomAlly" ${act.playerTarget==='RandomAlly'?'selected':''}>A Random Ally</option><option value="AllAllies" ${act.playerTarget==='AllAllies'?'selected':''}>All Allies</option></select></label>`
+    : '';
   // [Round 82] The actual "[amount]x[status][subject]" / "[hit count]x
   // [status][subject]" inline display, replacing amountHtml/the plain
   // hit-count ternary specifically in DealDamage's own sentence case
@@ -15509,9 +15596,13 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // file's own Playwright checks) doesn't read "stackof" run together.
     return `${verb}${amountHtml}${useXAmountHtml}<span class="cond-word">${noun} for</span>${targetHtml}<span class="cond-word">${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
   }
-  // "Gain [amount] Block<, or .>" — GainBlock's own shape now that it's
-  // SELF_ONLY_ACTIONS (no target phrase at all — always implicitly "for
-  // yourself"), still scale-capable.
+  // "Gain [amount] Block<, or .>" (no target phrase at all — always
+  // implicitly "for yourself"), still scale-capable. [Round 330] No longer
+  // called — GainBlock (its only ever caller) now has a real 3-way target
+  // choice (Self/AllAllies/RandomAlly) and uses amountForTargetSentence
+  // instead (see its own switch case below). Left defined, unused, rather
+  // than deleted — the exact right shape if a future truly-Self-only-
+  // forever scale-capable action type is ever added.
   function selfOnlyScalableSentence(verb, noun){
     return `<span class="cond-word">${verb}</span>${amountHtml}${useXAmountHtml}<span class="cond-word">${noun}${isScaling?',':'.'}</span>${scaleToggleHtml} ${scaleExtensionHtml}`;
   }
@@ -15553,7 +15644,12 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       `;
       break;
     }
-    case 'GainBlock': sentenceHtml = selfOnlyScalableSentence('Gain', 'Block'); break;
+    // [Round 330] SUPERSEDES the old selfOnlyScalableSentence call here —
+    // GainBlock now has a real 3-way target choice (Self/AllAllies/
+    // RandomAlly), so it uses the same amountForTargetSentence shape
+    // DealDamage-like types use (reads "Gain 5 Block for Yourself." /
+    // "...for All Allies." / "...for A Random Ally.").
+    case 'GainBlock': sentenceHtml = amountForTargetSentence('Gain', 'Block'); break;
     // Mode-driven merge of the old ApplyStatus/RemoveStatus/
     // ApplyCustomStatus/RemoveCustomStatus — Tyler: "lets reduce apply/
     // remove/customapply/customremove to just be 'Modify status', then
@@ -15861,6 +15957,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     <div class="action-row-sentence">${sentenceHtml}</div>
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
+    ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
     ${hasFormula ? `<div class="a-formula-slot"></div>` : ''}
     ${scaleWarningHtml}
@@ -15932,6 +16029,12 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // Draw/GainEnergy/ModifyGold/Discard/Exhaust/CreateCard/Shuffle* row.
   const targetSelect = row.querySelector('.a-target');
   if(targetSelect) targetSelect.onchange = e=> act.target = e.target.value;
+  // [Round 330] "Ally PLAYER-resource targeting" — see renderActionRowFields'
+  // own playerTargetHtml comment. Guarded the same way targetSelect is
+  // above — only PLAYER_ALLY_TARGETABLE_ACTIONS rows actually render this
+  // select.
+  const playerTargetSelect = row.querySelector('.a-playertarget');
+  if(playerTargetSelect) playerTargetSelect.onchange = e=> act.playerTarget = e.target.value;
 
   // mode (Add/Remove for ModifyStatus, Gain/Lose for ModifyHp/ModifyGold)
   // — re-renders the whole row: for ModifyStatus specifically, switching

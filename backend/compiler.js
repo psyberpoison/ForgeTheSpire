@@ -681,6 +681,48 @@ const PLAYER_ONLY_ACTIONS = [
 // one later.
 const SELF_ONLY_ACTIONS = ['GainBlock'];
 
+// [Round 330] Multiplayer/co-op ally targeting — Tyler approved full scope
+// (all 4 sub-options an AskUserQuestion offered: ally Creature-targeting,
+// ally PLAYER-resource targeting, GainBlock-to-allies, and a "players in
+// run" condition) after real-DLL research confirmed the grounding APIs.
+// Direct sts2.dll IL reads this round (see claude/round330-*.md for the
+// full trail) confirmed `CombatState.Allies` (IReadOnlyList<Creature>,
+// directly backed by `_allies`) is populated by `AddCreature`, which
+// buckets EVERY player-side Creature into `_allies` on `AddCreature` —
+// including the CALLING player's own Creature (added via `AddPlayer` ->
+// `AttachCreature`+`AddCreature`, same bucket, no self-exclusion anywhere
+// in that path). `GetTeammatesOf(Creature)` is just
+// `GetCreaturesOnSide(creature.Side)` — i.e. `Allies` again — so it ALSO
+// includes the creature passed in. There is no real "allies excluding
+// self" API anywhere in the engine; every ally-targeting wrapper below
+// therefore filters `fgPlayer` out of `fgPlayer.CombatState.Allies` itself
+// (Forge's own logic, not a decompiled call) so "ally" stays meaningfully
+// distinct from the existing "Self" target rather than silently letting
+// "give Block to all allies" double-hit the caster too.
+//
+// These 5 are the same 5 action types already confirmed real,
+// Creature-targeted (DealDamage/ModifyStatus/RemoveAllStatuses/ModifyHp/
+// StunEnemy — see validTargetsForAction's existing AllEnemies/RandomEnemy
+// list) — AllAllies/RandomAlly are added to the SAME list for all 5, since
+// the generic wrapper mechanism (see actionToCSharp) is target-direction-
+// agnostic: it only needs a real IEnumerable<Creature> to pick/loop, and
+// Allies (filtered) is exactly as real as HittableEnemies.
+const ALLY_CREATURE_TARGETABLE_ACTIONS = ['DealDamage', 'ModifyStatus', 'RemoveAllStatuses', 'ModifyHp', 'StunEnemy'];
+
+// [Round 330] "Ally PLAYER-resource targeting" — Tyler: "Give energy/cards/
+// Block to ONE ally" (gap analysis). Of PLAYER_ONLY_ACTIONS' full list,
+// exactly these 5 resolve a single Player via resolvePlayerExpr(ctx) in
+// one clean substitution point each in their own actionToCSharp case
+// bodies (see those cases) with no other card/pile-identity tied to "this
+// specific card" — the clean subset, same reasoning
+// ExhaustCard/ModifyOrbSlots/EndTurn/ShuffleCardIntoDraw and every
+// "acts on THIS card" type (ModifyCost, Afflict/EnchantCard, etc.) are
+// deliberately excluded for this round (see claude/round330-*.md).
+// GainBlock is NOT on this list — it's a Creature-target action (see
+// ALLY_CREATURE_TARGETABLE_ACTIONS handling below), not a player-resource
+// one.
+const PLAYER_ALLY_TARGETABLE_ACTIONS = ['ModifyEnergy', 'ModifyGold', 'DrawCard', 'DiscardCard', 'CreateCard'];
+
 // [UNVERIFIED — list itself, not just the CreateCard action] Tyler: "Create
 // card in hand and draw pile should be 'Create Card'... this should pull a
 // dropdown menu containing all of the user's created token cards, as well
@@ -775,9 +817,17 @@ const CARD_POOL_CLASS_MAP = {
 const MAX_UPGRADE_TIERS = 4;
 
 function validTargetsForAction(actionType) {
-  return (PLAYER_ONLY_ACTIONS.includes(actionType) || SELF_ONLY_ACTIONS.includes(actionType))
-    ? ['Self']
-    : ['SingleEnemy', 'AllEnemies', 'Self', 'RandomEnemy'];
+  if (PLAYER_ONLY_ACTIONS.includes(actionType)) return ['Self'];
+  // [Round 330] GainBlock reverses its old forced-Self-only restriction —
+  // Tyler approved "Give Block to allies too" — but deliberately does NOT
+  // restore enemy-targeting (that was his own earlier explicit choice, see
+  // SELF_ONLY_ACTIONS' own comment); it joins AllAllies/RandomAlly instead,
+  // same "real Creature-target call, just restricted by design" reasoning.
+  if (actionType === 'GainBlock') return ['Self', 'AllAllies', 'RandomAlly'];
+  if (SELF_ONLY_ACTIONS.includes(actionType)) return ['Self'];
+  const base = ['SingleEnemy', 'AllEnemies', 'Self', 'RandomEnemy'];
+  // [Round 330] see ALLY_CREATURE_TARGETABLE_ACTIONS' own comment above.
+  return ALLY_CREATURE_TARGETABLE_ACTIONS.includes(actionType) ? [...base, 'AllAllies', 'RandomAlly'] : base;
 }
 
 // --- condition SUBJECT (who a per-creature condition like HasStatusStacks
@@ -1039,6 +1089,20 @@ function resolveTargetExpr(target) {
 // suffix dropped — `Player` isn't documented nullable and no real call
 // site null-checks it before using it this way.
 function resolvePlayerExpr(ctx) {
+  // [Round 330] "Ally PLAYER-resource targeting" — set ONLY by
+  // actionToCSharp's own PLAYER_ALLY_TARGETABLE_ACTIONS wrapper (see its
+  // comment there), which recursively calls this same function with a
+  // real, already-resolved single-Player local
+  // (`fgRandomAllyPlayerTarget`/`fgAllAlliesPlayerTarget`, itself sourced
+  // from an ally Creature's real `.Player` property — see that wrapper).
+  // Checked FIRST, before every other branch below, so it overrides
+  // cardPlayBound/entityKind for this one recursive call only — the outer,
+  // non-forced call these 5 action types' own case bodies would otherwise
+  // reach (cardPlay.Player / fgPlayer.Player / etc.) is deliberately
+  // bypassed once a real ally Player has already been picked, same
+  // "recursive call substitutes in a real local" shape as
+  // forcedTargetExpr's RandomEnemy/AllEnemies wrapper above.
+  if (ctx.forcedPlayerExpr) return ctx.forcedPlayerExpr;
   // [Fix, round 31 — real crash: godot.log showed a real
   // System.NullReferenceException inside the base game's own
   // CardPileCmd.DrawInternal, reached via TestChar.Relics.Group1Relic.
@@ -1643,6 +1707,90 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         '        { // [BEST EFFORT] AllEnemies — generic wrapper over fgPlayer.CombatState.HittableEnemies (see actionToCSharp\'s own comment on this block) — not a dedicated per-type API',
         '            foreach (var fgAllEnemiesTarget in fgPlayer.CombatState.HittableEnemies.ToList())',
         '            {',
+        inner,
+        '            }',
+        '        }',
+      ].join('\n');
+    }
+
+    // [Round 330] RandomAlly/AllAllies — same generic recursive-wrapper
+    // shape as RandomEnemy/AllEnemies just above, over
+    // `fgPlayer.CombatState.Allies` instead of `.HittableEnemies`. Filters
+    // `fgPlayer` itself out of Allies (`.Where(fgA => fgA != fgPlayer)`) —
+    // NOT a decompiled call, Forge's own logic — because direct sts2.dll IL
+    // reads this round confirmed `Allies`/`GetTeammatesOf` both include the
+    // querying player's own Creature (see ALLY_CREATURE_TARGETABLE_ACTIONS'
+    // own comment above for the full evidence trail); without the filter,
+    // "ally" would silently double-hit the caster identically to "Self",
+    // which isn't what either Tyler's request or a player picking
+    // AllAllies/RandomAlly instead of Self would expect. In true
+    // single-player (or before any teammate has joined), the filtered list
+    // is empty — RandomAlly's null-guard silently no-ops and AllAllies'
+    // foreach silently runs zero iterations, the same honest "nothing to
+    // do" behavior RandomEnemy/AllEnemies already have on an empty
+    // HittableEnemies list, not a crash.
+    if (action.target === 'RandomAlly') {
+      const inner = actionToCSharp(action, ctx, 'fgRandomAllyTarget');
+      return [
+        '        { // [BEST EFFORT, round 330] RandomAlly — generic wrapper over fgPlayer.CombatState.Allies, excluding the acting player\'s own creature (see actionToCSharp\'s own comment on this block) — not a dedicated per-type API',
+        '            var fgRandomAllyTarget = ForgeActions.PickRandomEnemy(fgPlayer.CombatState.Allies.Where(fgAllyCandidate => fgAllyCandidate != fgPlayer));',
+        '            if (fgRandomAllyTarget != null)',
+        '            {',
+        inner,
+        '            }',
+        '        }',
+      ].join('\n');
+    }
+    if (action.target === 'AllAllies') {
+      const inner = actionToCSharp(action, ctx, 'fgAllAlliesTarget');
+      return [
+        '        { // [BEST EFFORT, round 330] AllAllies — generic wrapper over fgPlayer.CombatState.Allies, excluding the acting player\'s own creature (see actionToCSharp\'s own comment on this block) — not a dedicated per-type API',
+        '            foreach (var fgAllAlliesTarget in fgPlayer.CombatState.Allies.Where(fgAllyCandidate => fgAllyCandidate != fgPlayer).ToList())',
+        '            {',
+        inner,
+        '            }',
+        '        }',
+      ].join('\n');
+    }
+
+    // [Round 330] "Ally PLAYER-resource targeting" — Tyler: "Give energy/
+    // cards/... to ONE ally" (gap analysis). Unlike the Creature-target
+    // wrapper just above, this doesn't touch `action.target` at all (these
+    // 5 PLAYER_ONLY_ACTIONS types are always Self-targeted at the
+    // Creature level, per validTargetsForAction) — it instead reads a
+    // SEPARATE `action.playerTarget` field and forces
+    // `resolvePlayerExpr(ctx)`'s return value (see that function's own
+    // `ctx.forcedPlayerExpr` branch) to a real ally Player, recursing with
+    // `forcedTargetExpr` still null (so `action.target` still resolves
+    // normally to `fgPlayer` — irrelevant here since none of these 5
+    // case bodies read `targetExpr`, only `resolvePlayerExpr(ctx)`) but
+    // `ctx.forcedPlayerExpr` now set. The `!ctx.forcedPlayerExpr` guard
+    // prevents this block from re-wrapping its own recursive call (which
+    // re-enters this same `forcedTargetExpr === null` branch since
+    // forcedTargetExpr is never set here) — same "own ctx flag naming the
+    // exact place NOT to re-wrap" shape as the SingleEnemy/targetMayBeNull
+    // block below uses `forcedTargetExpr !== null` for.
+    if (!ctx.forcedPlayerExpr && PLAYER_ALLY_TARGETABLE_ACTIONS.includes(action.type) &&
+        (action.playerTarget === 'RandomAlly' || action.playerTarget === 'AllAllies')) {
+      if (action.playerTarget === 'RandomAlly') {
+        const inner = actionToCSharp(action, { ...ctx, forcedPlayerExpr: 'fgRandomAllyPlayerTarget' }, null);
+        return [
+          '        { // [BEST EFFORT, round 330] RandomAlly (player-resource target) — picks one teammate\'s Player via fgPlayer.CombatState.Allies, excluding the acting player\'s own creature (see actionToCSharp\'s own comment on the Creature-target AllAllies/RandomAlly block above for the "Allies includes self" evidence)',
+          '            var fgRandomAllyPlayerCreature = ForgeActions.PickRandomEnemy(fgPlayer.CombatState.Allies.Where(fgAllyCandidate => fgAllyCandidate != fgPlayer));',
+          '            if (fgRandomAllyPlayerCreature != null)',
+          '            {',
+          '                var fgRandomAllyPlayerTarget = fgRandomAllyPlayerCreature.Player;',
+          inner,
+          '            }',
+          '        }',
+        ].join('\n');
+      }
+      const inner = actionToCSharp(action, { ...ctx, forcedPlayerExpr: 'fgAllAlliesPlayerTarget' }, null);
+      return [
+        '        { // [BEST EFFORT, round 330] AllAllies (player-resource target) — loops every teammate\'s Player via fgPlayer.CombatState.Allies, excluding the acting player\'s own creature',
+        '            foreach (var fgAllAlliesPlayerCreature in fgPlayer.CombatState.Allies.Where(fgAllyCandidate => fgAllyCandidate != fgPlayer).ToList())',
+        '            {',
+        '                var fgAllAlliesPlayerTarget = fgAllAlliesPlayerCreature.Player;',
         inner,
         '            }',
         '        }',
@@ -3379,6 +3527,34 @@ function conditionToCSharpRaw(cond, ctx = {}) {
         return `cardPlay.Player.PlayerCombatState.${prop} ${cmp} ${cond.value} /* [VERIFIED via reflect-baselib round 14a/14b] */`;
       }
       return `ForgeActions.TodoCondition("${cond.kind}(no cardPlay in scope on this hook)")`;
+    case 'PlayersInRun':
+      // [Round 330] "Players in run >= N" (gap analysis: v1.2.1). Grounded
+      // on `ICombatState.Players` — [VERIFIED via direct sts2.dll IL read,
+      // round 330] `CombatState.get_Players` is a real, public property
+      // computed from `PlayerCreatures` via a LINQ Select (confirmed by a
+      // direct IL dump), returning `IReadOnlyList<Player>` — distinct from
+      // `Allies` (Creature-typed, used by the ally-targeting wrappers in
+      // actionToCSharp above). Reached through `fgPlayer.CombatState`, not
+      // a bare `CombatState` — RelicModel has no such instance member (see
+      // resolvePlayerExpr's own comment for the full "why fgPlayer.
+      // CombatState" evidence), so this uses the SAME modern
+      // `ctx.fgPlayerBound` gate HandCardTypeCheck/OrbSlotCount/
+      // HasSpecificRelic/NoCopiesOfCardInHand/PetPositionIs already use
+      // (see HandCardTypeCheck's own comment) — real wherever a real
+      // `fgPlayer` Creature local is actually declared (every TRIGGER_HOOKS
+      // entry with a real playerExpr, every card trigger, every relic/
+      // mechanic hook with one), honest TodoCondition stub on Glow/
+      // Playability and the handful of Group B modifier hooks with
+      // `playerExpr: null` — the two contexts where `ctx.fgPlayerBound` is
+      // false and no `fgPlayer` local exists to reference. Deliberately
+      // NOT generalized via `resolvePlayerExpr(ctx)` like those 5 sibling
+      // conditions — `resolvePlayerExpr` returns a Player-typed expression
+      // (`this.Owner`, `cardPlay.Player`, etc.), which has no `.CombatState`
+      // (only `Creature` does — the exact type-mismatch trap flagged during
+      // this round's research) — `fgPlayer` itself (Creature-typed) is the
+      // only real path to `.CombatState.Players`.
+      if (!ctx.fgPlayerBound) return `ForgeActions.TodoCondition("PlayersInRun(no player in scope on this hook)")`;
+      return `fgPlayer.CombatState.Players.Count ${cmp} ${cond.value} /* [VERIFIED via direct sts2.dll IL read — CombatState.Players, round 330] */`;
     case 'CardsInHand':
       // [BEST EFFORT] upgraded 2026-08-26 — decompiling
       // TheBurdenedNewCharacter's real source (Tyler gave direct access,

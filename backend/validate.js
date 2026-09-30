@@ -142,6 +142,16 @@ const CONDITION_KINDS = [
   // full evidence trail (reuses ForgePetPositionPatch's own real,
   // decompiled Allies-ordering logic).
   'PetPositionIs',
+  // [Round 330] "Players in run >= N" (gap analysis v1.2.1, multiplayer/
+  // co-op scope Tyler approved in full). Comparator+value, no subject —
+  // see compiler.js:conditionToCSharpRaw's PlayersInRun case for the full
+  // ICombatState.Players evidence trail. Joins
+  // GENERALIZED_PLAYER_ONLY_CONDITION_KINDS below, same `ctx.fgPlayerBound`
+  // gate as HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
+  // NoCopiesOfCardInHand/PetPositionIs — its real expression needs a
+  // genuine `fgPlayer` Creature local for `.CombatState`, unavailable on
+  // Glow/Playability or a Group B modifier hook with no real playerExpr.
+  'PlayersInRun',
 ];
 // cardPlayBound-only condition kinds — down to just EnemyIntent as of
 // round 63. HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
@@ -164,7 +174,10 @@ const CARD_PLAY_BOUND_ONLY_CONDITION_KINDS = ['EnemyIntent'];
 // [Round 303] PetPositionIs joins this list too — same real Player-in-
 // scope requirement (resolvePlayerExpr(ctx)/ctx.fgPlayerBound) as the 4
 // kinds above, see compiler.js:conditionToCSharpRaw's PetPositionIs case.
-const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'PetPositionIs'];
+// [Round 330] PlayersInRun joins this list too — same real `fgPlayer`-
+// Creature-local requirement (for `.CombatState.Players`) as the 5 kinds
+// above, see compiler.js:conditionToCSharpRaw's PlayersInRun case.
+const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'PetPositionIs', 'PlayersInRun'];
 const COMPARATORS = ['lt', 'lte', 'eq', 'gte', 'gt'];
 // 12-action-type model — replaces the old 17-type list (ApplyStatus/
 // RemoveStatus/ApplyCustomStatus/RemoveCustomStatus/LoseHp/HealHp/GainGold/
