@@ -4638,7 +4638,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   TransformDeckCards: 'transform deck cards into',
   SummonPet: 'summon pet companion monster',
   PetAttack: 'pet attack damage companion monster',
-  DiscoverCard: 'discover choose a card pool colorless free this turn combat',
+  DiscoverCard: 'discover choose a card pool colorless free this turn combat specific select tag tagged',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -11644,12 +11644,20 @@ function describeAction(act){
     // full real-sts2.dll evidence trail.
     case 'DiscoverCard': {
       const discoverCount = Number.isInteger(act.discoverCount) ? act.discoverCount : 3;
-      const poolPhrase = (!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'your character’s' : `the ${act.discoverPool}`;
       const typePhrase = act.discoverCardType ? ` ${act.discoverCardType}` : '';
+      const tagPhrase = act.discoverTagFilter ? ` tagged "${act.discoverTagFilter}"` : '';
       const destPhrase = act.destination === 'DrawPile' ? 'your draw pile' : act.destination === 'Discard' ? 'your discard pile' : 'your hand';
       const skipPhrase = act.discoverCanSkip === false ? ' (must pick one)' : '';
       const freePhrase = act.discoverFreeCost === 'ThisTurn' ? ' for free this turn' : act.discoverFreeCost === 'ThisCombat' ? ' for free this combat' : '';
-      return `Discover ${discoverCount}${typePhrase} card${discoverCount===1?'':'s'} from ${poolPhrase} pool, add the pick to ${destPhrase}${freePhrase}${skipPhrase}`;
+      // [2026-09-30 follow-up] "select cards to be discovered" -- a
+      // SpecificCards source names the picked cards directly rather than a
+      // pool, since there's no single pool it's drawing from.
+      const sourcePhrase = act.discoverSourceKind === 'SpecificCards'
+        ? (Array.isArray(act.discoverCardRefs) && act.discoverCardRefs.length
+          ? `${act.discoverCardRefs.map(id => (state.cards.find(c=>c.id===id)||{}).name || 'Untitled').join(', ')}`
+          : 'a hand-picked list (none chosen yet)')
+        : `${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'your character’s' : `the ${act.discoverPool}`} pool`;
+      return `Discover ${discoverCount}${typePhrase} card${discoverCount===1?'':'s'}${tagPhrase} from ${sourcePhrase}, add the pick to ${destPhrase}${freePhrase}${skipPhrase}`;
     }
     default: return '';
   }
@@ -15224,6 +15232,12 @@ function ensureActionRefDefaults(act){
   if(act.type === 'DiscoverCard' && act.destination === undefined){
     act.destination = 'Hand';
   }
+  // [2026-09-30 follow-up] discoverSourceKind defaults to 'Pool' -- the
+  // original, already-shipped behavior, unchanged unless the author
+  // explicitly switches to 'SpecificCards'.
+  if(act.type === 'DiscoverCard' && act.discoverSourceKind === undefined){
+    act.discoverSourceKind = 'Pool';
+  }
 
   if(act.type === 'CreateCard'){
     if(act.destination === undefined) act.destination = 'Hand';
@@ -15999,19 +16013,53 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // own pick, "Recommended": author's choice of Hand/DrawPile/Discard,
     // same real AddGeneratedCardToCombat call either action compiles to).
     case 'DiscoverCard': {
+      // [2026-09-30 follow-up] Tyler: "is it possible to add select cards
+      // to be discovered? also possibly like 3 cards from a group of cards
+      // with a tag?" -- discoverSourceKind toggles between the original
+      // Pool behavior and a hand-picked SpecificCards list; needs a
+      // re-render on change (different sibling controls), same "toggle
+      // that swaps which fields show" treatment the `.a-mode` select gets
+      // in wireActionRowHandlers below.
+      const sourceKind = act.discoverSourceKind === 'SpecificCards' ? 'SpecificCards' : 'Pool';
+      const sourceKindHtml = `<select class="a-discover-sourcekind" title="Draw discover candidates from a real card pool, or hand-pick specific cards of this character's own.">
+        <option value="Pool" ${sourceKind === 'Pool' ? 'selected' : ''}>a pool</option>
+        <option value="SpecificCards" ${sourceKind === 'SpecificCards' ? 'selected' : ''}>specific cards</option>
+      </select>`;
       const discoverPoolHtml = `<select class="a-discover-pool" title="Which real card pool to draw the discover options from.">
         <option value="OwnCharacter" ${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'selected' : ''}>Your Own Character's Pool</option>
         ${CARD_POOL_VALUES.map(p => `<option value="${p}" ${act.discoverPool === p ? 'selected' : ''}>${p}</option>`).join('')}
       </select>`;
+      // A plain checkbox per this character's own defined cards (any
+      // rarity -- Discover isn't Token-only like CreateCard's own tokenRef
+      // picker, see discoverCardRefs' own schema description). No existing
+      // "array of card ids" UI convention anywhere else in this app to
+      // reuse (CreateCard/TransformDeckCards/etc. are all single-card
+      // pickers) -- new, minimal checkbox-list pattern.
+      const selectedRefs = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
+      const cardRefsPickerHtml = state.cards.length
+        ? `<div class="a-discover-cardrefs-picker" style="display:flex; flex-wrap:wrap; gap:4px 12px; margin:4px 0;">
+            ${state.cards.map(c => `<label class="a-check-label"><input type="checkbox" class="a-discover-cardref-check" value="${escapeAttr(c.id)}" ${selectedRefs.has(c.id) ? 'checked' : ''}> ${escapeHtml(c.name || 'Untitled')}</label>`).join('')}
+          </div>`
+        : `<div class="hint-small">— no cards defined yet —</div>`;
       const hasCardTypeFilter = !!act.discoverCardType;
       const cardTypeFilterHtml = `<label class="a-check-label" title="Only offer cards of one type."><input type="checkbox" class="a-discover-typefilter-check" ${hasCardTypeFilter ? 'checked' : ''}> only</label> <select class="a-discover-cardtype" ${hasCardTypeFilter ? '' : 'disabled'}>${CARD_TYPE_ORDER.map(t => `<option value="${t}" ${act.discoverCardType === t ? 'selected' : ''}>${t}</option>`).join('')}</select> <span class="cond-word">cards,</span>`;
+      // Tag filter -- same checkbox-enables-disabled-select +
+      // allGameplayTags() convention as renderCostReductionRows'/
+      // ModifyShuffleOrder's own tag filters (round 165 / 2026-09-23).
+      // Composable with either sourceKind above, per schema's own
+      // discoverTagFilter paragraph.
+      const discoverTagOptions = allGameplayTags();
+      const hasTagFilter = !!act.discoverTagFilter;
+      const tagFilterHtml = `<label class="a-check-label" title="Only offer cards tagged with one of this character's own gameplay tags."><input type="checkbox" class="a-discover-tagfilter-check" ${hasTagFilter ? 'checked' : ''} ${discoverTagOptions.length ? '' : 'disabled'}> tagged</label> ${discoverTagOptions.length
+        ? `<select class="a-discover-tagfilter" ${hasTagFilter ? '' : 'disabled'}>${discoverTagOptions.map(t => `<option value="${escapeAttr(t)}" ${act.discoverTagFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`
+        : `<select class="a-discover-tagfilter" disabled><option value="">— no gameplay tags defined yet —</option></select>`} <span class="cond-word">,</span>`;
       const canSkipHtml = `<label class="a-check-label" title="If unchecked, the player must pick one of the offered cards -- no skip."><input type="checkbox" class="a-discover-canskip" ${act.discoverCanSkip === false ? '' : 'checked'}> Can be skipped</label>`;
       const freeCostHtml = `<select class="a-discover-freecost" title="Make the discovered card free -- calls the same real CardModel.SetToFreeThisTurn()/SetToFreeThisCombat() methods the one real vanilla Discovery card itself uses.">
         <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>and it costs normal Energy</option>
         <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>and it's free this turn</option>
         <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
       </select>`;
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${discoverPoolHtml}${cardTypeFilterHtml} <span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${canSkipHtml} ${freeCostHtml}<span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${cardTypeFilterHtml} ${tagFilterHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${canSkipHtml} ${freeCostHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
       break;
     }
     default:
@@ -16133,6 +16181,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
     delete act.discoverCount; delete act.discoverPool; delete act.discoverCardType; delete act.discoverCanSkip; delete act.discoverFreeCost;
+    delete act.discoverSourceKind; delete act.discoverCardRefs; delete act.discoverTagFilter;
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
@@ -16260,6 +16309,30 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   };
   const discoverPoolSelect = row.querySelector('.a-discover-pool');
   if(discoverPoolSelect) discoverPoolSelect.onchange = e=> act.discoverPool = e.target.value;
+  // [2026-09-30 follow-up] discoverSourceKind -- DOES need a re-render
+  // (Pool shows discoverPoolHtml, SpecificCards shows the card-checkbox
+  // picker instead -- genuinely different sibling controls), same
+  // treatment modeSelect gets above.
+  const discoverSourceKindSelect = row.querySelector('.a-discover-sourcekind');
+  if(discoverSourceKindSelect) discoverSourceKindSelect.onchange = e=>{
+    act.discoverSourceKind = e.target.value;
+    if(act.discoverSourceKind !== 'SpecificCards') delete act.discoverCardRefs;
+    else delete act.discoverPool;
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  // discoverCardRefs -- plain checkbox list, no re-render needed (doesn't
+  // change which other fields this row shows, same as afflictionRefSelect/
+  // enchantmentRefSelect above); each checkbox just pushes/removes its own
+  // card id from the array.
+  row.querySelectorAll('.a-discover-cardref-check').forEach(cb=>{
+    cb.onchange = e=>{
+      const refs = new Set(Array.isArray(act.discoverCardRefs) ? act.discoverCardRefs : []);
+      if(e.target.checked) refs.add(e.target.value);
+      else refs.delete(e.target.value);
+      act.discoverCardRefs = Array.from(refs);
+    };
+  });
   // Same "checkbox enables a disabled select" convention as
   // renderCostReductionRows' own typeFilterCheck/typeFilterSel (round 166,
   // Tyler: "add two checkboxes below the sentence to filter by type or
@@ -16274,6 +16347,20 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     };
   }
   if(discoverTypeFilterSel) discoverTypeFilterSel.onchange = e=> act.discoverCardType = e.target.value;
+  // [2026-09-30 follow-up] discoverTagFilter -- same checkbox-enables-
+  // disabled-select convention as discoverTypeFilterSel/Check above and
+  // mod-shuffle-tagfilter's own pair (round 2026-09-23) -- no re-render
+  // needed.
+  const discoverTagFilterSel = row.querySelector('.a-discover-tagfilter');
+  const discoverTagFilterCheck = row.querySelector('.a-discover-tagfilter-check');
+  if(discoverTagFilterCheck){
+    discoverTagFilterCheck.onchange = e=>{
+      discoverTagFilterSel.disabled = !e.target.checked;
+      if(e.target.checked && discoverTagFilterSel.value) act.discoverTagFilter = discoverTagFilterSel.value;
+      else delete act.discoverTagFilter;
+    };
+  }
+  if(discoverTagFilterSel) discoverTagFilterSel.onchange = e=>{ if(discoverTagFilterCheck.checked) act.discoverTagFilter = e.target.value; };
   const discoverCanSkipCheck = row.querySelector('.a-discover-canskip');
   if(discoverCanSkipCheck) discoverCanSkipCheck.onchange = e=> act.discoverCanSkip = e.target.checked;
   const discoverFreeCostSelect = row.querySelector('.a-discover-freecost');

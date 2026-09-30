@@ -1054,6 +1054,55 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (!['ThisTurn', 'ThisCombat'].includes(act.discoverFreeCost)) errors.push(`${p}.discoverFreeCost "${act.discoverFreeCost}" is not one of: ThisTurn, ThisCombat.`);
       if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverFreeCost is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
     }
+    // discoverSourceKind / discoverCardRefs / discoverTagFilter — DiscoverCard
+    // follow-up (2026-09-30). Tyler: "is it possible to add select cards to
+    // be discovered? also possibly like 3 cards from a group of cards with
+    // a tag?" See schema/character.schema.json's own per-field descriptions
+    // for the full evidence trail.
+    if (act.discoverSourceKind !== undefined) {
+      if (!['Pool', 'SpecificCards'].includes(act.discoverSourceKind)) errors.push(`${p}.discoverSourceKind "${act.discoverSourceKind}" is not one of: Pool, SpecificCards.`);
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverSourceKind is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+      // discoverPool is silently ignored by compiler.js whenever
+      // discoverSourceKind is "SpecificCards" (the whole GetUnlockedCards
+      // resolution is replaced outright) — reject the combination outright
+      // rather than let an explicit discoverPool choice go quietly unused,
+      // same "fail loud, not silent" standard as everywhere else in this
+      // file.
+      if (act.discoverSourceKind === 'SpecificCards' && act.discoverPool !== undefined) {
+        errors.push(`${p}: discoverPool is ignored once discoverSourceKind is "SpecificCards" (the whole pool resolution is replaced by discoverCardRefs) — remove discoverPool or set discoverSourceKind back to "Pool".`);
+      }
+    }
+    if (act.discoverCardRefs !== undefined) {
+      if (!Array.isArray(act.discoverCardRefs)) {
+        errors.push(`${p}.discoverCardRefs must be an array if present.`);
+      } else {
+        act.discoverCardRefs.forEach((ref, ri) => {
+          if (!cardIds.has(ref)) errors.push(`${p}.discoverCardRefs[${ri}] "${ref}" doesn't match any defined card id.`);
+        });
+      }
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverCardRefs is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+      else if (act.discoverSourceKind !== 'SpecificCards') errors.push(`${p}: discoverCardRefs is only meaningful when discoverSourceKind is "SpecificCards" — it is "${act.discoverSourceKind || 'Pool'}".`);
+    }
+    if (act.type === 'DiscoverCard' && act.discoverSourceKind === 'SpecificCards' && (!Array.isArray(act.discoverCardRefs) || !act.discoverCardRefs.length)) {
+      errors.push(`${p}: discoverSourceKind is "SpecificCards" but discoverCardRefs is empty — pick at least one card, or switch discoverSourceKind back to "Pool".`);
+    }
+    if (act.discoverTagFilter !== undefined) {
+      if (typeof act.discoverTagFilter !== 'string' || !act.discoverTagFilter.length || act.discoverTagFilter.length > 40) {
+        errors.push(`${p}.discoverTagFilter must be a non-empty string of at most 40 characters if present.`);
+      } else if (xContext.gameplayTagsInUse && !xContext.gameplayTagsInUse.has(act.discoverTagFilter.toLowerCase())) {
+        errors.push(`${p}.discoverTagFilter "${act.discoverTagFilter}" doesn't match any card.gameplayTags value used anywhere in this character.`);
+      }
+      if (act.type !== 'DiscoverCard') errors.push(`${p}: discoverTagFilter is only meaningful on "DiscoverCard" — action type is "${act.type}".`);
+      // Only cards this character itself authored ever implement
+      // IForgeTaggedCard (see schema's own discoverTagFilter paragraph) --
+      // pairing a tag filter with any real base-game pool other than the
+      // default "OwnCharacter" is a guaranteed-always-empty candidate list,
+      // not a crash, but a silent no-op this project doesn't ship without
+      // flagging.
+      if (act.discoverPool !== undefined && act.discoverPool !== 'OwnCharacter') {
+        errors.push(`${p}: discoverTagFilter can't be combined with discoverPool "${act.discoverPool}" — only this character's own authored cards ever carry a Forge gameplay tag, so a real base-game pool would always come back with zero candidates. Remove discoverTagFilter, or leave discoverPool unset/"OwnCharacter".`);
+      }
+    }
     if (act.tokenRefKind !== undefined) {
       if (!['custom', 'vanilla'].includes(act.tokenRefKind)) errors.push(`${p}.tokenRefKind "${act.tokenRefKind}" is not one of: custom, vanilla.`);
       if (act.type !== 'CreateCard') errors.push(`${p}: tokenRefKind is only meaningful on "CreateCard" — action type is "${act.type}".`);
@@ -1595,7 +1644,14 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // entry whose OWN pile isn't Hand (see validateActions' own
     // ReturnToHand check below), so validateActions needs the pile this
     // specific effect block is scoped to, not just its trigger.
-    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
+    // gameplayTagsInUse [2026-09-30 follow-up] -- threaded into xContext
+    // (not a new positional param) so validateActions can cross-validate
+    // discoverTagFilter the same way validateConditions/validateModifiers/
+    // validateAdvancedOptions already cross-validate PlayedCardHasTag/
+    // shuffleCardTagFilter/cardTagFilter against it. The followUp recursive
+    // validateActions call below (this same function's own xContext,
+    // unchanged) forwards it automatically since it's just spread through.
+    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse });
     // elseActions — Tyler's "if X, deal 12, else deal 5" ask. Optional
     // (undefined means "no else branch", same as an empty array) — only
     // validated when present, but when present AND non-empty, this effect
@@ -1607,7 +1663,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // at all — rejected here instead of shipping a UI-visible action list
     // that quietly never runs).
     if (eff.elseActions !== undefined) {
-      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile });
+      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse });
     }
     if (Array.isArray(eff.elseActions) && eff.elseActions.length && (!Array.isArray(eff.conditions) || !eff.conditions.length)) {
       errors.push(`${p}.elseActions has entries but ${p}.conditions is empty — "else" only makes sense with an "if" condition above it to be the opposite of. Add a condition, or remove the else actions.`);

@@ -2366,12 +2366,53 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const discoverPoolExpr = (action.discoverPool && action.discoverPool !== 'OwnCharacter' && CARD_POOL_CLASS_MAP[action.discoverPool])
         ? `MegaCrit.Sts2.Core.Models.ModelDb.CardPool<${CARD_POOL_CLASS_MAP[action.discoverPool]}>()`
         : `${playerExpr}.Character.CardPool`;
+      // [2026-09-30 follow-up] Tyler: "is it possible to add select cards
+      // to be discovered?" -- discoverSourceKind:'SpecificCards' replaces
+      // the whole discoverPoolExpr.GetUnlockedCards(...) resolution below
+      // with a literal, author-picked list of this character's own cards.
+      // See schema's own discoverSourceKind paragraph for the full IL
+      // evidence that CardFactory.GetDistinctForCombat's real selection
+      // lambda is generic over ANY IEnumerable<CardModel> of canonical
+      // references -- same ctx.cardClassById resolution CreateCard's own
+      // tokenRef already uses (ModelDb.Card<T>() per ref). Bare
+      // `List<CardModel>` (not fully-qualified) -- every template this
+      // case can compile into (Card/Relic/Power/Affliction/Enchantment)
+      // already `using`s both System.Collections.Generic and
+      // MegaCrit.Sts2.Core.Models, same as ModifyShuffleOrder's own
+      // `List<CardModel> cards` hook parameter above.
+      let discoverSourceExpr;
+      if (action.discoverSourceKind === 'SpecificCards') {
+        const refClassExprs = (Array.isArray(action.discoverCardRefs) ? action.discoverCardRefs : [])
+          .map(id => ctx.cardClassById && ctx.cardClassById.get(id))
+          .filter(Boolean)
+          .map(cls => `MegaCrit.Sts2.Core.Models.ModelDb.Card<${cls}>()`);
+        if (!refClassExprs.length) {
+          return `        ForgeActions.Todo("DiscoverCard -- discoverSourceKind is SpecificCards but no discoverCardRefs resolved to a real card class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+        }
+        discoverSourceExpr = `new List<CardModel> { ${refClassExprs.join(', ')} }`;
+      } else {
+        discoverSourceExpr = `${discoverPoolExpr}.GetUnlockedCards(${playerExpr}.UnlockState, ${playerExpr}.RunState.CardMultiplayerConstraint)`;
+      }
       // Optional type filter -- Forge's own .Where(...) on top of the real,
       // confirmed CardModel.Type getter (see schema's own discoverCardType
       // paragraph); GetUnlockedCards/GetDistinctForCombat have no
       // type-filter parameter of their own to pass this through to.
+      // Composes with either discoverSourceKind value.
       const typeFilterExpr = action.discoverCardType
         ? `.Where(fgDiscoverC => fgDiscoverC.Type == MegaCrit.Sts2.Core.Entities.Cards.CardType.${action.discoverCardType})`
+        : '';
+      // [2026-09-30 follow-up] Tyler: "also possibly like 3 cards from a
+      // group of cards with a tag?" -- discoverTagFilter, also composable
+      // with either discoverSourceKind value. Same real, already-proven
+      // Forge-owned IForgeTaggedCard mechanism PlayedCardHasTag/
+      // cardTagFilter/shuffleCardTagFilter already use elsewhere in this
+      // file -- see schema's own discoverTagFilter paragraph for the full
+      // evidence trail (including why validate.js rejects this alongside
+      // a non-"OwnCharacter" discoverPool: only Forge-authored cards ever
+      // implement IForgeTaggedCard, so that combination would always
+      // resolve to zero candidates).
+      const tagFilterExpr = action.discoverTagFilter
+        ? `.Where(fgDiscoverC => (fgDiscoverC as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(action.discoverTagFilter)}) == true)`
         : '';
       // Real `canSkip` bool parameter of CardSelectCmd.FromChooseACardScreen
       // -- the one real Discovery card always passes true; Tyler chose to
@@ -2399,7 +2440,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         ? `            fgDiscoverPick.SetToFreeThisCombat(); // [VERIFIED] real CardModel.SetToFreeThisCombat() — a separate, wider-scoped real sibling method`
         : '';
       return [
-        `        var fgDiscoverPool = ${discoverPoolExpr}.GetUnlockedCards(${playerExpr}.UnlockState, ${playerExpr}.RunState.CardMultiplayerConstraint)${typeFilterExpr}; // [VERIFIED] see compiler.js's own comment on this case`,
+        `        var fgDiscoverPool = ${discoverSourceExpr}${typeFilterExpr}${tagFilterExpr}; // [VERIFIED] see compiler.js's own comment on this case`,
         `        var fgDiscoverChoices = MegaCrit.Sts2.Core.Factories.CardFactory.GetDistinctForCombat(${playerExpr}, fgDiscoverPool, ${count}, ${playerExpr}.RunState.Rng.CombatCardGeneration).ToList(); // [VERIFIED]`,
         `        var fgDiscoverPick = await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromChooseACardScreen(choiceContext, fgDiscoverChoices, ${playerExpr}, ${canSkipExpr}); // [VERIFIED]`,
         `        if (fgDiscoverPick != null)`,
