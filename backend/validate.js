@@ -252,7 +252,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS } = require('./compiler');
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
 // set, targetExpr null — see compiler.js:generateHookEffects' 3-way branch
@@ -1168,6 +1168,80 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // mechanic id, unchanged) is read. Always reads the ACTING PLAYER's own
     // stacks — "the status I have", Tyler's own wording — see
     // compiler.js:resolveAmountExpr.
+    // [Round 329] amountFormula — Tyler's structured multi-term scaling
+    // builder (see schema's own amountFormula description for the full
+    // "ignore that, i dont want a free-text editor" background). Checked
+    // BEFORE amountScalesWith* below so the mutual-exclusivity error names
+    // amountFormula as the reason, matching how amountIsX's own check
+    // above already reads.
+    if (act.amountFormula !== undefined) {
+      if (!Array.isArray(act.amountFormula) || act.amountFormula.length < 1 || act.amountFormula.length > MAX_AMOUNT_FORMULA_TERMS) {
+        errors.push(`${p}.amountFormula must be an array of 1-${MAX_AMOUNT_FORMULA_TERMS} terms.`);
+      } else {
+        if (act.amountIsX === true || act.amountIsStarX === true || act.amountScalesWithStatus || act.amountScalesWithBuiltinStatus || act.amountScalesWithStatusKind) {
+          errors.push(`${p}.amountFormula can't be combined with amountIsX/amountIsStarX/amountScalesWith* — alternate sources for the same amount, not stackable.`);
+        }
+        act.amountFormula.forEach((term, ti) => {
+          const tp = `${p}.amountFormula[${ti}]`;
+          if (!term || typeof term !== 'object') { errors.push(`${tp} must be an object.`); return; }
+          if (!AMOUNT_FORMULA_SOURCES.includes(term.source)) {
+            errors.push(`${tp}.source "${term.source}" is not one of: ${AMOUNT_FORMULA_SOURCES.join(', ')}.`);
+            return;
+          }
+          if (typeof term.value !== 'number' || Number.isNaN(term.value)) {
+            errors.push(`${tp}.value must be a number.`);
+          }
+          if (term.sign !== undefined && !['+', '-'].includes(term.sign)) {
+            errors.push(`${tp}.sign "${term.sign}" is not one of: +, -.`);
+          }
+          // PendingDamage reads the real hook-local `amount` param
+          // BeforeMyDamageReceived/BeforeEnemyDamageReceived's own real
+          // signatures declare (see compiler.js:TRIGGER_HOOKS) — that local
+          // plainly doesn't exist on any other trigger, so referencing it
+          // there would be an undefined-variable C# compile failure
+          // (CS0103), same "reject clearly" convention as every other
+          // trigger-scoped check in this file.
+          if (AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(term.source) && !(xContext.trigger !== undefined && AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(xContext.trigger))) {
+            errors.push(`${tp}.source "${term.source}" only makes sense on trigger ${AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.join(' or ')} (got "${xContext.trigger}") — no other trigger's hook body has this real value in scope.`);
+          }
+          if (AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) {
+            if (term.subject !== undefined && !['Self', 'Target'].includes(term.subject)) {
+              errors.push(`${tp}.subject "${term.subject}" is not one of: Self, Target.`);
+            } else if (term.subject === 'Target' && xContext.trigger !== undefined && TARGETLESS_BOUND_HOOK_TRIGGERS.has(xContext.trigger)) {
+              // Same CS0103 risk amountScalesWithSubject's own "Target" check
+              // above guards against — "Target" here resolves through
+              // resolveTargetExpr(action.target), which this trigger's hook
+              // body never has a real fgTarget bound for.
+              errors.push(`${tp}.subject is "Target" but trigger "${xContext.trigger}" only exposes one real Creature (bound as fgPlayer), no second party — use "Self" instead.`);
+            }
+          } else if (term.subject !== undefined) {
+            errors.push(`${tp}.subject is only meaningful on ${AMOUNT_FORMULA_SUBJECT_SOURCES.join('/')} sources — this term's source is "${term.source}".`);
+          }
+          if (AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)) {
+            const scaleKind = term.source === 'VanillaStatusStacks' ? 'vanilla' : 'custom';
+            if (scaleKind === 'vanilla') {
+              if (!isNonEmptyString(term.builtinStatusRef)) errors.push(`${tp}.source is "VanillaStatusStacks" but builtinStatusRef is missing.`);
+              else if (!BUILTIN_STATUSES.includes(term.builtinStatusRef)) errors.push(`${tp}.builtinStatusRef "${term.builtinStatusRef}" is not one of the known built-in statuses.`);
+            } else {
+              if (!isNonEmptyString(term.statusRef)) errors.push(`${tp}.source is "CustomStatusStacks" but statusRef is missing.`);
+              else if (!mechanicIds.has(term.statusRef)) errors.push(`${tp}.statusRef "${term.statusRef}" doesn't match any defined mechanic id.`);
+            }
+          }
+        });
+      }
+    }
+    if (act.amountFormulaClamp !== undefined) {
+      if (!act.amountFormulaClamp || typeof act.amountFormulaClamp !== 'object') {
+        errors.push(`${p}.amountFormulaClamp must be an object if present.`);
+      } else {
+        const { min, max } = act.amountFormulaClamp;
+        if (min !== undefined && typeof min !== 'number') errors.push(`${p}.amountFormulaClamp.min must be a number if present.`);
+        if (max !== undefined && typeof max !== 'number') errors.push(`${p}.amountFormulaClamp.max must be a number if present.`);
+        if (typeof min === 'number' && typeof max === 'number' && min > max) {
+          errors.push(`${p}.amountFormulaClamp.min (${min}) is greater than .max (${max}).`);
+        }
+      }
+    }
     if (act.amountScalesWithStatus || act.amountScalesWithBuiltinStatus || act.amountScalesWithStatusKind) {
       const scaleKind = act.amountScalesWithStatusKind === 'vanilla' ? 'vanilla' : 'custom';
       if (act.amountScalesWithStatusKind !== undefined && !['vanilla', 'custom'].includes(act.amountScalesWithStatusKind)) {

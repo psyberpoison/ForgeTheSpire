@@ -1710,6 +1710,51 @@
             ],
             "description": "used only when per-stack scaling is on (amountScalesWithStatus/amountScalesWithBuiltinStatus set) \u2014 whose stacks of that status/mechanic to count. \"Self\" (the acting player) is the default and the ONLY subject this ever checked before this field existed, so an omitted/undefined value reads as \"Self\" and every package saved before this field existed keeps compiling to the exact same behavior it always had. \"Target\" reuses this action's OWN resolved target (whichever creature it's already affecting) \u2014 real and grounded, since by the time this is read the action's target has already been confirmed resolvable (backend/compiler.js's actionToCSharp falls back to an honest Todo stub for the WHOLE action before ever reaching the amount otherwise). \"AllEnemies\" has NO confirmed enumerable \"every enemy\" API anywhere in this codebase \u2014 same gap resolveTargetExpr's own AllEnemies case already has \u2014 so it compiles to a new ForgeActions.TodoAmount(...) stub (throws at runtime) rather than guessing at one; shown in the UI anyway per this project's established \"compiles but throws is better than might not compile\" convention, with an honest inline warning."
           },
+          "amountFormula": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "enum": ["Literal", "CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"]
+                },
+                "sign": {
+                  "enum": ["+", "-"]
+                },
+                "value": {
+                  "type": "number"
+                },
+                "subject": {
+                  "enum": ["Self", "Target"]
+                },
+                "statusKind": {
+                  "enum": ["vanilla", "custom"]
+                },
+                "statusRef": {
+                  "type": "string"
+                },
+                "builtinStatusRef": {
+                  "type": "string"
+                }
+              },
+              "required": ["source", "value"]
+            },
+            "description": "[Round 329, 2026-09-30] Tyler, after the slay.spencerstiles.com changelog gap analysis flagged Forge's scaling as a single fixed source (amount * one status's stacks): asked for a real way to combine several values. Explicitly rejected a free-text expression field (\"ignore that. i dont want a free-text editor\") in favor of this structured list of terms, each independently signed and summed \u2014 no syntax to type or typo. When present (non-empty), takes priority over amount/amountIsX/amountIsStarX/amountScalesWith* on this SAME action \u2014 alternate sources for the same amount, not stackable (backend/validate.js rejects combining them, same rule those already follow with each other). Applies to every action type that already funnels through resolveAmountExpr (DealDamage, GainBlock, ModifyHp, ModifyEnergy, ModifyGold, ModifyOrbSlots, DrawCard, DiscardCard, ExhaustCard, CreateCard, AfflictCard, EnchantCard, and ModifyStatus's own per-entry amount \u2014 shared across every entry, exactly like amountScalesWith* already is) since it's wired in at that one shared resolution point rather than duplicated per action type. Each term's `value` is EITHER the term's own contribution (source \"Literal\") OR a multiplier on a real accessor (every other source \u2014 same `amount * GetStatusStacks<T>(...)` shape the existing single-source scaling already uses, generalized to N terms); `sign` (default \"+\") decides whether the term adds or subtracts. `subject` (default \"Self\", reusing this action's own resolved target for \"Target\" \u2014 the same resolveTargetExpr(action.target) amountScalesWithSubject's own \"Target\" case already uses) only applies to CurrentHp/MaxHp/CustomStatusStacks/VanillaStatusStacks \u2014 no \"AllEnemies\" subject this round, since Tyler's own answer named only self/target. `statusKind`/`statusRef`/`builtinStatusRef` only apply to CustomStatusStacks/VanillaStatusStacks (same shape amountScalesWithStatusKind/amountScalesWithStatus/amountScalesWithBuiltinStatus already use, cross-checked the same way in backend/validate.js). Every source is a real, independently IL-verified accessor \u2014 see backend/compiler.js's AMOUNT_FORMULA_SOURCES doc comment for the full evidence trail per source, including \"Gold\" (Player.Gold, [VERIFIED round 329 via direct sts2.dll IL read] \u2014 a real public property Forge previously only ever wrote, never read) and \"PendingDamage\" (the real `decimal amount` hook-local BeforeMyDamageReceived/BeforeEnemyDamageReceived's own real params already carry \u2014 gated to ONLY those two triggers, backend/validate.js rejects it elsewhere since the local plainly doesn't exist anywhere else). CardsPlayedThisTurn/AttacksPlayedThisTurn were deliberately left out of the source list this round \u2014 the existing condition's own codegen reads a bare `Owner` whose real type differs between a card/relic (Player) and a mechanic's own PowerModel (Creature), an already-flagged ambiguity this round didn't re-derive; pulling it into a formula term without that would risk an unverified compile failure on a future mechanic-hosted formula."
+          },
+          "amountFormulaClamp": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
+            },
+            "description": "[Round 329] Only meaningful alongside amountFormula above \u2014 optional Math.Max/Math.Min clamp applied to the SUMMED formula result, both bounds independently optional. This is the structured builder's own answer to the free-text tool's max(0, ...) pattern \u2014 Tyler's own \"missing HP\" example (max(0, selfMaxHp - selfCurrentHp)) is just a MaxHp/CurrentHp term pair with min:0 set here, no max() to type. Ignored when amountFormula is absent/empty."
+          },
           "statusRef": {
             "type": "string",
             "description": "mechanic id, if kind == HasStatusStacks (see conditionsArray) \u2014 NOT used by actions at all (see conditionsArray's own HasStatusStacks statusRef); kept here only historically, never read by actionsArray codegen."

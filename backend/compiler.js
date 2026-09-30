@@ -1210,6 +1210,119 @@ const RESOLVE_X_EXPR = 'this.ResolveEnergyXValue() /* [VERIFIED via decompiling 
 // energy-only (RESOLVE_X_EXPR).
 const RESOLVE_STAR_X_EXPR = 'this.ResolveStarXValue() /* [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3\'s "X Star" card] */';
 
+// [2026-09-30 round 329 — Tyler, after the changelog gap-analysis flagged
+// Forge's scaling as a single fixed multiplicative source ("amount *
+// GetStatusStacks<T>(subject)"), asked for a real multi-term formula
+// system. Explicitly rejected a free-text expression field ("ignore that.
+// i dont want a free-text editor") in favor of a structured builder: a
+// list of terms, each (source, sign, value), summed together, with an
+// optional Math.Max/Math.Min clamp — no syntax to type or typo.
+//
+// Every source below is a REAL, independently IL-verified accessor (this
+// round, direct ECMA-335 read of Tyler's own installed sts2.dll unless
+// otherwise noted) reached the same way an existing condition/action
+// already reaches it — nothing here is a new API guess:
+//   - CurrentHp/MaxHp: Creature.CurrentHp/MaxHp — same real properties
+//     HpBelowPercent already uses (see conditionToCSharp's HpBelowPercent
+//     case).
+//   - Gold: Player.Gold — [VERIFIED round 329, direct IL read] a real
+//     public get_Gold()/set_Gold() property on MegaCrit.Sts2.Core.Entities.
+//     Players.Player. Forge previously only ever WROTE gold (GainGold/
+//     LoseGold's PlayerCmd calls) — this is the first real READ of it.
+//   - PendingDamage: the real `decimal amount` parameter TRIGGER_HOOKS'
+//     own BeforeMyDamageReceived/BeforeEnemyDamageReceived entries already
+//     declare (see their own `params` string above) — Forge already
+//     generates a method body with this local in scope, it just never
+//     exposed it to anything. Gated to exactly those two triggers (see
+//     backend/validate.js) since the local plainly doesn't exist anywhere
+//     else.
+//   - EnergyRemaining/StarsRemaining/OrbSlotCount: PlayerCombatState.
+//     Energy/.Stars and Player.BaseOrbSlotCount — the same real properties
+//     the EnergyRemaining/StarsRemaining/OrbSlotCount CONDITION kinds
+//     already use, just reached through resolvePlayerExpr(ctx) (the
+//     WIDER, already-proven-safe accessor OrbSlotCount's own condition
+//     case uses) instead of a hardcoded `cardPlay.Player`, so a formula
+//     term compiles on any trigger with a real player in scope — not just
+//     card-play-bound ones.
+//   - CustomStatusStacks/VanillaStatusStacks: ForgeActions.GetStatusStacks
+//     <T>(subject) — the exact same real mechanism amountScalesWithStatus
+//     already uses, just per-term instead of once per action.
+//
+// Deliberately NOT included this round: CardsPlayedThisTurn/
+// AttacksPlayedThisTurn (the existing condition's own codegen reads a bare
+// `Owner` that resolves via `this.Owner`, which is Player-typed on a card
+// or relic but Creature-typed on a mechanic's own PowerModel — a real,
+// already-flagged typing ambiguity nothing in this codebase has resolved
+// for a mechanic context yet; pulling it into a formula term without
+// re-deriving that would risk a silent CS0019 on some future mechanic-
+// hosted formula) and an "AllEnemies" subject (Tyler's own answer named
+// only "self/target" HP and stacks — Target here reuses
+// resolveTargetExpr(action.target), the exact same resolution
+// amountScalesWithSubject's own 'Target' case already uses).
+const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_SUBJECT_SOURCES = ['CurrentHp', 'MaxHp', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_STATUS_SOURCES = ['CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_PLAYER_SOURCES = ['Gold', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount'];
+const AMOUNT_FORMULA_HOOK_ONLY_SOURCES = ['PendingDamage'];
+const AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS = ['BeforeMyDamageReceived', 'BeforeEnemyDamageReceived'];
+const MAX_AMOUNT_FORMULA_TERMS = 6;
+
+// One term's own real C# sub-expression, ALWAYS with an explicit leading
+// sign (+ or -, C#'s unary operators) so resolveAmountFormulaExpr below
+// can just join every term with a space — no comma/plus bookkeeping needed
+// at the join site. `value` is the term's own coefficient: for 'Literal'
+// it IS the contribution; for every other source it's a multiplier on the
+// real accessor (mirrors resolveAmountExpr's existing
+// `amount * GetStatusStacks<T>(...)` shape, generalized to N terms).
+function resolveAmountFormulaTermExpr(term, ctx) {
+  const sign = term.sign === '-' ? '-' : '+';
+  const v = Number.isFinite(term.value) ? term.value : 0;
+  const subjExpr = term.subject === 'Target' ? resolveTargetExpr(term.__actionTarget) : 'fgPlayer';
+  switch (term.source) {
+    case 'CurrentHp':
+      return `${sign}(${v}m * (decimal)${subjExpr}.CurrentHp) /* [VERIFIED via sts2.dll — Creature.CurrentHp] */`;
+    case 'MaxHp':
+      return `${sign}(${v}m * (decimal)${subjExpr}.MaxHp) /* [VERIFIED via sts2.dll — Creature.MaxHp] */`;
+    case 'Gold':
+      return `${sign}(${v}m * (decimal)${resolvePlayerExpr(ctx)}.Gold) /* [VERIFIED round 329 via direct sts2.dll IL read — Player.Gold] */`;
+    case 'PendingDamage':
+      return `${sign}(${v}m * amount) /* [VERIFIED — real hook-local \`decimal amount\` param, see TRIGGER_HOOKS.BeforeMyDamageReceived/BeforeEnemyDamageReceived] */`;
+    case 'EnergyRemaining':
+      return `${sign}(${v}m * (decimal)${resolvePlayerExpr(ctx)}.PlayerCombatState.Energy) /* [VERIFIED via reflect-baselib round 14a/14b — PlayerCombatState.Energy] */`;
+    case 'StarsRemaining':
+      return `${sign}(${v}m * (decimal)${resolvePlayerExpr(ctx)}.PlayerCombatState.Stars) /* [VERIFIED via reflect-baselib round 14a/14b — PlayerCombatState.Stars] */`;
+    case 'OrbSlotCount':
+      return `${sign}(${v}m * (decimal)${resolvePlayerExpr(ctx)}.BaseOrbSlotCount) /* [VERIFIED via sts2.dll — Player.BaseOrbSlotCount] */`;
+    case 'CustomStatusStacks':
+    case 'VanillaStatusStacks': {
+      const typeArg = term.source === 'VanillaStatusStacks' ? BUILTIN_POWER_CLASS_MAP[term.builtinStatusRef] : mechanicClassName(term.statusRef);
+      return `${sign}(${v}m * ForgeActions.GetStatusStacks<${typeArg}>(${subjExpr})) /* [VERIFIED — same real GetStatusStacks<T> amountScalesWithStatus already uses] */`;
+    }
+    case 'Literal':
+    default:
+      return `${sign}(${v}m)`;
+  }
+}
+
+// Sums every term (each already self-signed) and applies the optional
+// Math.Max/Math.Min clamp — the structured builder's own answer to the
+// free-text tool's `max(0, ...)` pattern (Tyler's own "missing HP" example
+// from the changelog: max(0, selfMaxHp - selfCurrentHp) is just a
+// MaxHp/CurrentHp term pair with a min:0 clamp here, no max() to type).
+function resolveAmountFormulaExpr(action, ctx) {
+  const terms = action.amountFormula.map(t => resolveAmountFormulaTermExpr({ ...t, __actionTarget: action.target }, ctx));
+  let expr = `(${terms.join(' ')})`;
+  const clamp = action.amountFormulaClamp;
+  if (clamp && Number.isFinite(clamp.min) && Number.isFinite(clamp.max)) {
+    expr = `Math.Max(${clamp.min}m, Math.Min(${clamp.max}m, ${expr}))`;
+  } else if (clamp && Number.isFinite(clamp.min)) {
+    expr = `Math.Max(${clamp.min}m, ${expr})`;
+  } else if (clamp && Number.isFinite(clamp.max)) {
+    expr = `Math.Min(${clamp.max}m, ${expr})`;
+  }
+  return expr;
+}
+
 // Resolves WHOSE stacks per-stack scaling counts (action.amountScalesWithSubject
 // — see schema's own description for the full reasoning) — added when the
 // DealDamage row gained its sentence layout (Tyler: "we need to add a new
@@ -1261,7 +1374,14 @@ function resolveStatusStacksExpr(action, typeArg) {
   return `ForgeActions.GetStatusStacks<${typeArg}>(${resolveAmountScaleSubjectExpr(action)})`;
 }
 
-function resolveAmountExpr(action) {
+function resolveAmountExpr(action, ctx) {
+  // [Round 329] amountFormula takes priority over every other source —
+  // same "presence wins" precedent amountIsX already set over
+  // amountScalesWithStatus. backend/validate.js rejects combining it with
+  // amountIsX/amountIsStarX/amountScalesWith* on the same action (alternate
+  // sources for the same amount, not stackable — same rule those already
+  // follow with each other).
+  if (Array.isArray(action.amountFormula) && action.amountFormula.length) return resolveAmountFormulaExpr(action, ctx);
   if (action.amountIsX) return RESOLVE_X_EXPR;
   if (action.amountIsStarX) return RESOLVE_STAR_X_EXPR;
   const scaleKind = action.amountScalesWithStatusKind === 'vanilla' ? 'vanilla' : 'custom';
@@ -1303,7 +1423,12 @@ function resolveHitCountStatusStacksExpr(action, typeArg) {
 // old perEntryAmount's fallback-to-1) instead of the action's flat
 // `amount`, since a ModifyStatus action can have several entries each with
 // their own base amount before scaling is even applied.
-function resolveStatusEntryAmountExpr(action, entry) {
+function resolveStatusEntryAmountExpr(action, entry, ctx) {
+  // [Round 329] Same amountFormula precedence as resolveAmountExpr above —
+  // shared across every entry in statusEntries[], exactly like
+  // amountScalesWith* already is (one formula for the whole ModifyStatus
+  // action, not per-entry).
+  if (Array.isArray(action.amountFormula) && action.amountFormula.length) return resolveAmountFormulaExpr(action, ctx);
   if (action.amountIsX) return RESOLVE_X_EXPR;
   if (action.amountIsStarX) return RESOLVE_STAR_X_EXPR;
   const base = (entry.amount !== undefined && entry.amount !== null && !Number.isNaN(Number(entry.amount))) ? entry.amount : 1;
@@ -1635,8 +1760,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
           ? ' /* [KNOWN GAP] "Unblockable" has no effect here -- this goes through AttackCommand, whose DamageProps setter is private; only takes effect on a relic/mechanic/affliction\'s own DealDamage (no CardModel source) -- see compiler.js\'s own comment on this case */'
           : '';
         const dealLine = action.target === 'AllEnemies'
-          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies${unblockableNote}`
-          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage${unblockableNote}`;
+          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies${unblockableNote}`
+          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage${unblockableNote}`;
         if (fu && fu.trigger && Array.isArray(fu.actions) && fu.actions.length) {
           // FullyBlocked/UnblockedAmount added 2026-08-27 (sts2.dll direct
           // read confirmed DamageResult.WasFullyBlocked/UnblockedDamage as
@@ -1689,7 +1814,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // same way a vanilla card's own OnPlay does; a relic/mechanic hook
       // with no real cardPlay in scope omits it (defaults to null on the
       // C# side).
-      return `        await ForgeActions.GainBlock(${targetExpr}, ${resolveAmountExpr(action)}${ctx.cardPlayBound ? ', cardPlay' : ''}); // [Fix, round 36] see ForgeActions.cs.template's GainBlock`;
+      return `        await ForgeActions.GainBlock(${targetExpr}, ${resolveAmountExpr(action, ctx)}${ctx.cardPlayBound ? ', cardPlay' : ''}); // [Fix, round 36] see ForgeActions.cs.template's GainBlock`;
     case 'ModifyStatus': {
       // Replaces the old ApplyStatus/RemoveStatus/ApplyCustomStatus/
       // RemoveCustomStatus — Tyler: "lets reduce apply/remove/customapply/
@@ -1727,7 +1852,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
           typeArg = mechanicClassName(entry.ref);
         }
         if (mode === 'Add') {
-          const amt = resolveStatusEntryAmountExpr(action, entry);
+          const amt = resolveStatusEntryAmountExpr(action, entry, ctx);
           // AllEnemies (added 2026-08-26, fixed round 25 2026-09-01): routes
           // through the separate ForgeActions.ApplyStatusAllEnemies<T>
           // helper instead — see its own comment in ForgeActions.cs.template.
@@ -1789,14 +1914,14 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const mode = action.mode === 'Lose' ? 'Lose' : 'Gain';
       if (action.hpKind === 'max') {
         if (mode === 'Lose') {
-          return `        await ForgeActions.LoseMaxHp(choiceContext, ${targetExpr}, ${resolveAmountExpr(action)}, ${ctx.cardPlayBound ? 'true' : 'false'}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.LoseMaxHp] see ForgeActions.cs.template`;
+          return `        await ForgeActions.LoseMaxHp(choiceContext, ${targetExpr}, ${resolveAmountExpr(action, ctx)}, ${ctx.cardPlayBound ? 'true' : 'false'}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.LoseMaxHp] see ForgeActions.cs.template`;
         }
-        return `        await ForgeActions.GainMaxHp(${targetExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.GainMaxHp] see ForgeActions.cs.template`;
+        return `        await ForgeActions.GainMaxHp(${targetExpr}, ${resolveAmountExpr(action, ctx)}); // [VERIFIED via direct ECMA-335 IL disassembly of the real installed sts2.dll — CreatureCmd.GainMaxHp] see ForgeActions.cs.template`;
       }
       if (mode === 'Lose') {
-        return `        ForgeActions.LoseHp(${targetExpr}, ${resolveAmountExpr(action)}); // [BEST EFFORT] see TOOLCHAIN_FINDINGS.md "reflect-baselib round 7"`;
+        return `        ForgeActions.LoseHp(${targetExpr}, ${resolveAmountExpr(action, ctx)}); // [BEST EFFORT] see TOOLCHAIN_FINDINGS.md "reflect-baselib round 7"`;
       }
-      return `        ForgeActions.Heal(${targetExpr}, ${resolveAmountExpr(action)}); // [BEST EFFORT]`;
+      return `        ForgeActions.Heal(${targetExpr}, ${resolveAmountExpr(action, ctx)}); // [BEST EFFORT]`;
     }
     case 'DrawCard':
       // [BEST EFFORT] upgraded round 24 (2026-08-30) — direct sts2.dll read
@@ -1844,7 +1969,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // turn" was never a DrawCard variant — it's a status application.
       // See validate.js/character.schema.json for the matching
       // drawNextTurn retirement.
-      return `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${resolveAmountExpr(action)}, ${resolvePlayerExpr(ctx)}, false); // [Fix, round 30] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
+      return `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw(choiceContext, ${resolveAmountExpr(action, ctx)}, ${resolvePlayerExpr(ctx)}, false); // [Fix, round 30] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     case 'ModifyEnergy': {
       // [Round 160] Tyler reconsidered round 159's sign-based design after
       // being asked to choose between it and a mode dropdown for the new
@@ -1877,8 +2002,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       }
       const fgEnergyPlayerExpr = resolvePlayerExpr(ctx);
       return action.mode === 'Lose'
-        ? `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.LoseEnergy(${resolveAmountExpr(action)}, ${fgEnergyPlayerExpr}); // [VERIFIED via direct sts2.dll IL read, round 159] see compiler.js's own comment on this case`
-        : `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainEnergy(${resolveAmountExpr(action)}, ${fgEnergyPlayerExpr}); // [BEST EFFORT] see compiler.js's own comment on this case`;
+        ? `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.LoseEnergy(${resolveAmountExpr(action, ctx)}, ${fgEnergyPlayerExpr}); // [VERIFIED via direct sts2.dll IL read, round 159] see compiler.js's own comment on this case`
+        : `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainEnergy(${resolveAmountExpr(action, ctx)}, ${fgEnergyPlayerExpr}); // [BEST EFFORT] see compiler.js's own comment on this case`;
     }
     case 'ModifyGold': {
       // [BEST EFFORT] upgraded round 24 (2026-08-30) — Gain's real call was
@@ -1899,8 +2024,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // that's now real instead of a stub.
       const playerExpr = resolvePlayerExpr(ctx);
       return action.mode === 'Lose'
-        ? `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.LoseGold(${resolveAmountExpr(action)}, ${playerExpr}, MegaCrit.Sts2.Core.Entities.Gold.GoldLossType.Lost); // [BEST EFFORT] see compiler.js's own comment on this case`
-        : `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainGold(${resolveAmountExpr(action)}, ${playerExpr}, false); // [BEST EFFORT] see compiler.js's own comment on this case`;
+        ? `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.LoseGold(${resolveAmountExpr(action, ctx)}, ${playerExpr}, MegaCrit.Sts2.Core.Entities.Gold.GoldLossType.Lost); // [BEST EFFORT] see compiler.js's own comment on this case`
+        : `        await MegaCrit.Sts2.Core.Commands.PlayerCmd.GainGold(${resolveAmountExpr(action, ctx)}, ${playerExpr}, false); // [BEST EFFORT] see compiler.js's own comment on this case`;
     }
     case 'ExhaustCard': {
       // [Round 63] Generalized off `ctx.cardPlayBound` — same fix
@@ -1917,7 +2042,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // through it too.
       const exhaustPlayerExpr = resolvePlayerExpr(ctx);
       if (action.random) {
-        return resolveRandomCardPickAndAct('ExhaustRandom', resolveAmountExpr(action), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, ${pickVar}, false, false); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Exhaust" card's exhaustRandomCard effect, round 59]`, exhaustPlayerExpr);
+        return resolveRandomCardPickAndAct('ExhaustRandom', resolveAmountExpr(action, ctx), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, ${pickVar}, false, false); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Exhaust" card's exhaustRandomCard effect, round 59]`, exhaustPlayerExpr);
       }
       // [Round 191 fix] The prompt-picker's last arg is bare `this` --
       // never confirmed against a real non-card `this` (an EnchantmentModel
@@ -1928,7 +2053,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (!ctx.thisIsCard) {
         return `        ForgeActions.Todo("ExhaustCard (prompt) -- this action's CardSelectCmd.FromHand call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       }
-      return `        foreach (var fgExhaustCard in await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand(choiceContext, ${exhaustPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.ExhaustSelectionPrompt, ${resolveAmountExpr(action)}), null, this)) { await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, fgExhaustCard, false, false); } // [Round 63] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
+      return `        foreach (var fgExhaustCard in await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand(choiceContext, ${exhaustPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.ExhaustSelectionPrompt, ${resolveAmountExpr(action, ctx)}), null, this)) { await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, fgExhaustCard, false, false); } // [Round 63] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
     case 'DiscardCard': {
       // [Round 63] Generalized off `ctx.cardPlayBound` — same fix as
@@ -1939,7 +2064,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // from a hardcoded `cardPlay.Player` to `resolvePlayerExpr(ctx)`.
       const discardPlayerExpr = resolvePlayerExpr(ctx);
       if (action.random) {
-        return resolveRandomCardPickAndAct('DiscardRandom', resolveAmountExpr(action), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, ${pickVar}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Discard" card's discardRandom effect, round 59]`, discardPlayerExpr);
+        return resolveRandomCardPickAndAct('DiscardRandom', resolveAmountExpr(action, ctx), (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, ${pickVar}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Discard" card's discardRandom effect, round 59]`, discardPlayerExpr);
       }
       // [Round 191 fix] Same ctx.thisIsCard gate as ExhaustCard's own
       // prompt-picker branch just above -- see its comment for the full
@@ -1947,7 +2072,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (!ctx.thisIsCard) {
         return `        ForgeActions.Todo("DiscardCard (prompt) -- this action's CardSelectCmd.FromHandForDiscard call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       }
-      return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForDiscard(choiceContext, ${discardPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.DiscardSelectionPrompt, ${resolveAmountExpr(action)}), null, this)); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll — 4/4 real discard cards use this exact chain — see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
+      return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForDiscard(choiceContext, ${discardPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.DiscardSelectionPrompt, ${resolveAmountExpr(action, ctx)}), null, this)); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll — 4/4 real discard cards use this exact chain — see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
     case 'CreateCard': {
       // [BEST EFFORT] upgraded round 24 (2026-08-30) — replaces the old
@@ -2014,7 +2139,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const pileTypeExpr = `MegaCrit.Sts2.Core.Entities.Cards.PileType.${PILE_TYPE_BY_DEST[dest]}`;
       const positionExpr = `MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.${POSITION_BY_DEST[dest]}`;
       return [
-        `        for (var fgCreateCardI = 0; fgCreateCardI < ${resolveAmountExpr(action)}; fgCreateCardI++)`,
+        `        for (var fgCreateCardI = 0; fgCreateCardI < ${resolveAmountExpr(action, ctx)}; fgCreateCardI++)`,
         `        {`,
         `            var fgNewCard = fgPlayer.CombatState.CreateCard(${canonicalExpr}, ${playerExpr}); // [BEST EFFORT] see compiler.js's own comment on this case`,
         `            await MegaCrit.Sts2.Core.Commands.CardPileCmd.AddGeneratedCardToCombat(fgNewCard, ${pileTypeExpr}, ${playerExpr}, ${positionExpr}); // [BEST EFFORT]`,
@@ -2189,8 +2314,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // file.
       const orbSlotsPlayerExpr = resolvePlayerExpr(ctx);
       return action.mode === 'Remove'
-        ? `        MegaCrit.Sts2.Core.Commands.OrbCmd.RemoveSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via direct sts2.dll IL read, round 160] see compiler.js's own comment on this case`
-        : `        await MegaCrit.Sts2.Core.Commands.OrbCmd.AddSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action)}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Orbit" card's gainOrbSlots effect, round 59]`;
+        ? `        MegaCrit.Sts2.Core.Commands.OrbCmd.RemoveSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action, ctx)}); // [VERIFIED via direct sts2.dll IL read, round 160] see compiler.js's own comment on this case`
+        : `        await MegaCrit.Sts2.Core.Commands.OrbCmd.AddSlots(${orbSlotsPlayerExpr}, ${resolveAmountExpr(action, ctx)}); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll v3 — "Orbit" card's gainOrbSlots effect, round 59]`;
     }
     case 'SummonPet': {
       // [Round 286 — VERIFIED via direct IL disassembly of sts2.dll AND
@@ -2247,7 +2372,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const pet = currentPetById.get(action.petRef);
       if (!petCls || !pet) return `        ForgeActions.Todo("SummonPet(no pet selected or pet not found: ${action.petRef || ''})");`;
       const summonPlayerExpr = resolvePlayerExpr(ctx);
-      const amountExpr = resolveAmountExpr(action);
+      const amountExpr = resolveAmountExpr(action, ctx);
       // takesHitsForYou's own generated support power (generatePetSoakPowerSource)
       // lives beside the pet class, named by stripping the "Pet" suffix off
       // petCls (always present by construction — see petClassById's own
@@ -2357,7 +2482,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       const petCls = !isAnyPet && ctx.petClassById && ctx.petClassById.get(action.petRef);
       if (!isAnyPet && !petCls) return `        ForgeActions.Todo("PetAttack(no pet selected or pet not found: ${action.petRef || ''})");`;
       const petCardArgs = resolvePetAttackCardArgs(ctx);
-      const amountExpr = resolveAmountExpr(action);
+      const amountExpr = resolveAmountExpr(action, ctx);
       const attackingPetFindExpr = isAnyPet
         ? `fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.PetOwner == fgPlayer.Player && _fgAlly.IsAlive)`
         : `fgPlayer.CombatState.Allies.FirstOrDefault(_fgAlly => _fgAlly.Monster is ${petCls} && _fgAlly.PetOwner == fgPlayer.Player)`;
@@ -2448,7 +2573,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // honest Todo().
       const mcScope = action.scope === 'ThisTurnOrUntilPlayed' ? 'ThisTurnOrUntilPlayed' : 'ThisCombat';
       const mcIncrease = action.mode === 'Increase';
-      const mcAmountExpr = resolveAmountExpr(action);
+      const mcAmountExpr = resolveAmountExpr(action, ctx);
       const mcSignedAmountExpr = mcIncrease ? mcAmountExpr : `-(${mcAmountExpr})`;
       const mcReduceOnlyArg = mcIncrease ? 'false' : 'true';
       const mcEvidenceTag = mcIncrease
@@ -2500,7 +2625,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (!acCardExpr) return `        ForgeActions.Todo("AfflictCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       const afflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
       if (!afflCls) return `        ForgeActions.Todo("AfflictCard -- no affliction selected"); // pick an affliction in this action's own dropdown`;
-      return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(${acCardExpr}, (decimal)(${resolveAmountExpr(action)})); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Powers/FatiguePower.cs's real, working "await CardCmd.Afflict<Reckless>(_ac, base.Amount * 1m)" call] CardCmd.Afflict<T>(CardModel, decimal) is real, public, static, generic, async -- it constructs/attaches the affliction itself, no ModelDb.Affliction<T>()/ToMutable() needed here.`;
+      return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(${acCardExpr}, (decimal)(${resolveAmountExpr(action, ctx)})); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Powers/FatiguePower.cs's real, working "await CardCmd.Afflict<Reckless>(_ac, base.Amount * 1m)" call] CardCmd.Afflict<T>(CardModel, decimal) is real, public, static, generic, async -- it constructs/attaches the affliction itself, no ModelDb.Affliction<T>()/ToMutable() needed here.`;
     }
     case 'RemoveAffliction': {
       const raCardExpr = resolveActedCardExpr(ctx);
@@ -2512,7 +2637,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (!ecCardExpr) return `        ForgeActions.Todo("EnchantCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       const enchCls = ctx.enchantmentClassById && ctx.enchantmentClassById.get(action.enchantmentRef);
       if (!enchCls) return `        ForgeActions.Todo("EnchantCard -- no enchantment selected"); // pick an enchantment in this action's own dropdown`;
-      return `        MegaCrit.Sts2.Core.Commands.CardCmd.Enchant<${enchCls}>(${ecCardExpr}, (decimal)(${resolveAmountExpr(action)})); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.Enchant<T>(CardModel, decimal) is real, public, static, generic -- genuinely NOT async (returns T directly, no Task<> wrapper in its real signature), unlike CardCmd.Afflict<T> right above, so this call has no await.`;
+      return `        MegaCrit.Sts2.Core.Commands.CardCmd.Enchant<${enchCls}>(${ecCardExpr}, (decimal)(${resolveAmountExpr(action, ctx)})); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.Enchant<T>(CardModel, decimal) is real, public, static, generic -- genuinely NOT async (returns T directly, no Task<> wrapper in its real signature), unlike CardCmd.Afflict<T> right above, so this call has no await.`;
     }
     case 'RemoveEnchantment': {
       const reCardExpr = resolveActedCardExpr(ctx);
@@ -11302,6 +11427,14 @@ module.exports = {
   // doc comment above — exported so validate.js/frontend can share the
   // one vocabulary instead of hand-duplicating the 4 literal strings.
   PET_POSITION_MODES,
+  // [Round 329] amountFormula's own vocabulary — see AMOUNT_FORMULA_SOURCES'
+  // own doc comment above — exported so validate.js/frontend share the one
+  // source of truth for which term sources exist, which need a subject,
+  // which need a status ref, which need a real player in scope, which are
+  // hook-local-only (and on which triggers), and the term-count cap.
+  AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES,
+  AMOUNT_FORMULA_PLAYER_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS,
+  MAX_AMOUNT_FORMULA_TERMS,
   // Same reasoning — the list of real built-in status classes ApplyStatus/
   // RemoveStatus's builtinStatus dropdown can pick from. Derived from
   // BUILTIN_POWER_CLASS_MAP's own keys rather than a separate literal, so

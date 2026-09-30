@@ -1518,6 +1518,23 @@
      separate smaller ones. */
   .a-status-picker .picker-list{max-height:140px; padding:4px;}
   .a-status-picker .picker-option{padding:3px 5px; font-size:12.5px; gap:6px;}
+  /* [Round 329] amountFormula builder (renderAmountFormulaBuilder) — a
+     bordered box under the sentence, same "widget slot sits below its
+     intro line" shape .a-status-picker's own slot already has, just with
+     a visible border/padding since (unlike the status picker) this one
+     has no chip row of its own to visually separate it from the sentence
+     above. Each term is a single flex-wrap row (sign/value/source/subject/
+     status-ref/remove), same compact-atom style as .a-scale-inline. */
+  .a-formula-builder{display:flex; flex-direction:column; gap:8px; margin-top:4px; padding:8px 10px; border:1px solid var(--border); border-radius:4px;}
+  .a-formula-terms{display:flex; flex-direction:column; gap:6px;}
+  .a-formula-term{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .a-formula-term select, .a-formula-term input{font-size:12.5px;}
+  .a-formula-sign{width:46px; flex:none;}
+  .a-formula-value{width:66px; flex:none;}
+  .a-formula-remove-term{margin-left:auto; flex:none;}
+  .a-formula-clamp{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;}
+  .a-formula-clamp input[type=number]{width:66px;}
+  .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
   /* Enchantment/Affliction "Valid targets" merged base+custom tag picker
      (renderEnchTagPicker, round 171) reuses .a-status-picker's sizing
@@ -4437,6 +4454,43 @@ const PET_POSITION_MODE_LABELS = {
 // its pet by name only now (petRef, see ensureActionRefDefaults/
 // renderActionRowFields' MovePetPosition cases below), same shape
 // SummonPet already uses.
+// [Round 329] Mirrors backend/compiler.js's own exported AMOUNT_FORMULA_*
+// vocabulary constants (this file has no require() — browser, no bundler
+// — same hand-mirrored-constant convention as PET_POSITION_MODES/
+// PET_ANY_SENTINEL above). Backs the new "amountFormula" structured
+// multi-term scaling builder — see schema's own amountFormula description
+// and compiler.js's resolveAmountFormulaTermExpr/resolveAmountFormulaExpr
+// for the full per-source evidence trail. Tyler explicitly rejected a
+// free-text/typed-syntax field for this ("ignore that. i dont want a
+// free-text editor") — every one of these sources is offered as a
+// dropdown option, never something the author types.
+const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_SOURCE_LABELS = {
+  Literal: 'a flat number',
+  CurrentHp: 'current HP',
+  MaxHp: 'max HP',
+  Gold: 'Gold',
+  PendingDamage: 'the pending damage (this hit)',
+  EnergyRemaining: 'Energy remaining',
+  StarsRemaining: 'Stars remaining',
+  OrbSlotCount: 'orb slot count',
+  CustomStatusStacks: 'stacks of a custom status/mechanic',
+  VanillaStatusStacks: 'stacks of a vanilla status',
+};
+// Sources that take a "of yourself / of this action's target" subject —
+// mirrors resolveAmountFormulaTermExpr's own subjExpr branch (only these
+// 4 sources ever read a Creature; Gold/EnergyRemaining/StarsRemaining/
+// OrbSlotCount always read the acting Player directly, no subject choice).
+const AMOUNT_FORMULA_SUBJECT_SOURCES = ['CurrentHp', 'MaxHp', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_STATUS_SOURCES = ['CustomStatusStacks', 'VanillaStatusStacks'];
+// PendingDamage reads the real hook-local `amount` param BeforeMyDamageReceived/
+// BeforeEnemyDamageReceived's own signatures declare — no other trigger's
+// hook body has that local in scope (see backend/validate.js's own
+// AMOUNT_FORMULA_HOOK_ONLY_SOURCES/AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS check,
+// which this pre-empts client-side).
+const AMOUNT_FORMULA_HOOK_ONLY_SOURCES = ['PendingDamage'];
+const AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS = ['BeforeMyDamageReceived', 'BeforeEnemyDamageReceived'];
+const MAX_AMOUNT_FORMULA_TERMS = 6;
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
 // confirmed it doesn't (PlayerCmd.GainEnergy no-ops on amount <= 0), and
@@ -11209,7 +11263,57 @@ function describeActionScalingSubjectWord(subject){
     default: return 'your'; // 'Self', or undefined (pre-existing packages)
   }
 }
+// [Round 329] One term of the new amountFormula builder, as plain-English
+// — same "Forge's own best-effort guess, not real STS2 tooltip copy"
+// convention as every other describe* helper in this section. Mirrors
+// backend/compiler.js's resolveAmountFormulaTermExpr's own per-source
+// switch, just producing prose instead of C#.
+function describeAmountFormulaTerm(term){
+  const sign = term.sign === '-' ? '-' : '+';
+  const v = term.value ?? 0;
+  const who = describeActionScalingSubjectWord(term.subject);
+  let base;
+  switch(term.source){
+    case 'CurrentHp': base = `${v}x ${who} current HP`; break;
+    case 'MaxHp': base = `${v}x ${who} max HP`; break;
+    case 'Gold': base = `${v}x your Gold`; break;
+    case 'PendingDamage': base = `${v}x the pending damage`; break;
+    case 'EnergyRemaining': base = `${v}x your Energy remaining`; break;
+    case 'StarsRemaining': base = `${v}x your Stars remaining`; break;
+    case 'OrbSlotCount': base = `${v}x your orb slot count`; break;
+    case 'CustomStatusStacks': {
+      const name = (state.mechanics.find(m=>m.id===term.statusRef) || {}).name;
+      base = `${v}x ${who} ${name || '(unset status)'} stacks`;
+      break;
+    }
+    case 'VanillaStatusStacks':
+      base = `${v}x ${who} ${term.builtinStatusRef || '(unset status)'} stacks`;
+      break;
+    case 'Literal': default: base = `${v}`; break;
+  }
+  return `${sign}${base}`;
+}
+// Full formula summary — every term joined, leading "+" stripped (reads
+// oddly in a sentence, same as normal math notation preferring "-3 + x"
+// over "+-3 + x"), plus the clamp range if one is set.
+function describeAmountFormula(act){
+  if(!Array.isArray(act.amountFormula) || !act.amountFormula.length) return '';
+  const body = act.amountFormula.map(describeAmountFormulaTerm).join(' ').replace(/^\+/, '');
+  const clamp = act.amountFormulaClamp;
+  let clampSuffix = '';
+  if(clamp && (typeof clamp.min === 'number' || typeof clamp.max === 'number')){
+    if(typeof clamp.min === 'number' && typeof clamp.max === 'number') clampSuffix = `, clamped ${clamp.min}-${clamp.max}`;
+    else if(typeof clamp.min === 'number') clampSuffix = `, min ${clamp.min}`;
+    else clampSuffix = `, max ${clamp.max}`;
+  }
+  return ` (${body}${clampSuffix})`;
+}
 function describeActionScaling(act){
+  // [Round 329] A formula (mutually exclusive with per-stack scaling —
+  // see backend/validate.js's own rejection) takes priority and shows its
+  // full term breakdown instead of the single-source "(scales with ...)"
+  // text below.
+  if(Array.isArray(act.amountFormula) && act.amountFormula.length) return describeAmountFormula(act);
   if(!act.amountScalesWithStatusKind) return '';
   const name = act.amountScalesWithStatusKind === 'vanilla'
     ? act.amountScalesWithBuiltinStatus
@@ -11279,7 +11383,14 @@ function describeAction(act){
   // Reading the real amountIsX flag instead so the auto-description matches
   // what compiler.js actually emits (RESOLVE_X_EXPR) rather than a
   // condition that can never be true.
-  const n = (act.amountIsX || act.amountIsStarX) ? 'X' : amt;
+  // [Round 329] A formula replaces the plain amount entirely — same
+  // priority order resolveAmountExpr/resolveStatusEntryAmountExpr use
+  // (amountFormula checked before amountIsX/amountIsStarX). Types that
+  // also call describeActionScaling below (DealDamage/GainBlock/ModifyHp/
+  // ModifyStatus) get the full term breakdown appended there; every other
+  // formula-eligible type just shows this placeholder inline.
+  const hasFormula = Array.isArray(act.amountFormula) && act.amountFormula.length > 0;
+  const n = hasFormula ? '(formula)' : ((act.amountIsX || act.amountIsStarX) ? 'X' : amt);
   switch(act.type){
     case 'DealDamage': return `Deal ${n} damage to ${targetPhrase}${describeActionHitCount(act)}${describeActionScaling(act)}`;
     // Self-only as of this round (Tyler: "Gain block should only ever be
@@ -14738,6 +14849,182 @@ function renderStatusPicker(act){
   return wrap;
 }
 
+// [Round 329] Tyler's structured multi-term "amountFormula" builder — see
+// AMOUNT_FORMULA_SOURCES's own comment for the full evidence trail behind
+// each source, and schema's amountFormula description for Tyler's
+// explicit "ignore that. i dont want a free-text editor" rejection of a
+// typed-syntax field. Every piece here is a dropdown, a number input, or
+// a plain <select> of real statuses/mechanics — never something the
+// author types. Same widget-insertion shape as renderStatusPicker just
+// above: builds its own DOM node, self-wires every interaction, mutates
+// act.amountFormula/act.amountFormulaClamp directly. Unlike
+// renderStatusPicker, this widget's OWN internal edits (add/remove term,
+// change a term's fields) never change what the REST of the action row
+// shows, so it re-renders only itself, not the whole row — the one
+// exception, the "Use a formula" checkbox that shows/hides this widget's
+// slot entirely, lives in wireActionRowHandlers instead (see
+// .a-amount-useformula there) specifically because THAT toggle needs the
+// full-row re-render (it hides amountHtml/the X checkboxes/per-stack
+// scaling elsewhere in the same row).
+function amountFormulaSourceOptList(selected, trigger){
+  return AMOUNT_FORMULA_SOURCES.filter(s => {
+    if(!AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(s)) return true;
+    // Only offer PendingDamage on the 2 real triggers whose hook body
+    // actually declares that `amount` local (see backend/validate.js's
+    // matching server-side rejection this filter pre-empts). An
+    // already-saved term whose source is PendingDamage still renders as
+    // itself even outside those triggers — same "an already-saved value
+    // still shows" rule every other optList in this file follows — so
+    // switching triggers doesn't silently swap out what the author
+    // already picked underneath them.
+    return s === selected || AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(trigger);
+  }).map(s=>`<option value="${s}" ${s===selected?'selected':''}>${escapeHtml(AMOUNT_FORMULA_SOURCE_LABELS[s]||s)}</option>`).join('');
+}
+function renderAmountFormulaBuilder(act, trigger){
+  if(!Array.isArray(act.amountFormula) || !act.amountFormula.length){
+    act.amountFormula = [{ source: 'Literal', sign: '+', value: act.amount || 0 }];
+  }
+  const terms = act.amountFormula;
+
+  // Same "hide Target, it doesn't exist here" rule actionScaleSubjectOptList
+  // already applies to amountScalesWithSubject's own Target option —
+  // HOOK_TRIGGER_BINDING[trigger]==='player' means only a single real
+  // fgPlayer is bound in this hook body (no fgTarget), CARD_PLAYER_ONLY_TRIGGERS
+  // covers the 2 card-only triggers with the same shape. Mirrors
+  // backend/validate.js's TARGETLESS_BOUND_HOOK_TRIGGERS check for this
+  // exact field.
+  const hideTargetSubject = HOOK_TRIGGER_BINDING[trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(trigger);
+
+  function subjectOptList(selected){
+    const sel = selected || 'Self';
+    return ['Self','Target'].filter(v => v === sel || !(hideTargetSubject && v === 'Target'))
+      .map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v==='Self'?'yourself':"this action's target"}</option>`).join('');
+  }
+  // Deliberately a plain <select>, not the mergedStatusPickerHtml combined
+  // vanilla+custom widget the "per stack" scaling picker uses — that
+  // widget lets the author freely pick EITHER kind from one combined list,
+  // which would let a CustomStatusStacks term's picker silently select a
+  // vanilla status (or vice versa), disagreeing with this term's OWN
+  // `source` (compiler.js reads term.source to decide which of
+  // statusRef/builtinStatusRef to use, not a kind field on the picker).
+  // Splitting "Custom Status Stacks"/"Vanilla Status Stacks" into two
+  // separate `source` options up front already disambiguates this, so
+  // each term only ever needs ONE single-kind list — and a plain <select>
+  // already has the browser's own native type-ahead search, the concern
+  // that made the "per stack" picker need a custom filter box in the
+  // first place (that one is a multi-select checklist, which native
+  // <select> can't do; this is a single choice, which it can).
+  function statusRefOptList(term){
+    if(term.source === 'VanillaStatusStacks'){
+      const opts = statusOptionsData();
+      if(!opts.length) return '';
+      if(!term.builtinStatusRef || !opts.find(o=>o.value===term.builtinStatusRef)) term.builtinStatusRef = opts[0].value;
+      return `<select class="a-formula-status-ref" title="Which vanilla status's stacks to read.">${opts.map(o=>`<option value="${escapeAttr(o.value)}" ${o.value===term.builtinStatusRef?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+    }
+    if(term.source === 'CustomStatusStacks'){
+      const opts = mechanicOptionsData();
+      if(!opts.length) return `<span class="cond-word hint-small">(create a mechanic first)</span>`;
+      if(!term.statusRef || !opts.find(o=>o.value===term.statusRef)) term.statusRef = opts[0].value;
+      return `<select class="a-formula-status-ref" title="Which of your mechanics' stacks to read.">${opts.map(o=>`<option value="${escapeAttr(o.value)}" ${o.value===term.statusRef?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+    }
+    return '';
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'a-formula-builder';
+
+  function render(){
+    const overCap = terms.length >= MAX_AMOUNT_FORMULA_TERMS;
+    wrap.innerHTML = `
+      <div class="hint-small">Every term below is added together (or subtracted, for “−”) to make this amount — pick pieces, no typing required.</div>
+      <div class="a-formula-terms"></div>
+      <button type="button" class="ghost a-formula-add-term" ${overCap?'disabled':''}>${overCap ? `Max ${MAX_AMOUNT_FORMULA_TERMS} terms` : '+ Add term'}</button>
+      <div class="a-formula-clamp">
+        <label class="a-check-label" title="Optionally clamp the final combined result to a min and/or max value."><input type="checkbox" class="a-formula-clamp-toggle" ${act.amountFormulaClamp?'checked':''}> Clamp result</label>
+        ${act.amountFormulaClamp ? `
+          <span class="cond-word">between</span>
+          <input type="number" class="a-formula-clamp-min" placeholder="min" value="${act.amountFormulaClamp.min ?? ''}">
+          <span class="cond-word">and</span>
+          <input type="number" class="a-formula-clamp-max" placeholder="max" value="${act.amountFormulaClamp.max ?? ''}">
+        ` : ''}
+      </div>
+    `;
+    const termsEl = wrap.querySelector('.a-formula-terms');
+    termsEl.innerHTML = terms.map((term, ti) => {
+      const needsSubject = AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source);
+      const needsStatusRef = AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source);
+      return `
+      <div class="a-formula-term" data-idx="${ti}">
+        <select class="a-formula-sign" title="Add or subtract this term.">
+          <option value="+" ${(term.sign||'+')==='+'?'selected':''}>+</option>
+          <option value="-" ${term.sign==='-'?'selected':''}>−</option>
+        </select>
+        <input type="number" class="a-formula-value" value="${term.value ?? 0}" title="${term.source==='Literal' ? 'This flat number.' : 'Multiplier on the chosen value.'}">
+        <select class="a-formula-source" title="What this term's value comes from.">${amountFormulaSourceOptList(term.source, trigger)}</select>
+        ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(term.subject)}</select>` : ''}
+        ${needsStatusRef ? statusRefOptList(term) : ''}
+        <button type="button" class="ghost a-formula-remove-term" title="Remove this term." ${terms.length<=1?'disabled':''}>✕</button>
+      </div>`;
+    }).join('');
+
+    termsEl.querySelectorAll('.a-formula-term').forEach(row=>{
+      const idx = parseInt(row.dataset.idx, 10);
+      const term = terms[idx];
+      row.querySelector('.a-formula-sign').onchange = e=>{ term.sign = e.target.value; };
+      row.querySelector('.a-formula-value').oninput = e=>{ term.value = parseFloat(e.target.value) || 0; };
+      row.querySelector('.a-formula-source').onchange = e=>{
+        term.source = e.target.value;
+        // Switching source can change which extra fields this term needs
+        // (subject/status ref) — stale ones from the PREVIOUS source are
+        // dropped so a term never silently carries, say, a statusRef left
+        // over from when it used to be CustomStatusStacks.
+        if(!AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) delete term.subject;
+        if(!AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)){ delete term.statusRef; delete term.builtinStatusRef; }
+        render();
+      };
+      const subjectSelect = row.querySelector('.a-formula-subject');
+      if(subjectSelect) subjectSelect.onchange = e=>{ term.subject = e.target.value; };
+      const statusRefSelect = row.querySelector('.a-formula-status-ref');
+      if(statusRefSelect) statusRefSelect.onchange = e=>{
+        if(term.source === 'VanillaStatusStacks') term.builtinStatusRef = e.target.value;
+        else term.statusRef = e.target.value;
+      };
+      const removeBtn = row.querySelector('.a-formula-remove-term');
+      if(removeBtn) removeBtn.onclick = ()=>{
+        if(terms.length <= 1) return;
+        terms.splice(idx, 1);
+        render();
+      };
+    });
+
+    wrap.querySelector('.a-formula-add-term').onclick = ()=>{
+      if(terms.length >= MAX_AMOUNT_FORMULA_TERMS) return;
+      terms.push({ source: 'Literal', sign: '+', value: 0 });
+      render();
+    };
+    wrap.querySelector('.a-formula-clamp-toggle').onchange = e=>{
+      if(e.target.checked) act.amountFormulaClamp = { min: 0 };
+      else delete act.amountFormulaClamp;
+      render();
+    };
+    const clampMin = wrap.querySelector('.a-formula-clamp-min');
+    if(clampMin) clampMin.oninput = e=>{
+      const v = e.target.value;
+      if(v === '') delete act.amountFormulaClamp.min;
+      else act.amountFormulaClamp.min = parseFloat(v) || 0;
+    };
+    const clampMax = wrap.querySelector('.a-formula-clamp-max');
+    if(clampMax) clampMax.oninput = e=>{
+      const v = e.target.value;
+      if(v === '') delete act.amountFormulaClamp.max;
+      else act.amountFormulaClamp.max = parseFloat(v) || 0;
+    };
+  }
+
+  render();
+  return wrap;
+}
+
 // Closes any open picker panel when clicking anywhere outside it — a
 // single delegated listener (added once, not per-row) rather than
 // per-widget cleanup, since action rows are torn down/rebuilt constantly
@@ -15023,7 +15310,24 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // multiplicative mechanic (see compiler.js's "ModifyEnergy" case).
   const hideAmountForDoubleEnergy = act.type === 'ModifyEnergy' && !!act.doubleEnergy;
   const needsAmount = actionNeedsAmount(act.type) && !hideAmountForDoubleEnergy;
-  const canScale = actionCanScaleWithStatus(act.type) && (act.type !== 'ModifyStatus' || isModifyStatusAdd);
+  // [Round 329] amountFormula — Tyler's structured multi-term scaling
+  // builder (see AMOUNT_FORMULA_SOURCES' own comment for the full
+  // evidence trail). Eligible everywhere "Use X" already is (needsAmount,
+  // or ModifyStatus's own per-entry amount in Add mode — see
+  // showUseXCheckbox's own comment for why that second case exists) —
+  // unlike "Use X" this doesn't also require xEligible, since a formula
+  // never depends on the card having a real energy-X to resolve. When
+  // active, it takes over the amount ENTIRELY (see amountHtml/
+  // dealDamageAmountSlotHtml below) — mutually exclusive with amountIsX/
+  // amountIsStarX/per-stack scaling by construction, since canScale/
+  // showUseXCheckbox/showUseStarXCheckbox are all gated `&& !hasFormula`
+  // just below, so those checkboxes simply aren't offered while a formula
+  // is active (the author has to uncheck "Use a formula" first, which
+  // already clears act.amountFormula — see wireActionRowHandlers'
+  // .a-amount-useformula handler).
+  const formulaEligible = needsAmount || isModifyStatusAdd;
+  const hasFormula = formulaEligible && Array.isArray(act.amountFormula) && act.amountFormula.length > 0;
+  const canScale = actionCanScaleWithStatus(act.type) && (act.type !== 'ModifyStatus' || isModifyStatusAdd) && !hasFormula;
   const isDealDamage = act.type === 'DealDamage';
   // amountIsX/hitCountIsX are [VERIFIED via decompiling Tyler's own
   // TheBurdenedNewCharacter.dll] — see schema's action.amountIsX/
@@ -15061,8 +15365,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // amountIsX/amountIsStarX for it (applies X to EVERY selected entry,
   // overriding their individual amounts), so "Use X" needs to be offered
   // here too, just without a single amount input next to it to replace.
-  const showUseXCheckbox = xEligible && (needsAmount || isModifyStatusAdd);
-  const showUseStarXCheckbox = xStarEligible && (needsAmount || isModifyStatusAdd);
+  const showUseXCheckbox = xEligible && (needsAmount || isModifyStatusAdd) && !hasFormula;
+  const showUseStarXCheckbox = xStarEligible && (needsAmount || isModifyStatusAdd) && !hasFormula;
+  // "Use a formula" — offered anywhere "Use X" is (see formulaEligible's
+  // own comment above), rendered alongside it in useXAmountHtml/
+  // dealDamageAmountUseXHtml below so it always sits next to the other
+  // amount-replacing checkboxes rather than needing its own slot threaded
+  // through every one of the dozen sentence-building cases below.
+  const formulaToggleHtml = formulaEligible
+    ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Combine several values into the amount used for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Combine several values (HP, Gold, pending damage, status stacks, etc.) into this amount instead of a single number.'}"><input type="checkbox" class="a-amount-useformula" ${hasFormula?'checked':''}> Use a formula</label>`
+    : '';
   // amountIsX/amountIsStarX and the "per stack" scale toggle are all
   // mutually exclusive — compiler.js's resolveAmountExpr/
   // resolveStatusEntryAmountExpr check amountIsX/amountIsStarX first (in
@@ -15082,9 +15394,11 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // <span class="cond-word">word</span> + compact-input atoms DealDamage's
   // sentence introduced, just built once here and reused across every
   // type's switch case below instead of copy-pasted 12 times.
-  const amountHtml = needsAmount ? ((isX || isStarX)
-    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
-    : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`) : '';
+  const amountHtml = needsAmount ? (hasFormula
+    ? `<span class="a-amount-formula-note" title="This amount comes from the formula below.">(formula)</span>`
+    : ((isX || isStarX)
+      ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
+      : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`)) : '';
   // [Round 74] Two independent checkboxes when both energy-X and star-X
   // are eligible on this card (labeled "(Energy)"/"(Star)" only in that
   // case, so the far more common single-checkbox case keeps reading
@@ -15093,7 +15407,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // amountIsX before amountIsStarX, so only one can ever actually apply.
   const useXLabelSuffix = showUseStarXCheckbox ? ' (Energy)' : '';
   const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '');
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '')
+    + formulaToggleHtml;
   // [Round 75/76] DealDamage-only relabeled/outside-the-sentence versions
   // — same checkboxes (same classes), rendered in their own row below the
   // sentence instead of inline within it (see row.innerHTML's new
@@ -15106,7 +15421,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   const dealDamageAmountLabel = kind => dealDamageBothXEligible ? `X ${kind} Damage` : 'X Damage';
   const dealDamageHitsLabel = kind => dealDamageBothXEligible ? `X ${kind} Hits` : 'X Hits';
   const dealDamageAmountUseXHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved X value instead of the amount above."><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> ${dealDamageAmountLabel('Energy')}</label>` : '')
-    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '');
+    + (showUseStarXCheckbox ? `<label class="a-usex-label" title="Use this card's own resolved star-X value instead of the amount above."><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> ${dealDamageAmountLabel('Star')}</label>` : '')
+    + formulaToggleHtml;
   const dealDamageHitCountUseXHtml = (xEligible ? `<label class="a-usex-label" title="Use this card's own resolved X value as the hit count instead."><input type="checkbox" class="a-hitcount-usex" ${hitCountIsX?'checked':''}> ${dealDamageHitsLabel('Energy')}</label>` : '')
     + (xStarEligible ? `<label class="a-usex-label" title="Use this card's own resolved star-X value as the hit count instead."><input type="checkbox" class="a-hitcount-usestarx" ${hitCountIsStarX?'checked':''}> ${dealDamageHitsLabel('Star')}</label>` : '');
   const dealDamageUseXHtml = dealDamageAmountUseXHtml + dealDamageHitCountUseXHtml;
@@ -15160,11 +15476,13 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // already uses: X value wins first, then per-stack scaling, then the
   // plain literal input — mirrors amountHtml's own isX/isStarX branch and
   // the old hit-count ternary exactly, just with a 3rd branch added.
-  const dealDamageAmountSlotHtml = (isX || isStarX)
-    ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
-    : (isScaling
-        ? `<span class="a-scale-inline"><span class="cond-word">(</span><input class="a-amount as-amount" type="number" value="${act.amount??0}"><span class="a-scale-x">x</span><select class="a-scale-subject">${actionScaleSubjectOptList(act.amountScalesWithSubject, trigger, true)}</select><span class="cond-word">stacks of</span>${mergedStatusPickerHtml(act, ACTION_SCALE_FIELDS, 'a-scale-picker')}<span class="cond-word">)</span></span>`
-        : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`);
+  const dealDamageAmountSlotHtml = hasFormula
+    ? `<span class="a-amount-formula-note" title="This amount comes from the formula below.">(formula)</span>`
+    : (isX || isStarX)
+      ? `<span class="a-amount-x" title="Using this card's own resolved ${isStarX ? 'star ' : ''}X value instead of a literal amount.">X</span>`
+      : (isScaling
+          ? `<span class="a-scale-inline"><span class="cond-word">(</span><input class="a-amount as-amount" type="number" value="${act.amount??0}"><span class="a-scale-x">x</span><select class="a-scale-subject">${actionScaleSubjectOptList(act.amountScalesWithSubject, trigger, true)}</select><span class="cond-word">stacks of</span>${mergedStatusPickerHtml(act, ACTION_SCALE_FIELDS, 'a-scale-picker')}<span class="cond-word">)</span></span>`
+          : `<input class="a-amount as-amount" type="number" value="${act.amount??0}">`);
   const dealDamageHitCountSlotHtml = (hitCountIsX || hitCountIsStarX)
     ? `<span class="a-amount-x" title="Using this card's own resolved ${hitCountIsStarX ? 'star ' : ''}X value as the hit count.">X</span>`
     : (hitCountIsScaling
@@ -15544,6 +15862,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
+    ${hasFormula ? `<div class="a-formula-slot"></div>` : ''}
     ${scaleWarningHtml}
     ${followUpHtml}
   `;
@@ -15553,6 +15872,15 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // mutates act.statusEntries directly, so no further wiring is needed for
   // it in wireActionRowHandlers below.
   if(needsStatusPicker) slot.appendChild(renderStatusPicker(act));
+  // renderAmountFormulaBuilder likewise wires all of its own interaction
+  // (add/remove term, per-term dropdowns, clamp inputs) and mutates
+  // act.amountFormula/act.amountFormulaClamp directly — only the toggle
+  // checkbox that shows/hides this slot (.a-amount-useformula, wired in
+  // wireActionRowHandlers below) needs a full row re-render, since editing
+  // an already-active formula's own terms never changes what the REST of
+  // this row shows.
+  const formulaSlot = row.querySelector('.a-formula-slot');
+  if(hasFormula) formulaSlot.appendChild(renderAmountFormulaBuilder(act, trigger));
   // Follow-up's own nested action list — reuses renderActionRows/
   // renderActionRowFields/wireActionRowHandlers RECURSIVELY (the exact same
   // functions this row itself was just built with), same "Then:"/"Else:"
@@ -15743,6 +16071,38 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       delete act.amountScalesWithStatusKind;
       delete act.amountScalesWithStatus;
       delete act.amountScalesWithBuiltinStatus;
+    }
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+
+  // [Round 329] "Use a formula" — the ONLY control belonging to the new
+  // amountFormula feature that isn't self-wired inside
+  // renderAmountFormulaBuilder itself (see that function's own comment for
+  // why): toggling this needs a full row re-render, since it also hides
+  // amountHtml/the plain "Use X" checkboxes/per-stack scaling elsewhere in
+  // this same row (see hasFormula's `&& !hasFormula` gates on canScale/
+  // showUseXCheckbox/showUseStarXCheckbox above). Checking it seeds a
+  // single starting Literal term (defaulting to whatever flat amount was
+  // already there, same "don't discard the author's existing value" care
+  // amountUseX/scaleToggle already take) and clears amountIsX/
+  // amountIsStarX/amountScalesWith* — the alternate, mutually-exclusive
+  // amount sources backend/validate.js rejects combining with a formula.
+  // Unchecking drops the formula entirely, falling back to the plain
+  // amount input (already still populated from before the toggle, or 0).
+  const amountUseFormula = row.querySelector('.a-amount-useformula');
+  if(amountUseFormula) amountUseFormula.onchange = (e)=>{
+    if(e.target.checked){
+      act.amountFormula = [{ source: 'Literal', sign: '+', value: act.amount ?? 0 }];
+      delete act.amountIsX;
+      delete act.amountIsStarX;
+      delete act.amountScalesWithStatusKind;
+      delete act.amountScalesWithStatus;
+      delete act.amountScalesWithBuiltinStatus;
+      delete act.amountScalesWithSubject;
+    } else {
+      delete act.amountFormula;
+      delete act.amountFormulaClamp;
     }
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
