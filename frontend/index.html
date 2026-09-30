@@ -16064,7 +16064,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         <option value="ThisTurn" ${act.discoverFreeCost === 'ThisTurn' ? 'selected' : ''}>and it's free this turn</option>
         <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
       </select>`;
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${cardTypeFilterHtml} ${tagFilterHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${canSkipHtml} ${freeCostHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${cardTypeFilterHtml} ${tagFilterHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
       break;
     }
     default:
