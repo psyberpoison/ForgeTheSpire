@@ -889,6 +889,22 @@
   .tag-add-row{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
   .tag-add-row input{font-size:12px; padding:4px 8px; width:150px;}
   .tag-toggle-btn{font-size:11.5px; padding:4px 10px;}
+  /* [2026-09-30 follow-up #3] DiscoverCard/SpecificCards' search-and-add
+     card picker -- rendered as its own block below .action-row-sentence
+     (see that render case's own comment for why: it used to be appended
+     inline at the end of the sentence, and .action-row-sentence's
+     align-items:center vertically centered its two-row-tall content
+     against whichever short sentence fragments happened to share its
+     wrapped flex line, floating the search input up and crowding the
+     chip row into the line above at some widths). Same flex-wrap row of
+     [input, chip-row] shape .tagline above already uses for the Label/Tag
+     pickers, so this gets the same compact sizing instead of a bare,
+     mismatched-size default text input (14px font, 9px padding, no
+     explicit width) bleeding through from the global
+     input[type=text]/select/textarea rule up top. */
+  .a-discover-cardrefs-picker{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin-top:6px;}
+  .a-discover-cardrefs-picker input.a-discover-cardsearch{font-size:12px; padding:4px 8px; width:200px; flex:0 0 auto;}
+  .a-discover-cardrefs-picker .chip-row{flex:1 1 auto; min-height:0; margin:0;}
 
   button{
     font-family:'Spectral',serif;
@@ -15724,6 +15740,20 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   }
 
   let sentenceHtml;
+  // [2026-09-30 follow-up #3] DiscoverCard/SpecificCards' search-and-add
+  // card picker -- same "own row below .action-row-sentence, not inline
+  // within it" treatment Round 75 gave DealDamage's X Damage/X Hits
+  // checkboxes (see .action-row-usex's own header comment) and Round 330
+  // gave playerTargetHtml. The picker holds two stacked rows of its own
+  // (search input, then the chip row) -- left inline inside the flex-wrap
+  // sentence, .action-row-sentence's `align-items:center` vertically
+  // centered it against whatever short sentence fragments happened to
+  // share its wrapped line, so at some window widths the input floated
+  // above and the chips crowded into the line above it. Declared here
+  // (assigned in the DiscoverCard case below) so it's in scope for the
+  // row template assembly further down, same pattern playerTargetHtml
+  // etc. already use.
+  let discoverCardRefsBlockHtml = '';
   switch(act.type){
     // Kept as its own hand-built sentence (not amountForTargetSentence) —
     // the only type with BOTH an amount and a hit-count. Tyler's original
@@ -16085,12 +16115,12 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
           }).join('')}</div>`
         : `<div class="chip-row a-discover-cardrefs-chips"><span class="chip-empty">no cards picked yet</span></div>`;
       const cardRefsPickerHtml = state.cards.length
-        ? `<div class="a-discover-cardrefs-picker" style="margin:4px 0;">
+        ? `<div class="a-discover-cardrefs-picker">
             <input type="text" class="a-discover-cardsearch" placeholder="Search your cards to add..." list="${cardSearchListId}" autocomplete="off" maxlength="80">
             <datalist id="${cardSearchListId}"></datalist>
             ${cardRefsChipsHtml}
           </div>`
-        : `<div class="hint-small">— no cards defined yet —</div>`;
+        : `<div class="hint-small" style="margin-top:6px;">— no cards defined yet —</div>`;
       const canSkipHtml = `<label class="a-check-label" title="If unchecked, the player must pick one of the offered cards -- no skip."><input type="checkbox" class="a-discover-canskip" ${act.discoverCanSkip === false ? '' : 'checked'}> Can be skipped</label>`;
       const freeCostHtml = `<select class="a-discover-freecost" title="Make the discovered card free -- calls the same real CardModel.SetToFreeThisTurn()/SetToFreeThisCombat() methods the one real vanilla Discovery card itself uses.">
         <option value="" ${!act.discoverFreeCost ? 'selected' : ''}>and it costs normal Energy</option>
@@ -16098,7 +16128,23 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         <option value="ThisCombat" ${act.discoverFreeCost === 'ThisCombat' ? 'selected' : ''}>and it's free this combat</option>
       </select>`;
       const filterAreaHtml = (cardTypeFilterHtml || tagFilterHtml) ? ` ${cardTypeFilterHtml}${tagFilterHtml}` : ' ';
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${filterAreaHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>${sourceKind === 'SpecificCards' ? cardRefsPickerHtml : ''}`;
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}${filterAreaHtml}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select>, ${freeCostHtml} ${canSkipHtml}<span class="cond-word">.</span>`;
+      // [2026-09-30 follow-up #3] Tyler: "the search box is the wrong
+      // size, and the cards added overlap it, and both of them are too
+      // high." Root cause: this picker was appended inline at the end of
+      // sentenceHtml, making it one more flex ITEM inside
+      // .action-row-sentence (flex-wrap:wrap; align-items:center). At
+      // narrower widths, short trailing sentence fragments ("and it costs
+      // normal Energy", "Can be skipped .") shared the picker's own
+      // wrapped line, and align-items:center vertically centered the
+      // whole two-row-tall picker (search input above, chip row below)
+      // against those short single-line siblings -- floating the input up
+      // and crowding the chips down into the line above. Rendered as its
+      // own block below the sentence instead (see discoverCardRefsBlockHtml's
+      // declaration above, and its slot in the row template below) -- same
+      // "own row, not inline in the flex sentence" fix Round 75 already
+      // applied to DealDamage's X Damage/X Hits checkboxes.
+      discoverCardRefsBlockHtml = sourceKind === 'SpecificCards' ? cardRefsPickerHtml : '';
       break;
     }
     default:
@@ -16157,6 +16203,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
+    ${discoverCardRefsBlockHtml}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
     ${hasFormula ? `<div class="a-formula-slot"></div>` : ''}
     ${scaleWarningHtml}
