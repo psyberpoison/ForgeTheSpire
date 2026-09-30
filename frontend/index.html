@@ -16086,13 +16086,24 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // that swaps which fields show" treatment the `.a-mode` select gets
       // in wireActionRowHandlers below.
       const sourceKind = act.discoverSourceKind === 'SpecificCards' ? 'SpecificCards' : 'Pool';
-      const sourceKindHtml = `<select class="a-discover-sourcekind" title="Draw discover candidates from a real card pool, or hand-pick specific cards of this character's own.">
-        <option value="Pool" ${sourceKind === 'Pool' ? 'selected' : ''}>a pool</option>
+      // [2026-09-30 follow-up #5] Tyler: "that top line does not read
+      // correctly as a sentence" -- the previous two adjacent selects
+      // ("a pool"/"specific cards", immediately followed by a second
+      // select naming the actual pool) read as two disconnected phrases
+      // once the sentence was trimmed down to just this clause ("from a
+      // pool Your Own Character's Pool to your Hand" -- no connective
+      // between them). Tyler's own target shape from the previous round,
+      // "Discover [x] cards [from a pool] to your [hand]", has exactly
+      // ONE slot for "where from" -- so this is now a SINGLE merged
+      // select instead of two chained ones: "specific cards" is one
+      // option, each real pool (including "Your Own Character's Pool")
+      // is one option each. Value is "SpecificCards" or "Pool:<name>";
+      // wireActionRowHandlers' own discoverSourceSelect handler below
+      // splits it back into act.discoverSourceKind/act.discoverPool.
+      const discoverSourceHtml = `<select class="a-discover-source" title="Where to draw the discover candidates from -- a real card pool, or cards you hand-pick yourself.">
         <option value="SpecificCards" ${sourceKind === 'SpecificCards' ? 'selected' : ''}>specific cards</option>
-      </select>`;
-      const discoverPoolHtml = `<select class="a-discover-pool" title="Which real card pool to draw the discover options from.">
-        <option value="OwnCharacter" ${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'selected' : ''}>Your Own Character's Pool</option>
-        ${CARD_POOL_VALUES.map(p => `<option value="${p}" ${act.discoverPool === p ? 'selected' : ''}>${p}</option>`).join('')}
+        <option value="Pool:OwnCharacter" ${(sourceKind === 'Pool' && (!act.discoverPool || act.discoverPool === 'OwnCharacter')) ? 'selected' : ''}>Your Own Character's Pool</option>
+        ${CARD_POOL_VALUES.map(p => `<option value="Pool:${p}" ${(sourceKind === 'Pool' && act.discoverPool === p) ? 'selected' : ''}>${p}</option>`).join('')}
       </select>`;
       // [2026-09-30 follow-up #2] Tyler: "if 'specific cards' is selected
       // then we dont need to put the whole 'only attacks/skill/etc'
@@ -16169,7 +16180,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // below the sentence (declared near sentenceHtml above, slotted
       // into the row template below next to the other below-sentence
       // blocks).
-      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${sourceKindHtml}${sourceKind === 'Pool' ? ` ${discoverPoolHtml}` : ''}<span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select><span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Discover</span> <input type="number" class="a-discover-count" min="1" max="20" value="${Number.isInteger(act.discoverCount) ? act.discoverCount : 3}"> <span class="cond-word">card(s) from</span> ${discoverSourceHtml} <span class="cond-word">to your</span> <select class="a-destination">${createCardDestOptList(act.destination)}</select><span class="cond-word">.</span>`;
       discoverOptionsBlockHtml = `<div class="action-row-usex">${cardTypeFilterHtml}${tagFilterHtml}${freeCostHtml}${canSkipHtml}</div>`;
       // [2026-09-30 follow-up #3] Tyler: "the search box is the wrong
       // size, and the cards added overlap it, and both of them are too
@@ -16436,18 +16447,23 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     const v = parseInt(e.target.value, 10);
     act.discoverCount = (Number.isInteger(v) && v >= 1 && v <= 20) ? v : 3;
   };
-  const discoverPoolSelect = row.querySelector('.a-discover-pool');
-  if(discoverPoolSelect) discoverPoolSelect.onchange = e=> act.discoverPool = e.target.value;
-  // [2026-09-30 follow-up] discoverSourceKind -- DOES need a re-render
-  // (Pool shows discoverPoolHtml, SpecificCards shows the card-checkbox
-  // picker instead -- genuinely different sibling controls), same
-  // treatment modeSelect gets above.
-  const discoverSourceKindSelect = row.querySelector('.a-discover-sourcekind');
-  if(discoverSourceKindSelect) discoverSourceKindSelect.onchange = e=>{
-    act.discoverSourceKind = e.target.value;
-    if(act.discoverSourceKind !== 'SpecificCards'){
-      delete act.discoverCardRefs;
-    } else {
+  // [2026-09-30 follow-up #5] Tyler: "that top line does not read
+  // correctly as a sentence" -- discoverSourceKind ("a pool"/"specific
+  // cards") and discoverPool (which real pool) used to be two separate
+  // chained <select>s; merged into one .a-discover-source select (see
+  // that render case's own comment) whose value is "SpecificCards" or
+  // "Pool:<name>". Always re-renders on change -- same "DOES need a
+  // re-render, different sibling controls" reasoning the old two-select
+  // version's discoverSourceKind handler already used, since crossing the
+  // Pool/SpecificCards boundary swaps the type/tag filter row for the
+  // card-search picker; picking a different pool within Pool mode just
+  // re-renders into the same state, which is harmless.
+  const discoverSourceSelect = row.querySelector('.a-discover-source');
+  if(discoverSourceSelect) discoverSourceSelect.onchange = e=>{
+    const v = e.target.value;
+    const wasSpecific = act.discoverSourceKind === 'SpecificCards';
+    if(v === 'SpecificCards'){
+      act.discoverSourceKind = 'SpecificCards';
       delete act.discoverPool;
       // [2026-09-30 follow-up #2] Tyler: "we dont need [the type/tag
       // filter] since the creator is picking cards manually" -- cleared
@@ -16455,6 +16471,10 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
       // rather than left set-but-hidden (no invisible-filter state).
       delete act.discoverCardType;
       delete act.discoverTagFilter;
+    } else {
+      act.discoverSourceKind = 'Pool';
+      act.discoverPool = v.slice('Pool:'.length);
+      if(wasSpecific) delete act.discoverCardRefs;
     }
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
