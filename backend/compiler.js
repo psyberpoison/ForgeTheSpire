@@ -1668,7 +1668,7 @@ function describeAmountForStub(action) {
 // direct sts2.dll reads. Gated on `ctx.cardPlayBound` by both callers,
 // same as their own non-random paths — `cardPlay.Player` is what supplies
 // the real `RunState`.
-function resolveRandomCardPickAndAct(loopVarPrefix, amountExpr, actExprBuilder, playerExpr) {
+function resolveRandomCardPickAndAct(loopVarPrefix, amountExpr, actExprBuilder, playerExpr, pileExpr) {
   const iVar = `fg${loopVarPrefix}I`;
   const cardsVar = `fg${loopVarPrefix}Cards`;
   const pickVar = `fg${loopVarPrefix}Pick`;
@@ -1678,10 +1678,18 @@ function resolveRandomCardPickAndAct(loopVarPrefix, amountExpr, actExprBuilder, 
   // GainGold/CreateCard already got in earlier rounds; this helper simply
   // predates resolvePlayerExpr(ctx) itself (round 59) and never got
   // updated when it was introduced.
+  // [Round 339] `pileExpr` added as an optional 5th param — AfflictCard's
+  // new "RandomFromPile" targeting (Tyler: "just add a [x] number of
+  // random cards in pile option") needs this same real pick loop against
+  // a PLAYER-CHOSEN pile, not just Hand. Both existing callers
+  // (ExhaustCard/DiscardCard's own "random" mode, below) omit this param
+  // entirely, so they fall back to the exact same hardcoded Hand literal
+  // they always used — byte-identical generated output, unchanged.
+  const pile = pileExpr || 'MegaCrit.Sts2.Core.Entities.Cards.PileType.Hand';
   return [
     `        for (var ${iVar} = 0; ${iVar} < ${amountExpr}; ${iVar}++)`,
     `        {`,
-    `            var ${cardsVar} = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Hand, ${playerExpr}).Cards;`,
+    `            var ${cardsVar} = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(${pile}, ${playerExpr}).Cards;`,
     `            if (${cardsVar}.Count > 0)`,
     `            {`,
     `                var ${pickVar} = ${playerExpr}.RunState.Rng.CombatCardSelection.NextItem(${cardsVar});`,
@@ -2956,10 +2964,34 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // generateAfflictionSource's onPlayCtx, which sets
     // affectedCardIsThisCard: true).
     case 'AfflictCard': {
-      const acCardExpr = resolveActedCardExpr(ctx);
-      if (!acCardExpr) return `        ForgeActions.Todo("AfflictCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       const afflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
       if (!afflCls) return `        ForgeActions.Todo("AfflictCard -- no affliction selected"); // pick an affliction in this action's own dropdown`;
+      // [Round 339, 2026-09-30] Tyler: "we currently only have the option
+      // to afflict this card. we should give the option to afflict other
+      // cards as well" -- then "just add a [x] number of random cards in
+      // pile option" once offered the real evidenced shapes. Afflict<T>
+      // itself takes ANY CardModel (see this case's own header comment
+      // above for the full evidence trail), so this branch just points it
+      // at a batch of randomly-picked cards from a player-chosen pile
+      // instead of resolveActedCardExpr's single "this card" -- reusing
+      // the exact same real Rng.CombatCardSelection.NextItem(...) pick
+      // loop ExhaustCard/DiscardCard's own "random" mode already uses
+      // (resolveRandomCardPickAndAct), just against AfflictCard's own
+      // `pile` field instead of their hardcoded Hand.
+      if (action.afflictTargetKind === 'RandomFromPile') {
+        const acCount = Number.isFinite(Number(action.afflictRandomCount)) && Number(action.afflictRandomCount) > 0 ? Math.floor(Number(action.afflictRandomCount)) : 1;
+        const acPlayerExpr = resolvePlayerExpr(ctx);
+        const acPileExpr = pileTypeExpr(action.pile);
+        return resolveRandomCardPickAndAct(
+          'AfflictRandom',
+          String(acCount),
+          (pickVar) => `await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(${pickVar}, (decimal)(${resolveAmountExpr(action, ctx)})); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Powers/FatiguePower.cs's real, working "await CardCmd.Afflict<Reckless>(_ac, base.Amount * 1m)" call] CardCmd.Afflict<T>(CardModel, decimal) is real, public, static, generic, async -- same call as the "this card" branch below, just pointed at each randomly-picked card in turn.`,
+          acPlayerExpr,
+          acPileExpr
+        );
+      }
+      const acCardExpr = resolveActedCardExpr(ctx);
+      if (!acCardExpr) return `        ForgeActions.Todo("AfflictCard -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(${acCardExpr}, (decimal)(${resolveAmountExpr(action, ctx)})); // [VERIFIED via decompiling Tyler's own real "The Burdened" project, round 197 -- Powers/FatiguePower.cs's real, working "await CardCmd.Afflict<Reckless>(_ac, base.Amount * 1m)" call] CardCmd.Afflict<T>(CardModel, decimal) is real, public, static, generic, async -- it constructs/attaches the affliction itself, no ModelDb.Affliction<T>()/ToMutable() needed here.`;
     }
     case 'RemoveAffliction': {

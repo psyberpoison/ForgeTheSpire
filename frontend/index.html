@@ -11682,6 +11682,15 @@ function describeAction(act){
     // "apply" pair -- ClearAffliction/ClearEnchantment take no amount.
     case 'AfflictCard': {
       const name = (state.afflictions.find(a=>a.id===act.afflictionRef) || {}).name || 'an affliction';
+      // [Round 339] "RandomFromPile" targeting -- Tyler: "just add a [x]
+      // number of random cards in pile option" -- same plain-sentence
+      // convention as everywhere else, naming the pile and the count
+      // instead of "this card".
+      if(act.afflictTargetKind === 'RandomFromPile'){
+        const count = act.afflictRandomCount || 1;
+        const pileLabel = (act.pile || 'Hand').toLowerCase();
+        return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
+      }
       return `Afflict this card with ${n} stack${n===1?'':'s'} of ${name}`;
     }
     case 'RemoveAffliction': return `Remove this card's current affliction (if any)`;
@@ -15417,6 +15426,36 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.enchantmentRef;
   }
+  // [2026-09-30 follow-up] Tyler: "just remove the formula section
+  // entirely" -- scoped to Afflict/Enchant a Card only. A package saved
+  // BEFORE this change (or hand-edited afterward) can still carry an
+  // amountFormula on one of these two types -- backend/validate.js now
+  // rejects that outright on export, so self-heal it here first: a
+  // single-term Literal formula (the simple, common case -- e.g. someone
+  // toggled the checkbox on but never actually combined multiple sources)
+  // converts back losslessly to the equivalent flat `amount`; anything
+  // more complex (multiple terms, or a non-Literal source) has no flat
+  // equivalent to preserve, so it's simply dropped -- same "fail loud,
+  // don't guess" stance as everywhere else in this codebase, just applied
+  // at load-time self-heal rather than a compiler Todo stub, since there's
+  // nothing left to compile once the UI can't offer this combination.
+  if(act.type === 'AfflictCard' || act.type === 'EnchantCard'){
+    if(Array.isArray(act.amountFormula) && act.amountFormula.length){
+      const firstTerm = act.amountFormula[0];
+      if(act.amountFormula.length === 1 && firstTerm && firstTerm.source === 'Literal' && typeof firstTerm.value === 'number'){
+        act.amount = firstTerm.value;
+      }
+      delete act.amountFormula;
+    } else if(act.amountFormula !== undefined){
+      delete act.amountFormula; // empty/malformed array -- nothing to convert
+    }
+    // amountFormulaClamp is only ever meaningful alongside amountFormula,
+    // so it's dropped unconditionally here too -- covers a package that
+    // somehow carries the clamp with no formula at all (backend/validate.js
+    // rejects amountFormulaClamp on these two types outright regardless of
+    // whether amountFormula is present, see its own round-339 comment).
+    delete act.amountFormulaClamp;
+  }
   // [Round 286] SummonPet's own entity picker -- same self-healing shape
   // as AfflictCard/EnchantCard above. [Round 289] Every defined pet is a
   // valid target now -- the earlier compileReal opt-in filter is retired.
@@ -15465,11 +15504,34 @@ function ensureActionRefDefaults(act){
   // stale data around.
   delete act.petSelectKind;
   delete act.position;
+  // [Round 339, 2026-09-30] AfflictCard's own afflictTargetKind/
+  // afflictRandomCount -- Tyler: "we should give the option to afflict
+  // other cards as well" -> "just add a [x] number of random cards in
+  // pile option". Same self-healing shape as everything else in this
+  // function: falls back to a sane default (ThisCard, matching the
+  // behavior AfflictCard always had before this field existed), fills in
+  // a usable afflictRandomCount only while RandomFromPile is actually
+  // selected, and drops both on any other action type so a stale value
+  // never survives a type switch. Must run BEFORE the `pile` self-heal
+  // below, which widens its own condition to cover this mode.
+  if(act.type === 'AfflictCard'){
+    if(!['ThisCard','RandomFromPile'].includes(act.afflictTargetKind)) act.afflictTargetKind = 'ThisCard';
+    if(act.afflictTargetKind === 'RandomFromPile'){
+      if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)) act.afflictRandomCount = 1;
+    } else {
+      delete act.afflictRandomCount;
+    }
+  } else {
+    delete act.afflictTargetKind;
+    delete act.afflictRandomCount;
+  }
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
   // entries already use, defaults to "Hand" (matching Reckless.cs's own
-  // real usage and compiler.js:pileTypeExpr's own fallback).
-  if(act.type === 'ClearAfflictionFromPile'){
+  // real usage and compiler.js:pileTypeExpr's own fallback). [Round 339]
+  // Widened to also cover AfflictCard while afflictTargetKind is
+  // "RandomFromPile" -- same shared field, not a duplicate.
+  if(act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')){
     if(!PILE_TYPES.includes(act.pile)) act.pile = 'Hand';
   } else {
     delete act.pile;
@@ -15616,7 +15678,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // is active (the author has to uncheck "Use a formula" first, which
   // already clears act.amountFormula — see wireActionRowHandlers'
   // .a-amount-useformula handler).
-  const formulaEligible = needsAmount || isModifyStatusAdd;
+  // [2026-09-30 follow-up] Tyler: "just remove the formula section
+  // entirely" -- scoped to Afflict/Enchant a Card only ("Just
+  // Afflict/Enchant a Card", his own clarifying answer once told the
+  // feature actually spans 16 action types). The checkbox/builder simply
+  // isn't offered on these two types anymore; backend/validate.js rejects
+  // a leftover amountFormula on them (hand-edited/pre-removal packages),
+  // and ensureActionRefDefaults below self-heals any such leftover on
+  // load (converts a plain Literal formula back to a flat `amount`, then
+  // drops the formula fields entirely).
+  const formulaEligible = (needsAmount || isModifyStatusAdd) && act.type !== 'AfflictCard' && act.type !== 'EnchantCard';
   const hasFormula = formulaEligible && Array.isArray(act.amountFormula) && act.amountFormula.length > 0;
   const canScale = actionCanScaleWithStatus(act.type) && (act.type !== 'ModifyStatus' || isModifyStatusAdd) && !hasFormula;
   const isDealDamage = act.type === 'DealDamage';
@@ -16073,12 +16144,35 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // entities yet" hint-text fallback). RemoveAffliction/RemoveEnchantment
     // need no fields at all -- CardCmd.ClearAffliction/ClearEnchantment
     // (compiler.js) take just the card, no amount, no ref.
+    // [Round 339, 2026-09-30] "RandomFromPile" targeting -- Tyler: "we
+    // currently only have the option to afflict this card. we should give
+    // the option to afflict other cards as well" -> "just add a [x]
+    // number of random cards in pile option". Target-kind select modeled
+    // on ClearAfflictionFromPile's own pile select just below; the count
+    // input + pile select only show up once "random card(s)" is actually
+    // picked, same conditional-field convention DiscoverCard's own source
+    // select already established. The count input is placed BEFORE the
+    // target-kind select (same "count leads the noun it modifies" order
+    // DiscoverCard's own "Discover [count] cards from..." sentence already
+    // uses) so the random-mode sentence reads naturally: "Afflict 3 random
+    // card(s) in your Discard Pile with..." rather than "...random
+    // card(s) 3 in your...".
     case 'AfflictCard': {
       const afflOptions = state.afflictions.length
         ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
-      sentenceHtml = `<span class="cond-word">Afflict this card with</span>${amountHtml}${useXAmountHtmlNoFormula}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
-      formulaBelowSentenceBlockHtml = formulaToggleHtml;
+      const acIsRandom = act.afflictTargetKind === 'RandomFromPile';
+      const acCountPrefixHtml = acIsRandom
+        ? `<input type="number" class="a-afflict-random-count" min="1" step="1" value="${act.afflictRandomCount ?? 1}" style="width:56px; flex:none;">`
+        : '';
+      const acTargetKindHtml = `<select class="a-afflict-target-kind">
+        <option value="ThisCard" ${(act.afflictTargetKind||'ThisCard')==='ThisCard'?'selected':''}>this card</option>
+        <option value="RandomFromPile" ${acIsRandom?'selected':''}>random card(s)</option>
+      </select>`;
+      const acPileSuffixHtml = acIsRandom
+        ? `<span class="cond-word">in your</span><select class="a-pile">${pileOptList(act.pile)}</select>`
+        : '';
+      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
       break;
     }
     case 'RemoveAffliction':
@@ -16088,8 +16182,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const enchOptions = state.enchantments.length
         ? `<select class="a-enchantment-ref">${state.enchantments.map(en=>`<option value="${escapeAttr(en.id)}" ${act.enchantmentRef===en.id?'selected':''}>${escapeHtml(en.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create an Enchantment first)</span>`;
-      sentenceHtml = `<span class="cond-word">Enchant this card with</span>${amountHtml}${useXAmountHtmlNoFormula}<span class="cond-word">stack(s) of</span> ${enchOptions}<span class="cond-word">.</span>`;
-      formulaBelowSentenceBlockHtml = formulaToggleHtml;
+      sentenceHtml = `<span class="cond-word">Enchant this card with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${enchOptions}<span class="cond-word">.</span>`;
       break;
     }
     case 'RemoveEnchantment':
@@ -16461,6 +16554,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
+    delete act.afflictTargetKind; delete act.afflictRandomCount;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
     delete act.discoverCount; delete act.discoverPool; delete act.discoverCardType; delete act.discoverCanSkip; delete act.discoverFreeCost;
@@ -16560,9 +16654,32 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // petRefSelect/petPositionModeSelect above are the only two fields this
   // action needs again.
   // [Round 199] ClearAfflictionFromPile's own pile select -- no re-render
-  // needed, same as destinationSelect/costScopeSelect above.
+  // needed, same as destinationSelect/costScopeSelect above. [Round 339]
+  // Also used by AfflictCard's own RandomFromPile mode -- same field,
+  // same handler, no branching needed since it just writes act.pile
+  // either way.
   const pileSelect = row.querySelector('.a-pile');
   if(pileSelect) pileSelect.onchange = e=> act.pile = e.target.value;
+  // [Round 339, 2026-09-30] AfflictCard's own target-kind select -- DOES
+  // need a re-render (same "toggling swaps which sibling controls this
+  // row shows" reasoning modeSelect/doubleEnergy above already follow):
+  // switching to "random card(s) in a pile" reveals the count input + a
+  // pile select that don't exist in "this card" mode, and vice versa.
+  const afflictTargetKindSelect = row.querySelector('.a-afflict-target-kind');
+  if(afflictTargetKindSelect) afflictTargetKindSelect.onchange = (e)=>{
+    act.afflictTargetKind = e.target.value;
+    ensureActionRefDefaults(act);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  // AfflictCard's own random-count input -- no re-render needed, doesn't
+  // change which other fields this row shows (same shape as the mode
+  // select's sibling fields elsewhere in this function).
+  const afflictRandomCountInput = row.querySelector('.a-afflict-random-count');
+  if(afflictRandomCountInput) afflictRandomCountInput.onchange = e=>{
+    const v = parseInt(e.target.value, 10);
+    act.afflictRandomCount = (Number.isFinite(v) && v >= 1) ? v : 1;
+  };
   // [2026-09-23] TransformDeckCards's own two card-picker selects -- no
   // re-render needed, same as afflictionRefSelect/enchantmentRefSelect above.
   const sourceCardRefSelect = row.querySelector('.a-source-card-ref');

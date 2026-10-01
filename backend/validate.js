@@ -1200,15 +1200,44 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else if (act.petPositionMode !== undefined) {
       errors.push(`${p}: petPositionMode is only meaningful on "MovePetPosition" — action type is "${act.type}".`);
     }
-    // [Round 199] pile -- ClearAfflictionFromPile only, same "must be one
-    // of PILE_TYPES, or omitted (defaults to Hand)" shape whileInHand's
-    // own .pile field already uses (see its own check further below).
-    if (act.type === 'ClearAfflictionFromPile') {
+    // [Round 339, 2026-09-30] afflictTargetKind/afflictRandomCount --
+    // AfflictCard only. Tyler: "we currently only have the option to
+    // afflict this card. we should give the option to afflict other cards
+    // as well" -> "just add a [x] number of random cards in pile option".
+    // Checked BEFORE the `pile` check below since that check's own
+    // AfflictCard branch depends on afflictTargetKind's resolved value.
+    if (act.type === 'AfflictCard') {
+      if (act.afflictTargetKind !== undefined && !['ThisCard', 'RandomFromPile'].includes(act.afflictTargetKind)) {
+        errors.push(`${p}.afflictTargetKind is "${act.afflictTargetKind}" — must be "ThisCard" or "RandomFromPile" (or omitted, which defaults to "ThisCard").`);
+      }
+      if (act.afflictTargetKind === 'RandomFromPile') {
+        if (act.afflictRandomCount === undefined || act.afflictRandomCount === null || act.afflictRandomCount === '') {
+          errors.push(`${p}: action "AfflictCard" with afflictTargetKind "RandomFromPile" needs afflictRandomCount set — how many random cards to afflict.`);
+        } else if (!Number.isInteger(Number(act.afflictRandomCount)) || Number(act.afflictRandomCount) < 1) {
+          errors.push(`${p}.afflictRandomCount must be a whole number >= 1.`);
+        }
+      } else if (act.afflictRandomCount !== undefined) {
+        errors.push(`${p}: afflictRandomCount is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
+      }
+    } else {
+      if (act.afflictTargetKind !== undefined) {
+        errors.push(`${p}: afflictTargetKind is only meaningful on "AfflictCard" — action type is "${act.type}".`);
+      }
+      if (act.afflictRandomCount !== undefined) {
+        errors.push(`${p}: afflictRandomCount is only meaningful on "AfflictCard" — action type is "${act.type}".`);
+      }
+    }
+    // [Round 199] pile -- ClearAfflictionFromPile, or AfflictCard with
+    // afflictTargetKind "RandomFromPile" (round 339, see afflictTargetKind
+    // above) -- same "must be one of PILE_TYPES, or omitted (defaults to
+    // Hand)" shape whileInHand's own .pile field already uses (see its own
+    // check further below).
+    if (act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')) {
       if (act.pile !== undefined && !PILE_TYPES.includes(act.pile)) {
         errors.push(`${p}.pile is "${act.pile}" — must be one of: ${PILE_TYPES.join(', ')} (or omitted, which defaults to "Hand").`);
       }
     } else if (act.pile !== undefined) {
-      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile" — action type is "${act.type}".`);
+      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile"/"AfflictCard" (RandomFromPile mode) — action type is "${act.type}".`);
     }
     if (act.type === 'EnchantCard') {
       if (act.enchantmentRef === '' || act.enchantmentRef === undefined) {
@@ -1309,7 +1338,18 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // BEFORE amountScalesWith* below so the mutual-exclusivity error names
     // amountFormula as the reason, matching how amountIsX's own check
     // above already reads.
-    if (act.amountFormula !== undefined) {
+    // [2026-09-30 follow-up] Tyler: "just remove the formula section
+    // entirely" -- scoped to Afflict/Enchant a Card only (his own
+    // clarification; the feature stays on every other amount-bearing
+    // action type). The frontend no longer offers the checkbox/builder on
+    // these two types at all, so this rejects a hand-edited or
+    // pre-removal-saved package that still carries one, same "export
+    // validation matches what the UI can actually produce" discipline
+    // every other type-restricted field in this file already follows
+    // (e.g. hpKind/ReturnToHand just above).
+    if (act.amountFormula !== undefined && (act.type === 'AfflictCard' || act.type === 'EnchantCard')) {
+      errors.push(`${p}: amountFormula is not available on "${act.type}" — the "Use a formula" option was removed from Afflict/Enchant a Card.`);
+    } else if (act.amountFormula !== undefined) {
       if (!Array.isArray(act.amountFormula) || act.amountFormula.length < 1 || act.amountFormula.length > MAX_AMOUNT_FORMULA_TERMS) {
         errors.push(`${p}.amountFormula must be an array of 1-${MAX_AMOUNT_FORMULA_TERMS} terms.`);
       } else {
@@ -1365,7 +1405,9 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         });
       }
     }
-    if (act.amountFormulaClamp !== undefined) {
+    if (act.amountFormulaClamp !== undefined && (act.type === 'AfflictCard' || act.type === 'EnchantCard')) {
+      errors.push(`${p}: amountFormulaClamp is not available on "${act.type}" — the "Use a formula" option was removed from Afflict/Enchant a Card.`);
+    } else if (act.amountFormulaClamp !== undefined) {
       if (!act.amountFormulaClamp || typeof act.amountFormulaClamp !== 'object') {
         errors.push(`${p}.amountFormulaClamp must be an object if present.`);
       } else {
