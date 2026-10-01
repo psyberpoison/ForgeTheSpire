@@ -5021,8 +5021,11 @@ const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","Re
 // GenerateAllCards() showed it's MegaCrit's own internal QA/mock fixture
 // (13 generic MockCardModel placeholders, get_IsMock()==true, get_Title()
 // =="test"), not real playable cards -- see compiler.js:CARD_POOL_CLASS_MAP's
-// own comment for the full evidence trail.
-const CARD_POOL_VALUES = ["Colorless","Curse","Status","Token","Ironclad","Silent","Defect","Necrobinder","Regent"];
+// own comment for the full evidence trail. [REMOVED 2026-09-30, later the
+// same day] "Token" dropped too -- Tyler: "remove 'token' as an option" --
+// a real, concrete pool (unlike Deprived), removed on Tyler's own explicit
+// direction rather than an evidence finding.
+const CARD_POOL_VALUES = ["Colorless","Curse","Status","Ironclad","Silent","Defect","Necrobinder","Regent"];
 
 // [2026-09-30 follow-up #2] DiscoverCard's own SpecificCards card-search
 // widget needs a fresh, document-unique <datalist> id every time its row
@@ -16100,10 +16103,22 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // is one option each. Value is "SpecificCards" or "Pool:<name>";
       // wireActionRowHandlers' own discoverSourceSelect handler below
       // splits it back into act.discoverSourceKind/act.discoverPool.
+      // [2026-09-30 follow-up #6] Tyler: "remove 'token' as an option and
+      // update each entry to be 'from ironclad's pool' or 'from silent's
+      // pool' instead of just 'ironclad' or 'silent'. that will make them
+      // read better in a sentence." ("from" is already the preceding
+      // static sentence text above -- this is the "'s Pool" suffix on
+      // each option's own label, matching the "Your Own Character's Pool"
+      // default option's existing phrasing, not a literal second "from".)
+      // Scoped to THIS select only -- CARD_POOL_VALUES' other UI use
+      // (round 213's cardRewardPoolAppend checkbox list, further down
+      // this file) already reads fine with bare pool names, since its own
+      // intro text ends "...add these card pools to this reward's
+      // options:" immediately before the checkboxes.
       const discoverSourceHtml = `<select class="a-discover-source" title="Where to draw the discover candidates from -- a real card pool, or cards you hand-pick yourself.">
         <option value="SpecificCards" ${sourceKind === 'SpecificCards' ? 'selected' : ''}>specific cards</option>
         <option value="Pool:OwnCharacter" ${(sourceKind === 'Pool' && (!act.discoverPool || act.discoverPool === 'OwnCharacter')) ? 'selected' : ''}>Your Own Character's Pool</option>
-        ${CARD_POOL_VALUES.map(p => `<option value="Pool:${p}" ${(sourceKind === 'Pool' && act.discoverPool === p) ? 'selected' : ''}>${p}</option>`).join('')}
+        ${CARD_POOL_VALUES.map(p => `<option value="Pool:${p}" ${(sourceKind === 'Pool' && act.discoverPool === p) ? 'selected' : ''}>${p}'s Pool</option>`).join('')}
       </select>`;
       // [2026-09-30 follow-up #2] Tyler: "if 'specific cards' is selected
       // then we dont need to put the whole 'only attacks/skill/etc'

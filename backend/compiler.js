@@ -816,11 +816,18 @@ const VANILLA_TOKEN_CARD_CLASS_MAP = {
 // places at once -- see frontend/index.html's own CARD_POOL_VALUES (its
 // hand-mirrored copy of this map's keys) and schema/character.schema.
 // json's discoverPool enum, both updated to match.
+// [REMOVED 2026-09-30, same day] `Token: 'MegaCrit.Sts2.Core.Models.
+// CardPools.TokenCardPool'` was a real, concrete CardPools.* subclass (not
+// a mock fixture like Deprived above) -- removed at Tyler's own explicit
+// direction ("remove 'token' as an option"), not for a validity reason.
+// Same "both DiscoverCard's discoverPool and round 213's
+// cardRewardPoolAppend read this one map" propagation as Deprived's own
+// removal above -- see frontend/index.html's CARD_POOL_VALUES and schema/
+// character.schema.json's discoverPool enum, both updated to match.
 const CARD_POOL_CLASS_MAP = {
   Colorless: 'MegaCrit.Sts2.Core.Models.CardPools.ColorlessCardPool',
   Curse: 'MegaCrit.Sts2.Core.Models.CardPools.CurseCardPool',
   Status: 'MegaCrit.Sts2.Core.Models.CardPools.StatusCardPool',
-  Token: 'MegaCrit.Sts2.Core.Models.CardPools.TokenCardPool',
   Ironclad: 'MegaCrit.Sts2.Core.Models.CardPools.IroncladCardPool',
   Silent: 'MegaCrit.Sts2.Core.Models.CardPools.SilentCardPool',
   Defect: 'MegaCrit.Sts2.Core.Models.CardPools.DefectCardPool',
