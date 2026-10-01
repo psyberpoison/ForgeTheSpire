@@ -3883,6 +3883,35 @@
     </div>
   </section>
 
+  <!-- [Round 347, task #31] Stances — Tyler: "lets do it" (next item on the
+       standing gap-analysis list), then, asked how to handle it, uploaded a
+       real reference mod with a working custom stance. A direct ECMA-335
+       TypeDef scan of the real installed sts2.dll confirmed there is NO
+       native Stance support in the engine -- no StanceModel class, no
+       Wrath/Calm/Divinity Power classes -- so this whole feature (and even
+       the 3 "vanilla" presets below) is composed entirely from real,
+       already-[VERIFIED]-elsewhere primitives instead (see
+       backend/compiler.js:generateStanceSource's own header for the full
+       evidence trail). Same tile-grid + modal-editor pattern as Pets/Orbs/
+       Chronicles above (renderStances/openStanceEditor, near the bottom of
+       the script). -->
+  <section class="panel" id="section-stances">
+    <div class="panel-head">
+      <h2><span class="num">09</span> Stances</h2>
+      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="stance-count">0 stances</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-desc">
+        A Stance (like Wrath/Calm/Divinity) a creature can enter and exit — modifying damage dealt/taken, enemy buff
+        strength, heal effectiveness, and energy on enter/exit, while active. There's no native Stance system in the
+        real game engine — every field below compiles into a real, working custom Power that your cards' own
+        "Enter Stance"/"Exit Stance" effects (and the "is in stance" condition) can reference, the exact same way
+        Wrath/Calm/Divinity themselves do once picked from the vanilla dropdown in those effects.
+      </div>
+      <div class="grid-cards" id="stances-grid"></div>
+    </div>
+  </section>
+
 </main>
 
 <footer class="hint">Forge auto-saves to this browser only. Clearing site data or switching devices loses your work unless you export.</footer>
@@ -4299,7 +4328,7 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(!CARD_PLAY_BOUND_TRIGGERS.has(trigger)){
     for(const t of CARD_PLAY_BOUND_ONLY_ACTION_TYPES) hidden.add(t);
   }
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check.
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4482,7 +4511,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4628,6 +4657,11 @@ const ACTION_TYPE_LABELS = {
   PetAttack: 'Pet Attack',
   MovePetPosition: 'Move Pet Position',
   DiscoverCard: 'Discover a Card',
+  // [Round 347, task #31] "Custom stances" -- see backend/compiler.js's
+  // actionToCSharp "EnterStance"/"ExitStance" cases for the real
+  // ForgeStanceCmd.Enter<T>/Exit evidence trail.
+  EnterStance: 'Enter Stance',
+  ExitStance: 'Exit Stance',
 };
 // [Round 157] Tyler: "this menu looks a little difficult to navigate"
 // (screenshot of the action-TYPE dropdown — a single flat list of 16
@@ -4694,6 +4728,12 @@ const ACTION_TYPE_GROUPS = [
   // sibling action. [Round 328] "MovePetPosition" joins it too -- same
   // pet-focused concept, see its own actionToCSharp case.
   { label: 'Pets', color: '#5fa88a', types: ['SummonPet', 'PetAttack', 'MovePetPosition'] },
+  // [Round 347, task #31] "Custom stances" -- its own group, same "distinct
+  // enough concept" reasoning Pets got its own group for right above. Color
+  // reused from TRIGGER_CATEGORIES.turnlifecycle's orange (#d97b34) --
+  // unused elsewhere in this array, and a stance swap is a real combat-
+  // lifecycle-adjacent state change, same category of concept.
+  { label: 'Stances', color: '#d97b34', types: ['EnterStance', 'ExitStance'] },
   { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
 ];
 // Human-readable search text per action type — backs the card board's
@@ -4731,6 +4771,8 @@ const ACTION_TYPE_SEARCH_TEXT = {
   SummonPet: 'summon pet companion monster',
   PetAttack: 'pet attack damage companion monster',
   DiscoverCard: 'discover choose a card pool colorless free this turn combat specific select tag tagged',
+  EnterStance: 'enter stance wrath calm divinity buff',
+  ExitStance: 'exit stance leave wrath calm divinity buff',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -5041,7 +5083,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -5467,6 +5509,7 @@ function blankState(){
     afflictions: [],
     pets: [],
     orbs: [],
+    stances: [],
     assets: []
   };
 }
@@ -5571,6 +5614,24 @@ const AFFLICTION_DESCRIPTIONS = {
   Ringing: 'You can only play 1 card this turn.',
   Smog: 'You cannot play additional Skills this turn. Clears at the end of the turn.',
   Tainted: 'Take X additional damage from Attacks this turn.',
+};
+// [Round 347, task #31] "Custom stances" -- sts2.dll has ZERO native Stance
+// support (confirmed via a direct ECMA-335 TypeDef scan) -- Wrath/Calm/
+// Divinity aren't real engine classes, they're fixed presets Forge itself
+// compiles through generateStanceSource (backend/compiler.js:
+// BUILTIN_STANCE_PRESETS), same class shape a custom stance gets. Tyler:
+// "Frozen vanilla dropdown" -- presented read-only here, same non-editable
+// BUILTIN_AFFLICTIONS dropdown convention right above, even though (unlike
+// a real vanilla affliction) these three were never actually confirmed
+// from the live sts2.dll itself -- they're ported from Tyler's own
+// uploaded reference tool's real, compiled WrathStance/CalmStance/
+// DivinityStance classes instead (see BUILTIN_STANCE_PRESETS' own per-field
+// comment in compiler.js for the exact decompiled evidence).
+const BUILTIN_STANCES = ['Wrath', 'Calm', 'Divinity'];
+const STANCE_DESCRIPTIONS = {
+  Wrath: 'Deal 100% more damage. Take 100% more damage.',
+  Calm: 'On Exit: Gain 2 Energy.',
+  Divinity: 'Deal 200% more damage. On Enter: Gain 3 Energy. Exits automatically at the start of your turn.',
 };
 // [Round 249] Retroactive cleanup for orphaned diamond-group members --
 // see the "m-bar-enabled" uncheck handler's own round-249 comment for the
@@ -5821,6 +5882,10 @@ function migrateLegacyStatusActions(pkg){
   // always exists, same as cards/relics/mechanics already could.
   if(!Array.isArray(pkg.pets)) pkg.pets = [];
   if(!Array.isArray(pkg.orbs)) pkg.orbs = [];
+  // [Round 347, task #31] Same additive-only backfill as pets/orbs above --
+  // a package saved before "Custom stances" existed simply has no `stances`
+  // key at all.
+  if(!Array.isArray(pkg.stances)) pkg.stances = [];
 
   // v6 -> v7: character-level ART additions (Tyler's "move on to the art
   // items next" round — items 2/3/4/5/7/9/10/11/16/18 from the list).
@@ -10385,6 +10450,16 @@ const CONDITION_KINDS = [
   // Playability or a Group B modifier hook).
   { id:'PlayersInRun', label:'players in run', real:true, requiresTrigger:'anyRealTrigger',
     hint:'Checks how many players are in this run right now — real in single-player too (always 1 there). Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
+  // [Round 347, task #31] "Custom stances" -- Tyler: "Yes, add it now
+  // (Recommended)." Plain yes/no -- no comparator/value, same shape as
+  // PetIsOut above (compiler.js:conditionToCSharpRaw's InStance case only
+  // ever emits `.HasPower<T>()`). Subject-capable (SUBJECT_CAPABLE_
+  // CONDITION_KINDS/CREATURE_SUBJECT_CONDITION_KINDS above) -- works under
+  // You/Target/Pet exactly like HasStatusStacks. Works everywhere,
+  // including inside the Glow section below (resolveGlowSubjectExpr has a
+  // real path for it, same as HasStatusStacks).
+  { id:'InStance', label:'is in stance', real:true,
+    hint:'Checks whether the chosen creature currently has a given stance active (one of this character\'s own custom stances, or a vanilla Wrath/Calm/Divinity). Plain yes/no — no comparator/value. Works everywhere, including inside the Glow section below.' },
 ];
 // [Round 320] Tyler, shown the kind dropdown's full 15-item open popup
 // (subject "Self"): "lets colorize and categorize this menu." Purely a
@@ -10409,7 +10484,7 @@ const CONDITION_KINDS = [
 // own fallback below exists only as a defensive catch-all for a kind that
 // somehow isn't listed here, never expected to actually fire.
 const CONDITION_KIND_CATEGORIES = [
-  { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','HasBlock','DebuffStacksTotal'] },
+  { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','HasBlock','DebuffStacksTotal','InStance'] },
   { id:'resources', label:'Your Resources', color:'var(--bb-gold)', kindIds:['EnergyRemaining','StarsRemaining','CardsInHand','CardsPlayedThisTurn','AttacksPlayedThisTurn','OrbSlotCount','HandCardTypeCheck','PlayersInRun'] },
   { id:'relicsCards', label:'Relics & Cards', color:'var(--bb-purple)', kindIds:['HasSpecificRelic','NoCopiesOfCardInHand'] },
   { id:'cardReference', label:'Card Reference', color:'var(--bb-green)', kindIds:['CardPositionInHand','PlayedCardHasKeyword','PlayedCardHasTag','PlayedCardHasType'] },
@@ -10655,7 +10730,15 @@ const THAT_CARD_ONLY_CONDITION_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTa
 // is "Pet") — the real narrowing (any pet vs. one specific pet) is its
 // own separate, OPTIONAL `petRef` field (see CONDITION_KINDS' own entry
 // and renderConditionRowFields' needsPetIsOutRef below).
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', 'PetIsOut', ...THAT_CARD_ONLY_CONDITION_KINDS];
+// [Round 347] 'InStance' added -- real, [VERIFIED] subject-capable kind
+// (backend/compiler.js's OWN SUBJECT_CAPABLE_CONDITION_KINDS includes it
+// too, unlike CardPositionInHand/PetIsOut/THAT_CARD_ONLY_CONDITION_KINDS
+// right above, which are frontend-only UI merges) -- its real codegen
+// (conditionToCSharpRaw's InStance case) reads cond.subject via
+// resolveConditionSubjectExpr/resolveGlowSubjectExpr exactly like
+// HasStatusStacks/HpBelowPercent/HasBlock/DebuffStacksTotal, so it belongs
+// in CREATURE_SUBJECT_CONDITION_KINDS below too, not just here.
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', 'PetIsOut', 'InStance', ...THAT_CARD_ONLY_CONDITION_KINDS];
 // [Round 308] Tyler, shown the full kind dropdown under subject "Pet":
 // "which ones make sense to have the subject be 'pet'?" Checked against
 // backend/compiler.js's OWN (deliberately narrower) SUBJECT_CAPABLE_
@@ -10685,7 +10768,7 @@ const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'H
 // (cond.subject)` uniformly, a real per-creature member on the CARD'S
 // TARGET this time instead of the pet — same real mechanism, different
 // creature, so the same 4-kind list applies unchanged.
-const CREATURE_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
+const CREATURE_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'InStance'];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -11856,6 +11939,17 @@ function describeAction(act){
         : `${(!act.discoverPool || act.discoverPool === 'OwnCharacter') ? 'your character’s' : `the ${act.discoverPool}`} pool`;
       return `Discover ${discoverCount}${typePhrase} card${discoverCount===1?'':'s'}${tagPhrase} from ${sourcePhrase}, add the pick to ${destPhrase}${freePhrase}${skipPhrase}`;
     }
+    // [Round 347, task #31] "Custom stances" -- see compiler.js's
+    // actionToCSharp "EnterStance"/"ExitStance" cases for the real
+    // ForgeStanceCmd.Enter<T>/Exit evidence trail. No amount/target --
+    // same no-picker shape as RemoveAffliction/RemoveEnchantment above.
+    case 'EnterStance': {
+      const name = act.stanceKind === 'vanilla'
+        ? (act.stanceVanillaRef || 'a stance')
+        : ((state.stances.find(s=>s.id===act.stanceRef) || {}).name || 'a stance');
+      return `Enter ${name} stance`;
+    }
+    case 'ExitStance': return `Exit your current stance (if any)`;
     default: return '';
   }
 }
@@ -11902,6 +11996,14 @@ function describeCondition(cond, trigger){
     case 'OrbSlotCount': return `your orb slot count is ${cmp} ${cond.value}`;
     // [Round 330] see this kind's own CONDITION_KINDS entry.
     case 'PlayersInRun': return `the number of players in this run is ${cmp} ${cond.value}`;
+    // [Round 347, task #31] "Custom stances" -- plain boolean check, same
+    // shape as PetIsOut right above (no comparator/value).
+    case 'InStance': {
+      const name = cond.stanceKind === 'vanilla'
+        ? (cond.stanceVanillaRef || 'a stance')
+        : ((state.stances.find(s=>s.id===cond.stanceRef) || {}).name || 'a stance');
+      return `${subj} ${subj==='you'?'are':'is'} in ${name} stance`;
+    }
     case 'EnemyIntent': return `the target's intent is ${cond.intentKind}`;
     case 'HasSpecificRelic': return `you have ${(state.relics.find(r=>r.id===cond.relicRef) || {}).name || 'the relic'}`;
     case 'NoCopiesOfCardInHand': return `there are no copies of ${(state.cards.find(c=>c.id===cond.cardRef) || {}).name || 'that card'} in your hand`;
@@ -13761,6 +13863,44 @@ function afflictionSelectHtml(act){
   }
   return `<select class="a-affliction-ref" title="Choose from your own created afflictions, or a vanilla affliction.">${customGroup}${vanillaGroup}</select>`;
 }
+// [Round 347, task #31] "Custom stances" -- same combined vanilla/custom
+// combobox shape as afflictionSelectHtml right above (reads
+// act.stanceKind/act.stanceRef/act.stanceVanillaRef instead of
+// act.afflictionKind/act.afflictionRef/act.afflictionVanillaRef), used by
+// the EnterStance action row. STANCE_DESCRIPTIONS gives the same real,
+// confirmed-behavior hover tooltip AFFLICTION_DESCRIPTIONS already does for
+// vanilla afflictions -- see that const's own header comment for the full
+// evidence trail (ported from Tyler's own uploaded reference tool).
+function stanceSelectHtml(act){
+  const customGroup = state.stances.length
+    ? `<optgroup label="Your stances">${state.stances.map(s=>`<option value="custom:${escapeAttr(s.id)}" title="${escapeAttr(s.description || 'No description set for this stance yet.')}" ${act.stanceKind!=='vanilla'&&act.stanceRef===s.id?'selected':''}>${escapeHtml(s.name||'Untitled')}</option>`).join('')}</optgroup>`
+    : '';
+  const vanillaGroup = BUILTIN_STANCES.length
+    ? `<optgroup label="Vanilla stances">${BUILTIN_STANCES.map(v=>`<option value="vanilla:${escapeAttr(v)}" title="${escapeAttr(STANCE_DESCRIPTIONS[v] || 'No description available yet.')}" ${act.stanceKind==='vanilla'&&act.stanceVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`
+    : '';
+  if(!state.stances.length && !BUILTIN_STANCES.length){
+    return `<span class="cond-word hint-small">(create a Stance first)</span>`;
+  }
+  return `<select class="a-stance-ref" title="Choose from your own created stances, or a vanilla stance.">${customGroup}${vanillaGroup}</select>`;
+}
+// Condition-row counterpart for InStance -- identical shape to
+// stanceSelectHtml right above, just reading/writing cond.stanceKind/
+// cond.stanceRef/cond.stanceVanillaRef (same field names as the action
+// side, separate object) and using the `.c-` class-name convention every
+// other condition-row field in this file uses (vs. actions' `.a-` prefix
+// -- see e.g. .c-subject/.a-affliction-ref elsewhere).
+function stanceConditionSelectHtml(cond){
+  const customGroup = state.stances.length
+    ? `<optgroup label="Your stances">${state.stances.map(s=>`<option value="custom:${escapeAttr(s.id)}" title="${escapeAttr(s.description || 'No description set for this stance yet.')}" ${cond.stanceKind!=='vanilla'&&cond.stanceRef===s.id?'selected':''}>${escapeHtml(s.name||'Untitled')}</option>`).join('')}</optgroup>`
+    : '';
+  const vanillaGroup = BUILTIN_STANCES.length
+    ? `<optgroup label="Vanilla stances">${BUILTIN_STANCES.map(v=>`<option value="vanilla:${escapeAttr(v)}" title="${escapeAttr(STANCE_DESCRIPTIONS[v] || 'No description available yet.')}" ${cond.stanceKind==='vanilla'&&cond.stanceVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`
+    : '';
+  if(!state.stances.length && !BUILTIN_STANCES.length){
+    return `<span class="cond-word hint-small">(create a Stance first)</span>`;
+  }
+  return `<select class="c-stance-ref" title="Choose from your own created stances, or a vanilla stance.">${customGroup}${vanillaGroup}</select>`;
+}
 
 // Lazily backfills card.advancedOptions and every sub-field to a safe,
 // correctly-shaped default — same "migrate on touch" convention every
@@ -14195,6 +14335,24 @@ function blankCondition(kind){
   // comparator/value" shape as HasSpecificRelic/NoCopiesOfCardInHand
   // above.
   if(kind === 'PetPositionIs') return { kind, petRef: state.pets[0] ? state.pets[0].id : '', position: 1 };
+  // [Round 347, task #31] Plain boolean check -- no comparator/value, same
+  // shape as DamageBrokeBlock/PetIsOut above (compiler.js:conditionToCSharpRaw's
+  // InStance case only ever emits `.HasPower<T>()`). Defaults to 'custom'
+  // when this character already has a stance defined, else 'vanilla'
+  // (Wrath) -- same "don't default to pointing at an empty stanceRef"
+  // reasoning HasStatusStacks' own statusKind default uses just below.
+  // subject defaults to 'Self', same as every other SUBJECT_CAPABLE_
+  // CONDITION_KINDS entry (see the shared block at the bottom of this
+  // function).
+  if(kind === 'InStance'){
+    return {
+      kind,
+      subject: 'Self',
+      stanceKind: state.stances.length ? 'custom' : 'vanilla',
+      stanceRef: state.stances[0] ? state.stances[0].id : '',
+      stanceVanillaRef: BUILTIN_STANCES[0],
+    };
+  }
   const c = { kind, comparator:'gte', value: kind === 'HpBelowPercent' ? 50 : 1 };
   if(kind === 'HasStatusStacks'){
     // Defaults to 'custom' (the only kind this condition supported before
@@ -14350,6 +14508,18 @@ function hasStatusStacksLabel(cond){
 function hasBlockLabel(cond){
   return cond.subject === 'Self' ? 'Have block' : 'Has block';
 }
+// [Round 347, task #31] Same Is/Are agreement as hasStatusStacksLabel/
+// hasBlockLabel above, for InStance specifically — the .c-subject + .c-kind
+// selects are laid out subject-then-kind (see renderConditionRowFields'
+// template below), so the static CONDITION_KINDS label 'is in stance' would
+// render "You is in stance" once "You" became a reachable subject option.
+// describeCondition's own InStance case already does this same you-are/
+// target-is split for the full-sentence preview text; this is the matching
+// fix for the KIND DROPDOWN's own option label, which is a separate code
+// path (see renderKindOptionsGrouped's kindLabel below).
+function inStanceLabel(cond){
+  return cond.subject === 'Self' ? 'are in stance' : 'is in stance';
+}
 // [Round 55] Tyler: "adding another target of [this card]... creating the
 // rest of the sentence with 'is in the [leftmost/rightmost] position.'
 // and another one for when any card is played that is 'if [that card] was
@@ -14401,6 +14571,7 @@ function renderKindOptionsGrouped(kinds, cond){
   const kindLabel = k => k.id==='HasStatusStacks' ? hasStatusStacksLabel(cond)
     : k.id==='HasBlock' ? hasBlockLabel(cond)
     : k.id==='CardPositionInHand' ? cardPositionInHandLabel(cond)
+    : k.id==='InStance' ? inStanceLabel(cond)
     : k.label;
   const byCategory = new Map();
   kinds.forEach(k=>{
@@ -14429,10 +14600,20 @@ function renderConditionRowFields(row, cond, eff){
   // are the original 4; PetIsOut/HandCardTypeCheck/EnemyIntent/
   // HasSpecificRelic/NoCopiesOfCardInHand are the 5 added in the 2026-08-27
   // condition-kind expansion round (see blankCondition's own comment).
-  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs'];
+  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs', 'InStance'];
   const needsComparatorValue = !NO_COMPARATOR_KINDS.includes(cond.kind);
   const needsStatusRef = cond.kind === 'HasStatusStacks';
   const isVanillaStatus = needsStatusRef && cond.statusKind === 'vanilla';
+  // [Round 347, task #31] InStance's own stanceSelectHtml-shaped picker --
+  // same plain-<select> combobox pattern as afflictionSelectHtml (not the
+  // heavier searchable statusOptionsData combobox HasStatusStacks uses
+  // right above), since the real custom-stance list is author-sized, not
+  // ~244-vanilla-statuses sized. Backfills stanceKind to 'custom' the same
+  // way HasStatusStacks' own statusKind/EnterStance's own stanceKind
+  // default, so an already-saved InStance condition never renders with no
+  // option selected.
+  const needsStanceRef = cond.kind === 'InStance';
+  if(needsStanceRef && cond.stanceKind === undefined) cond.stanceKind = 'custom';
   const needsKeyword = cond.kind === 'PlayedCardHasKeyword';
   const needsTag = cond.kind === 'PlayedCardHasTag';
   // cardType is shared by PlayedCardHasType (checks the card that triggered
@@ -14564,6 +14745,7 @@ function renderConditionRowFields(row, cond, eff){
         ${petIsOutSpecificPetAllowed ? state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${pet.id===cond.petRef?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('') : ''}
       </select>` : ''}
       ${needsStatusRef ? `<span class="cond-word">of</span>${mergedStatusPickerHtml(cond, COND_STATUS_FIELDS)}` : ''}
+      ${needsStanceRef ? stanceConditionSelectHtml(cond) : ''}
       ${needsComparatorValue ? `<select class="c-comparator">${COMPARATORS.map(c=>`<option value="${c.id}" ${c.id===cond.comparator?'selected':''}>${c.label}</option>`).join('')}</select>` : ''}
       ${needsComparatorValue ? `<input class="c-value" type="number" value="${cond.value??0}">` : ''}
       ${cond.kind === 'HpBelowPercent' ? `<span class="cond-word">%</span>` : ''}
@@ -14605,6 +14787,7 @@ function renderConditionRowFields(row, cond, eff){
     ${needsRelicRef && !state.relics.length ? `<div class="hint-small" style="color:var(--danger-bright)">No relics defined yet — define one first (in the Relics section).</div>` : ''}
     ${needsCardRef && !state.cards.length ? `<div class="hint-small" style="color:var(--danger-bright)">No cards defined yet — define one first.</div>` : ''}
     ${needsPetPositionRef && !state.pets.length ? `<div class="hint-small" style="color:var(--danger-bright)">No pets defined yet — define one first (in the Pets section).</div>` : ''}
+    ${needsStanceRef && cond.stanceKind!=='vanilla' && !state.stances.length ? `<div class="hint-small" style="color:var(--danger-bright)">No custom stances defined yet — define one first (in the Stances section), or pick a Vanilla stance from the dropdown above instead.</div>` : ''}
     <!-- [Tyler, this round] "lets get rid of that big block of text" —
          removed the per-kind evidence-hint block that used to render
          here (the full VERIFIED-via-decompile writeup for whichever
@@ -14758,6 +14941,18 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   // "Any pet", unlike petPositionRefEl's "no pets defined yet" case).
   const petIsOutRefEl = row.querySelector('.c-petisout-ref');
   if(petIsOutRefEl) petIsOutRefEl.onchange = e=> cond.petRef = e.target.value;
+  // [Round 347, task #31] InStance's own custom/vanilla stance select --
+  // same "custom:"/"vanilla:" prefixed-value split as the action side's
+  // stanceRefSelect (wireActionRowHandlers) / afflictionRefSelect.
+  const stanceRefEl = row.querySelector('.c-stance-ref');
+  if(stanceRefEl) stanceRefEl.onchange = (e)=>{
+    const raw = e.target.value;
+    const sep = raw.indexOf(':');
+    const kind = raw.slice(0, sep), value = raw.slice(sep + 1);
+    cond.stanceKind = kind;
+    if(kind === 'vanilla'){ cond.stanceVanillaRef = value; delete cond.stanceRef; }
+    else { cond.stanceRef = value; delete cond.stanceVanillaRef; }
+  };
   row.querySelector('.c-remove').onclick = ()=>{ eff.conditions.splice(j,1); renderConditionRows(eff, container, onChange); };
 }
 
@@ -15557,6 +15752,35 @@ function ensureActionRefDefaults(act){
     delete act.afflictionKind;
     delete act.afflictionRef;
     delete act.afflictionVanillaRef;
+  }
+  // [Round 347, task #31] EnterStance's own stance picker -- same
+  // self-healing shape as AfflictCard's affliction picker right above,
+  // including its "fall through to vanilla when there are zero custom
+  // options" fix (a character with no custom Stances defined yet would
+  // otherwise self-heal to stanceKind:'custom' + an empty stanceRef with
+  // nothing for the dropdown to actually show selected). ExitStance needs
+  // none of these fields at all (see compiler.js:actionToCSharp's
+  // ExitStance case -- it just exits whichever stance is currently active).
+  if(act.type === 'EnterStance'){
+    if(act.stanceKind !== 'vanilla') act.stanceKind = 'custom';
+    if(act.stanceKind === 'custom' && !state.stances.length){
+      act.stanceKind = 'vanilla';
+    }
+    if(act.stanceKind === 'custom'){
+      if(!act.stanceRef || !state.stances.find(s=>s.id===act.stanceRef)){
+        act.stanceRef = state.stances[0].id;
+      }
+      delete act.stanceVanillaRef;
+    } else {
+      if(!BUILTIN_STANCES.includes(act.stanceVanillaRef)){
+        act.stanceVanillaRef = BUILTIN_STANCES[0];
+      }
+      delete act.stanceRef;
+    }
+  } else {
+    delete act.stanceKind;
+    delete act.stanceRef;
+    delete act.stanceVanillaRef;
   }
   if(act.type === 'EnchantCard'){
     if(state.enchantments.length && (!act.enchantmentRef || !state.enchantments.find(en=>en.id===act.enchantmentRef))){
@@ -16659,6 +16883,18 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       discoverCardRefsBlockHtml = sourceKind === 'SpecificCards' ? cardRefsPickerHtml : '';
       break;
     }
+    // [Round 347, task #31] "Custom stances" -- same combined vanilla/
+    // custom combobox shape as AfflictCard's own afflOptions above, via
+    // stanceSelectHtml. No amount/target -- ExitStance needs no picker at
+    // all (see compiler.js:actionToCSharp's ExitStance case).
+    case 'EnterStance': {
+      const stanceOptions = stanceSelectHtml(act);
+      sentenceHtml = `<span class="cond-word">Enter</span> ${stanceOptions}<span class="cond-word">stance.</span>`;
+      break;
+    }
+    case 'ExitStance':
+      sentenceHtml = `<span class="cond-word">Exit your current stance (if any).</span>`;
+      break;
     default:
       sentenceHtml = '';
   }
@@ -16779,6 +17015,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
+    delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -16870,6 +17107,19 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     act.afflictionKind = kind;
     if(kind === 'vanilla'){ act.afflictionVanillaRef = value; delete act.afflictionRef; }
     else { act.afflictionRef = value; delete act.afflictionVanillaRef; }
+  };
+  // [Round 347, task #31] EnterStance's own custom/vanilla stance select --
+  // same "custom:"/"vanilla:" prefixed-value split as afflictionRefSelect
+  // right above. No re-render needed -- doesn't change which other fields
+  // this row shows.
+  const stanceRefSelect = row.querySelector('.a-stance-ref');
+  if(stanceRefSelect) stanceRefSelect.onchange = (e)=>{
+    const raw = e.target.value;
+    const sep = raw.indexOf(':');
+    const kind = raw.slice(0, sep), value = raw.slice(sep + 1);
+    act.stanceKind = kind;
+    if(kind === 'vanilla'){ act.stanceVanillaRef = value; delete act.stanceRef; }
+    else { act.stanceRef = value; delete act.stanceVanillaRef; }
   };
   // EnchantCard's own entity-picker select -- no re-render needed, same as
   // tokenRefSelect above (doesn't change which other fields this row shows).
@@ -20754,6 +21004,92 @@ function openOrbEditor(orbId){
   modalSaveOnOutsideClick = doSaveOrb;
 }
 
+// [Round 347, task #31] "Custom stances" -- same tile-grid + modal-editor
+// pattern as renderOrbs/openOrbEditor right above, adapted for the 9
+// stance fields (schema/character.schema.json's own "stance" definition
+// has the full per-field evidence trail). Two fields (adaptedAttackTakenPercent/
+// enemyBuffPercent) are capped at 100 (reduction only, per Tyler's own
+// uploaded example) -- those two number inputs get `max="100"`; every
+// other percent field is uncapped, same as orbs' own passive/evoke values.
+const stanceGrid = document.getElementById('stances-grid');
+function renderStances(){
+  stanceGrid.innerHTML = '';
+  state.stances.forEach(s=>{
+    const t = document.createElement('div');
+    t.className = 'tile';
+    t.innerHTML = `<div class="t-name">${escapeHtml(s.name||'Untitled')}</div><div class="t-meta">stance — compiles into a real, working custom Power</div>`;
+    t.onclick = ()=> openStanceEditor(s.id);
+    stanceGrid.appendChild(t);
+  });
+  const addTile = document.createElement('div');
+  addTile.className = 'tile add-tile';
+  addTile.textContent = '+';
+  addTile.onclick = ()=>{
+    const s = { id: uid('stance'), name:'New Stance', description:'', damageDealtPercent:100, damageTakenPercent:100, adaptedAttackDealtPercent:100, adaptedAttackTakenPercent:100, enemyBuffPercent:100, healEffectivenessPercent:100, energyOnEnter:0, energyOnExit:0, exitAtTurnStart:false };
+    state.stances.push(s);
+    save(); renderStances();
+    openStanceEditor(s.id);
+  };
+  stanceGrid.appendChild(addTile);
+  document.getElementById('stance-count').textContent = `${state.stances.length} stance${state.stances.length===1?'':'s'}`;
+}
+function openStanceEditor(stanceId){
+  const s = state.stances.find(x=>x.id===stanceId);
+  openModal(`
+    <div class="modal-head"><h3>Edit Stance</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <div class="panel-desc" style="margin-top:0">
+        Every field below is functional — it compiles into a real, working custom Power your cards' own "Enter
+        Stance"/"Exit Stance" effects (and the "is in stance" condition) can reference. 100 = unchanged from normal.
+      </div>
+      <label>Name</label><input type="text" id="st-name" value="${escapeAttr(s.name)}">
+      <label>Description / flavor text</label><textarea id="st-desc">${escapeHtml(s.description||'')}</textarea>
+      <div class="row">
+        <div><label title="Percent multiplier on damage you deal while this stance is active.">Damage dealt %</label><input type="number" id="st-damage-dealt" value="${s.damageDealtPercent ?? 100}"></div>
+        <div><label title="Percent multiplier on damage you take while this stance is active.">Damage taken %</label><input type="number" id="st-damage-taken" value="${s.damageTakenPercent ?? 100}"></div>
+      </div>
+      <div class="row">
+        <div><label title="Compounding multiplier on damage you deal via a repeated (&quot;powered&quot;) attack — re-applied once per prior repetition of the same enemy move. No upper cap.">Adapted attack dealt % (compounds)</label><input type="number" id="st-adapt-dealt" value="${s.adaptedAttackDealtPercent ?? 100}"></div>
+        <div><label title="Same compounding mechanic, applied to damage you take from a repeated enemy move instead. Capped at 100 (reduction only).">Adapted attack taken % (compounds, max 100)</label><input type="number" id="st-adapt-taken" max="100" value="${s.adaptedAttackTakenPercent ?? 100}"></div>
+      </div>
+      <div class="row">
+        <div><label title="Percent multiplier on buff-type Power stacks you apply to enemies while this stance is active. Capped at 100 (reduction only).">Enemy buff application % (max 100)</label><input type="number" id="st-enemy-buff" max="100" value="${s.enemyBuffPercent ?? 100}"></div>
+        <div><label title="Percent multiplier on healing you receive while this stance is active. No upper cap.">Heal effectiveness %</label><input type="number" id="st-heal" value="${s.healEffectivenessPercent ?? 100}"></div>
+      </div>
+      <div class="row">
+        <div><label title="Flat Energy gained the moment you enter this stance.">Energy on enter</label><input type="number" id="st-energy-enter" value="${s.energyOnEnter ?? 0}"></div>
+        <div><label title="Flat Energy gained the moment you leave this stance.">Energy on exit</label><input type="number" id="st-energy-exit" value="${s.energyOnExit ?? 0}"></div>
+      </div>
+      <div class="row">
+        <div><label title="When checked, this stance automatically exits at the start of your turn — mirrors the real Divinity stance.">Exit automatically at start of turn</label><select id="st-exit-turn-start">${optList(['true','false'], String(s.exitAtTurnStart===true))}</select></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="danger" id="delete-stance">Delete</button>
+      <button id="save-stance">Done</button>
+    </div>
+  `);
+  document.getElementById('delete-stance').onclick = ()=>{ state.stances = state.stances.filter(x=>x.id!==stanceId); save(); renderStances(); closeModal(); };
+  // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
+  // — see that variable's own header comment.
+  const doSaveStance = ()=>{
+    s.name = document.getElementById('st-name').value;
+    s.description = document.getElementById('st-desc').value;
+    s.damageDealtPercent = Math.max(0, parseFloat(document.getElementById('st-damage-dealt').value) || 0);
+    s.damageTakenPercent = Math.max(0, parseFloat(document.getElementById('st-damage-taken').value) || 0);
+    s.adaptedAttackDealtPercent = Math.max(0, parseFloat(document.getElementById('st-adapt-dealt').value) || 0);
+    s.adaptedAttackTakenPercent = Math.min(100, Math.max(0, parseFloat(document.getElementById('st-adapt-taken').value) || 0));
+    s.enemyBuffPercent = Math.min(100, Math.max(0, parseFloat(document.getElementById('st-enemy-buff').value) || 0));
+    s.healEffectivenessPercent = Math.max(0, parseFloat(document.getElementById('st-heal').value) || 0);
+    s.energyOnEnter = parseFloat(document.getElementById('st-energy-enter').value) || 0;
+    s.energyOnExit = parseFloat(document.getElementById('st-energy-exit').value) || 0;
+    s.exitAtTurnStart = document.getElementById('st-exit-turn-start').value === 'true';
+    save(); renderStances(); closeModal();
+  };
+  document.getElementById('save-stance').onclick = doSaveStance;
+  modalSaveOnOutsideClick = doSaveStance;
+}
+
 /* ---------- compile error display ---------- */
 // Round 20 — Tyler: "can we... make the errors that the compiler throws a
 // bit more legible?" A raw alert() dumping backend/validate.js's whole
@@ -21926,6 +22262,7 @@ renderEnchantments();
 renderAfflictions();
 renderPets();
 renderOrbs();
+renderStances();
 document.getElementById('orb-mode').value = state.character.orb.mode;
 document.getElementById('show-stars').checked = !!state.character.showEnergyStars;
 renderEnergyPreview(); // also handles energy-preview-wrap / star-upload-row show/hide

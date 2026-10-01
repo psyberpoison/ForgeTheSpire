@@ -174,6 +174,14 @@ const CONDITION_KINDS = [
   // genuine `fgPlayer` Creature local for `.CombatState`, unavailable on
   // Glow/Playability or a Group B modifier hook with no real playerExpr.
   'PlayersInRun',
+  // [Round 347, task #31] "Custom stances" -- Tyler: "Yes, add it now
+  // (Recommended)." See compiler.js:conditionToCSharpRaw's InStance case
+  // (Creature.HasPower<T>()) and SUBJECT_CAPABLE_CONDITION_KINDS' own
+  // comment for the full evidence trail. Subject-capable (Self/CardTarget/
+  // Pet) like HasStatusStacks/HpBelowPercent/HasBlock/DebuffStacksTotal,
+  // but boolean (no comparator/value) -- see this file's own dedicated
+  // "InStance" branch above the generic COMPARATORS/value check below.
+  'InStance',
 ];
 // cardPlayBound-only condition kinds — down to just EnemyIntent as of
 // round 63. HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
@@ -270,6 +278,13 @@ const ACTION_TYPES = [
   // action `type` enum for the real MegaCrit.Sts2.Core.Models.Cards.
   // Discovery evidence trail.
   'DiscoverCard',
+  // [Round 347, task #31] "Custom stances" -- see compiler.js's
+  // actionToCSharp "EnterStance"/"ExitStance" cases (ForgeStanceCmd.Enter<T>/
+  // Exit) and schema/character.schema.json's own "stance" definition for
+  // the full evidence trail. No native sts2.dll Stance support exists
+  // (confirmed via a direct ECMA-335 TypeDef scan) -- this is composed
+  // entirely from already-[VERIFIED]-elsewhere primitives instead.
+  'EnterStance', 'ExitStance',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -293,7 +308,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
 // [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
 // one real Discovery card's own default pool) plus every real
 // CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
@@ -400,7 +415,7 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // binds fgPet (there's no cardPlay.Player.Osty path for a value-returning
 // hook body, unlike OnPlay/OnAnyCardPlayed) — see the modifierHook branch
 // inside the SUBJECT_CAPABLE_CONDITION_KINDS block below.
-function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds) {
+function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds, stanceIds) {
   if (conditions === undefined) return;
   if (!Array.isArray(conditions)) { errors.push(`${path}.conditions must be an array.`); return; }
   conditions.forEach((cond, i) => {
@@ -683,8 +698,49 @@ if (cond.kind === 'CardPositionInHand') {
     // subject-capable — no special-case skip needed here anymore, every
     // kind reaching this point needs comparator/value same as before
     // PetIsOut ever existed.
-    if (!COMPARATORS.includes(cond.comparator)) errors.push(`${p}.comparator "${cond.comparator}" is not one of: ${COMPARATORS.join(', ')}.`);
-    if (typeof cond.value !== 'number') errors.push(`${p}.value must be a number.`);
+    // [Round 347] InStance is the one exception to that — it's a pure
+    // "is this creature currently in stance X" boolean existence check
+    // (compiler.js:conditionToCSharpRaw's InStance case only ever emits
+    // `.HasPower<T>()`, never touches comparator/value), same reason
+    // PetIsOut/PetPositionIs/CardPositionInHand above skip this block via
+    // their own early `return` — InStance can't early-return the same way
+    // because, unlike those three, it DOES need the subject block just
+    // below (SUBJECT_CAPABLE_CONDITION_KINDS now includes it — see
+    // compiler.js's own comment on that const).
+    if (cond.kind !== 'InStance') {
+      if (!COMPARATORS.includes(cond.comparator)) errors.push(`${p}.comparator "${cond.comparator}" is not one of: ${COMPARATORS.join(', ')}.`);
+      if (typeof cond.value !== 'number') errors.push(`${p}.value must be a number.`);
+    }
+    if (cond.kind === 'InStance') {
+      // Same stanceKind/stanceRef/stanceVanillaRef dual-field shape as
+      // EnterStance/ExitStance's own action-side fields below (and, before
+      // that, afflictionKind/afflictionVanillaRef/afflictionRef) — Tyler's
+      // own uploaded reference tool's Wrath/Calm/Divinity stances aren't
+      // real sts2.dll engine classes (confirmed via a direct ECMA-335
+      // TypeDef scan, see schema's own "stances" array description), so
+      // they're compiled through generateStanceSource exactly like a
+      // custom stance, just picked from a frozen "Vanilla" dropdown group
+      // instead of this character's own stances[] list (Tyler: "Frozen
+      // vanilla dropdown").
+      const stanceKind = cond.stanceKind === 'vanilla' ? 'vanilla' : 'custom';
+      if (cond.stanceKind !== undefined && !['custom', 'vanilla'].includes(cond.stanceKind)) {
+        errors.push(`${p}.stanceKind "${cond.stanceKind}" is not one of: custom, vanilla.`);
+      } else if (stanceKind === 'vanilla') {
+        if (cond.stanceVanillaRef !== undefined && !BUILTIN_STANCES.includes(cond.stanceVanillaRef)) {
+          errors.push(`${p}.stanceVanillaRef "${cond.stanceVanillaRef}" is not one of: ${BUILTIN_STANCES.join(', ')}.`);
+        } else if (cond.stanceVanillaRef === undefined || cond.stanceVanillaRef === '') {
+          errors.push(`${p} has kind "InStance" with stanceKind "vanilla" but no stanceVanillaRef selected — pick one from the dropdown.`);
+        }
+      } else if (cond.stanceRef === '' || cond.stanceRef === undefined) {
+        errors.push(`${p} has kind "InStance" but no stance selected — pick one from the dropdown, or add a stance first if none exist yet (Stances section).`);
+      } else if (!stanceIds || !stanceIds.has(cond.stanceRef)) {
+        errors.push(`${p}.stanceRef "${cond.stanceRef}" doesn't match any defined stance id.`);
+      }
+    } else {
+      if (cond.stanceKind !== undefined) errors.push(`${p}: stanceKind is only meaningful on "InStance" — this condition's kind is "${cond.kind}".`);
+      if (cond.stanceRef !== undefined) errors.push(`${p}: stanceRef is only meaningful on "InStance" — this condition's kind is "${cond.kind}".`);
+      if (cond.stanceVanillaRef !== undefined) errors.push(`${p}: stanceVanillaRef is only meaningful on "InStance" — this condition's kind is "${cond.kind}".`);
+    }
     if (cond.kind === 'HasStatusStacks') {
       // `statusKind` ('vanilla' | 'custom', defaults to 'custom' — the
       // only kind this condition supported before Tyler's follow-up "the
@@ -780,7 +836,7 @@ if (cond.kind === 'CardPositionInHand') {
 // re-using every one of these same rules (a valid action here is a valid
 // action there too, same ACTION_TYPES/validTargetsForAction/statusRefs
 // etc. checks) rather than a second, drift-prone copy of this function.
-function validateActions(actions, path, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, fieldName = 'actions', xContext = {}) {
+function validateActions(actions, path, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, fieldName = 'actions', xContext = {}, stanceIds) {
   if (!Array.isArray(actions)) { errors.push(`${path}.${fieldName} must be an array.`); return; }
   // xEligible — whether amountIsX/hitCountIsX are even allowed at this
   // call site. [VERIFIED via decompiling TheBurdenedNewCharacter.dll]
@@ -837,6 +893,14 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
+    } else if ((act.type === 'EnterStance' || act.type === 'ExitStance') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 347, task #31] Same NO_CHOICE_CONTEXT_HOOK_TRIGGERS gap as
+      // DealDamage/PetAttack above -- ForgeStanceCmd.Enter<T>/Exit both end
+      // in `PowerCmd.Apply<T>(choiceContext, ...)`/reference `choiceContext`
+      // unconditionally (see compiler.js:generateForgeStanceSupportSource's
+      // own ForgeStanceCmd.Enter<T>/Exit bodies) -- this hook's real
+      // signature doesn't have one.
+      errors.push(`${p}: action "${act.type}" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which entering/exiting a stance needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
     }
     if (act.amount !== undefined && typeof act.amount !== 'number') errors.push(`${p}.amount must be a number.`);
     // amountIsX / hitCount / hitCountIsX — [VERIFIED via decompiling
@@ -1161,6 +1225,34 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else {
       if (act.afflictionRef !== undefined) errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
       if (act.afflictionVanillaRef !== undefined) errors.push(`${p}: afflictionVanillaRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+    }
+    // [Round 347] stanceKind/stanceRef/stanceVanillaRef -- EnterStance
+    // only (ExitStance needs no stance reference at all, see
+    // compiler.js:actionToCSharp's ExitStance case — it just exits
+    // whichever stance is currently active, if any). Same custom/vanilla
+    // dual-field shape as afflictionKind/afflictionRef/afflictionVanillaRef
+    // right above, same "Frozen vanilla dropdown" rationale as InStance's
+    // own condition-side block above.
+    if (act.stanceKind !== undefined) {
+      if (!['custom', 'vanilla'].includes(act.stanceKind)) errors.push(`${p}.stanceKind "${act.stanceKind}" is not one of: custom, vanilla.`);
+      if (act.type !== 'EnterStance') errors.push(`${p}: stanceKind is only meaningful on "EnterStance" — action type is "${act.type}".`);
+    }
+    if (act.type === 'EnterStance') {
+      const stanceKind = act.stanceKind === 'vanilla' ? 'vanilla' : 'custom';
+      if (stanceKind === 'vanilla') {
+        if (act.stanceVanillaRef !== undefined && !BUILTIN_STANCES.includes(act.stanceVanillaRef)) {
+          errors.push(`${p}.stanceVanillaRef "${act.stanceVanillaRef}" is not one of: ${BUILTIN_STANCES.join(', ')}.`);
+        } else if (act.stanceVanillaRef === undefined || act.stanceVanillaRef === '') {
+          errors.push(`${p}: action "EnterStance" needs a vanilla stance selected — pick one from the dropdown.`);
+        }
+      } else if (act.stanceRef === '' || act.stanceRef === undefined) {
+        errors.push(`${p}: action "EnterStance" needs a stance selected — pick one from the dropdown, or add a stance first if none exist yet (Stances section).`);
+      } else if (!stanceIds.has(act.stanceRef)) {
+        errors.push(`${p}.stanceRef "${act.stanceRef}" doesn't match any defined stance id.`);
+      }
+    } else {
+      if (act.stanceRef !== undefined) errors.push(`${p}: stanceRef is only meaningful on "EnterStance" — action type is "${act.type}".`);
+      if (act.stanceVanillaRef !== undefined) errors.push(`${p}: stanceVanillaRef is only meaningful on "EnterStance" — action type is "${act.type}".`);
     }
     // [Round 286] petRef -- SummonPet only, same "reject an empty pick
     // with a friendlier message, reject a stale/unknown id otherwise"
@@ -1559,7 +1651,7 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         if (!Array.isArray(act.followUp.actions) || !act.followUp.actions.length) {
           errors.push(`${p}.followUp.actions must be a non-empty array.`);
         } else {
-          validateActions(act.followUp.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'followUp.actions', xContext);
+          validateActions(act.followUp.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'followUp.actions', xContext, stanceIds);
         }
       }
     }
@@ -1694,7 +1786,7 @@ const TRIGGER_SELF_LOOP_ACTIONS = {
   AfterCardDiscarded: (a) => a && a.type === 'DiscardCard',
 };
 
-function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
+function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
   if (!Array.isArray(effects)) { errors.push(`${path}.effects must be an array.`); return; }
   const xContext = { entityKind, cardCostsX, cardCostsStarX };
   effects.forEach((eff, i) => {
@@ -1719,7 +1811,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
         errors.push(`${p}.trigger "${eff.trigger}" is not one of: ${allowedTriggers.join(', ')}.`);
       }
     }
-    validateConditions(eff.conditions, p, errors, mechanicIds, cardIds, relicIds, eff.trigger, gameplayTagsInUse, undefined, petIds);
+    validateConditions(eff.conditions, p, errors, mechanicIds, cardIds, relicIds, eff.trigger, gameplayTagsInUse, undefined, petIds, stanceIds);
     // [Fix, round 33 — real crash: a genuine, mechanistically-proven
     // infinite-recursion stack overflow, root-caused via a real Windows
     // minidump (STATUS_STACK_OVERFLOW, ~thousands of uniformly-repeated
@@ -1768,7 +1860,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // shuffleCardTagFilter/cardTagFilter against it. The followUp recursive
     // validateActions call below (this same function's own xContext,
     // unchanged) forwards it automatically since it's just spread through.
-    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse });
+    validateActions(eff.actions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'actions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse }, stanceIds);
     // elseActions — Tyler's "if X, deal 12, else deal 5" ask. Optional
     // (undefined means "no else branch", same as an empty array) — only
     // validated when present, but when present AND non-empty, this effect
@@ -1780,7 +1872,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
     // at all — rejected here instead of shipping a UI-visible action list
     // that quietly never runs).
     if (eff.elseActions !== undefined) {
-      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse });
+      validateActions(eff.elseActions, p, errors, mechanicIds, cardIds, afflictionIds, enchantmentIds, petIds, 'elseActions', { ...xContext, trigger: eff.trigger, pile: eff.pile, gameplayTagsInUse }, stanceIds);
     }
     if (Array.isArray(eff.elseActions) && eff.elseActions.length && (!Array.isArray(eff.conditions) || !eff.conditions.length)) {
       errors.push(`${p}.elseActions has entries but ${p}.conditions is empty — "else" only makes sense with an "if" condition above it to be the opposite of. Add a condition, or remove the else actions.`);
@@ -1809,7 +1901,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
 // this function doesn't require — or validate — any of that here either,
 // same "compiles but throws, not misleadingly" convention as every other
 // [UNVERIFIED]/deferred surface in this project.
-function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds) {
+function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds, stanceIds) {
   if (modifiers === undefined) return;
   if (!Array.isArray(modifiers)) { errors.push(`${path}.modifiers must be an array.`); return; }
   // Round 116: every modifier ultimately compiles to `public override
@@ -1843,7 +1935,7 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
       }
     }
     if (hook.shape === 'deferred') return;
-    validateConditions(mod.conditions, p, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, hook, petIds);
+    validateConditions(mod.conditions, p, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, hook, petIds, stanceIds);
     if (hook.shape === 'gate') {
       if (mod.gateValue !== undefined && typeof mod.gateValue !== 'boolean') errors.push(`${p}.gateValue must be a boolean if present.`);
     } else if (hook.shape === 'numeric') {
@@ -1949,7 +2041,7 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
 // compiler.js's own comments (costReductionTodoLines/
 // generateAdvancedOptionsNotes/generateCardSource) for the full honesty
 // trail on what each one actually compiles to.
-function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse) {
+function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse, stanceIds) {
   const opts = card.advancedOptions;
   if (opts === undefined) return;
   if (!opts || typeof opts !== 'object') { errors.push(`${p}.advancedOptions must be an object if present.`); return; }
@@ -2013,7 +2105,7 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
     if (sub === undefined) return;
     if (!sub || typeof sub !== 'object') { errors.push(`${p}.advancedOptions.${key} must be an object if present.`); return; }
     if (sub.enabled !== undefined && typeof sub.enabled !== 'boolean') errors.push(`${p}.advancedOptions.${key}.enabled must be a boolean if present.`);
-    validateConditions(sub.conditions, `${p}.advancedOptions.${key}`, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, undefined, petIds);
+    validateConditions(sub.conditions, `${p}.advancedOptions.${key}`, errors, mechanicIds, cardIds, relicIds, undefined, gameplayTagsInUse, undefined, petIds, stanceIds);
   });
 
   // whileInHand — cardEffectBlock-shaped entries. 'OnTurnEndInHand' (the
@@ -2029,7 +2121,7 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
   // validateEffects wholesale rather than a second hand-rolled block
   // validator — same rules, just a wider allowed-trigger list than before.
   if (opts.whileInHand !== undefined) {
-    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+    validateEffects(opts.whileInHand, `${p}.advancedOptions`, errors, { allowedTriggers: ['OnTurnEndInHand', 'OnAnyCardPlayed', ...PILE_TRIGGER_HOOK_IDS], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
     // [Round 90] `pile` — which real pile (Hand/Discard/Draw/Exhaust) this
     // entry's Pile.Type check compiles to (see compiler.js:pileTypeExpr).
     // Optional — undefined defaults to 'Hand' both here and in the actual
@@ -2085,6 +2177,13 @@ function validateCharacterPackage(pkg) {
   // Tyler: "remove the check box. if they want to not see the pet in
   // game, they just have to not summon it".
   const petIds = new Set((Array.isArray(pkg.pets) ? pkg.pets : []).map(pet => pet && pet.id).filter(Boolean));
+  // [Round 347] Every custom stance is a valid EnterStance/InStance target
+  // — same "build the id set up front, before any effect blocks are
+  // validated" convention afflictionIds/petIds/mechanicIds above already
+  // follow (threaded through validateEffects/validateConditions/
+  // validateActions/validateModifiers/validateAdvancedOptions exactly like
+  // petIds was).
+  const stanceIds = new Set((Array.isArray(pkg.stances) ? pkg.stances : []).map(s => s && s.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
   // built up front (before any effect blocks are validated) so a
   // PlayedCardHasTag condition on ANY card/relic/mechanic can be
@@ -2544,8 +2643,8 @@ function validateCharacterPackage(pkg) {
     if (card.baseCardTag !== undefined && !CARD_TAGS.includes(card.baseCardTag)) {
       errors.push(`${p}.baseCardTag "${card.baseCardTag}" is not one of: ${CARD_TAGS.join(', ')}.`);
     }
-    validateEffects(card.effects || [], p, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
-    validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse);
+    validateEffects(card.effects || [], p, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+    validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse, stanceIds);
     // card.upgrades[] — one entry per unlocked upgrade tier (index 0 =
     // Card+, 1 = Card++, ... up to MAX_UPGRADE_TIERS). A `null` entry means
     // that tier exists (its tab was added in the editor) but still mirrors
@@ -2567,7 +2666,7 @@ function validateCharacterPackage(pkg) {
           if (tier === null || tier === undefined) return; // not-yet-diverged placeholder — nothing to check
           if (typeof tier !== 'object') { errors.push(`${p}.upgrades[${i}] must be an object or null.`); return; }
           if (tier.effects) {
-            validateEffects(tier.effects, `${p}.upgrades[${i}]`, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
+            validateEffects(tier.effects, `${p}.upgrades[${i}]`, errors, { allowedTriggers: CARD_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'card', gameplayTagsInUse, cardCostsX: card.costsX === true, cardCostsStarX: card.costsStarX === true });
           }
         });
       }
@@ -2611,8 +2710,8 @@ function validateCharacterPackage(pkg) {
     if (!relic || typeof relic !== 'object') { errors.push(`${p} must be an object.`); return; }
     if (!isNonEmptyString(relic.name)) errors.push(`${p}.name must be a non-empty string.`);
     if (!RELIC_RARITIES.includes(relic.rarity)) errors.push(`${p}.rarity "${relic.rarity}" is not one of: ${RELIC_RARITIES.join(', ')}.`);
-    validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'relic', gameplayTagsInUse });
-    validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds);
+    validateEffects(relic.effects || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'relic', gameplayTagsInUse });
+    validateModifiers(relic.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds, stanceIds);
     // [Round 217] autoClaimShopInventory compiles to a real, dedicated
     // AfterRoomEntered override (backend/compiler.js:
     // generateClaimShopInventoryOverride) -- [BEST EFFORT], see that
@@ -2660,9 +2759,9 @@ function validateCharacterPackage(pkg) {
       errors.push(`${p}.instanceType must be one of "merge", "separate", or "separatePerApplier".`);
     }
     if (mech.effects !== undefined) {
-      validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'mechanic', gameplayTagsInUse });
+      validateEffects(mech.effects, p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'mechanic', gameplayTagsInUse });
     }
-    validateModifiers(mech.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds);
+    validateModifiers(mech.modifiers, p, errors, mechanicIds, cardIds, relicIds, gameplayTagsInUse, petIds, stanceIds);
   });
 
   // --- pets / orbs — Tyler's "add a section to the page to create custom
@@ -2689,8 +2788,10 @@ function validateCharacterPackage(pkg) {
   // remain freeform/uncompiled, same shape-only bar as before.
   const pets = Array.isArray(pkg.pets) ? pkg.pets : [];
   const orbs = Array.isArray(pkg.orbs) ? pkg.orbs : [];
+  const stances = Array.isArray(pkg.stances) ? pkg.stances : [];
   if (pkg.pets !== undefined && !Array.isArray(pkg.pets)) errors.push('"pets" must be an array.');
   if (pkg.orbs !== undefined && !Array.isArray(pkg.orbs)) errors.push('"orbs" must be an array.');
+  if (pkg.stances !== undefined && !Array.isArray(pkg.stances)) errors.push('"stances" must be an array.');
 
   pets.forEach((pet, i) => {
     const p = `pets[${i}]`;
@@ -2788,7 +2889,7 @@ function validateCharacterPackage(pkg) {
     // an Enchantment's own OnPlay removing itself). entityKind: 'enchantment'
     // (not 'card') deliberately keeps the X-cost-eligibility check off --
     // Enchantments have no energy cost of their own.
-    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'enchantment', gameplayTagsInUse });
     // [Round 200 -- "make this section fully functional"] whilePile's
     // trigger vocabulary was wrong: EnchantmentModel/AfflictionModel are
     // NOT CustomCardModel, so they can't reach CARD_TRIGGER_HOOKS-sourced
@@ -2802,13 +2903,13 @@ function validateCharacterPackage(pkg) {
     // block (see generateEnchantmentSource's combinedTriggerEffects), an
     // invalid trigger id here would fail at C# compile time in the export,
     // not just be silently wrong.
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'enchantment', gameplayTagsInUse });
     // [Round 200] Enchantments' own new "Additional Triggers" list (see
     // generateEnchantmentSource's combinedTriggerEffects) -- same real
     // hook vocabulary and validation shape as Afflictions' effects[]
     // below (added round 199) and Relics/Mechanics' own effects[].
     if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
-    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'enchantment', gameplayTagsInUse });
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'enchantment', gameplayTagsInUse });
   });
   // Afflictions — Round 196 upgrade: AfflictionModel is a real, separate
   // base-game class from EnchantmentModel (see compiler.js:generateAfflictionSource
@@ -2884,11 +2985,11 @@ function validateCharacterPackage(pkg) {
     // generateAfflictionSource filters onPlay.effects down to
     // trigger === 'OnPlay' only, so that's the only allowed trigger here
     // too. entityKind: 'affliction' keeps X-cost-eligibility off.
-    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects((e.onPlay && e.onPlay.effects) || [], p, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'affliction', gameplayTagsInUse });
     // [Round 200] Same vocabulary fix as Enchantments' whilePile above --
     // AfflictionModel can't reach CARD_TRIGGER_HOOKS-sourced triggers
     // either. See that comment for the full rationale.
-    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects((e.whilePile && e.whilePile.effects) || [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'affliction', gameplayTagsInUse });
     // [Round 199] "build out the full affliction section" -- Afflictions'
     // additional-triggers list, same real hook vocabulary (HOOK_TRIGGERS)
     // Relics/Mechanics already validate their own effects[] against (see
@@ -2897,7 +2998,7 @@ function validateCharacterPackage(pkg) {
     // SEPARATE array from onPlay.effects above (which keeps its own
     // dedicated, OnPlay-only validation unchanged).
     if (e.effects !== undefined && !Array.isArray(e.effects)) errors.push(`${p}.effects must be an array.`);
-    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, entityKind: 'affliction', gameplayTagsInUse });
+    validateEffects(Array.isArray(e.effects) ? e.effects : [], p, errors, { allowedTriggers: HOOK_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'affliction', gameplayTagsInUse });
   });
 
   orbs.forEach((orb, i) => {
@@ -2908,6 +3009,56 @@ function validateCharacterPackage(pkg) {
     if (orb.passiveValue !== undefined && typeof orb.passiveValue !== 'number') errors.push(`${p}.passiveValue must be a number.`);
     if (orb.evokeValue !== undefined && typeof orb.evokeValue !== 'number') errors.push(`${p}.evokeValue must be a number.`);
     if (orb.focusScales !== undefined && typeof orb.focusScales !== 'boolean') errors.push(`${p}.focusScales must be a boolean.`);
+  });
+
+  // [Round 347, task #31] Custom stances -- see schema's own "stance"
+  // definition for the full per-field evidence trail (each field cites
+  // either Tyler's own uploaded reference tool's real compiled behavior,
+  // or a real sts2.dll signature confirmed this round) and
+  // compiler.js:generateStanceSource for the codegen this backs. Plain
+  // required id/name + a flat set of typed number/boolean fields, same
+  // overall shape as orbs.forEach right above -- no effects[]/conditions
+  // list of its own (EnterStance/ExitStance/InStance live on the entities
+  // that REFERENCE a stance, validated above, not on the stance itself).
+  stances.forEach((stance, i) => {
+    const p = `stances[${i}]`;
+    if (!stance || typeof stance !== 'object') { errors.push(`${p} must be an object.`); return; }
+    if (!isNonEmptyString(stance.id)) errors.push(`${p}.id must be a non-empty string.`);
+    if (!isNonEmptyString(stance.name)) errors.push(`${p}.name must be a non-empty string.`);
+    if (stance.description !== undefined && typeof stance.description !== 'string') errors.push(`${p}.description must be a string.`);
+    // damageDealtPercent/damageTakenPercent/enemyBuffPercent/
+    // healEffectivenessPercent -- min 0, no upper cap (Tyler's own
+    // uploaded custom stance set several of these well above 100, e.g.
+    // damageDealtPercent 150 -- see schema's own per-field description for
+    // the exact confirmed value).
+    ['damageDealtPercent', 'damageTakenPercent', 'enemyBuffPercent', 'healEffectivenessPercent'].forEach((key) => {
+      if (stance[key] !== undefined && (typeof stance[key] !== 'number' || !Number.isFinite(stance[key]) || stance[key] < 0)) {
+        errors.push(`${p}.${key} must be a non-negative number.`);
+      }
+    });
+    // adaptedAttackDealtPercent -- min 0, no upper cap (compounds per
+    // repeat of the same enemy move, built natively per Tyler's "Build it
+    // natively" answer -- see generateStanceSource's own adaptTrackingFields
+    // comment for the full compounding evidence trail). adaptedAttackTakenPercent
+    // IS capped at 100 -- Tyler's own words on his uploaded example: "modifications
+    // that are less than 100% could not go above 100%" (i.e. only the
+    // DEALT side was pushed past 100 in his own test; the TAKEN side he
+    // set below 100 and confirmed it couldn't exceed it).
+    if (stance.adaptedAttackDealtPercent !== undefined && (typeof stance.adaptedAttackDealtPercent !== 'number' || !Number.isFinite(stance.adaptedAttackDealtPercent) || stance.adaptedAttackDealtPercent < 0)) {
+      errors.push(`${p}.adaptedAttackDealtPercent must be a non-negative number.`);
+    }
+    if (stance.adaptedAttackTakenPercent !== undefined && (typeof stance.adaptedAttackTakenPercent !== 'number' || !Number.isFinite(stance.adaptedAttackTakenPercent) || stance.adaptedAttackTakenPercent < 0 || stance.adaptedAttackTakenPercent > 100)) {
+      errors.push(`${p}.adaptedAttackTakenPercent must be a number between 0 and 100.`);
+    }
+    if (stance.energyOnEnter !== undefined && (typeof stance.energyOnEnter !== 'number' || !Number.isFinite(stance.energyOnEnter))) {
+      errors.push(`${p}.energyOnEnter must be a number.`);
+    }
+    if (stance.energyOnExit !== undefined && (typeof stance.energyOnExit !== 'number' || !Number.isFinite(stance.energyOnExit))) {
+      errors.push(`${p}.energyOnExit must be a number.`);
+    }
+    if (stance.exitAtTurnStart !== undefined && typeof stance.exitAtTurnStart !== 'boolean') {
+      errors.push(`${p}.exitAtTurnStart must be a boolean.`);
+    }
   });
 
   return { valid: errors.length === 0, errors };

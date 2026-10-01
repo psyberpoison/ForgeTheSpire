@@ -680,6 +680,13 @@ const PLAYER_ONLY_ACTIONS = [
   // on the action `type` enum for the full real-sts2.dll evidence trail
   // (MegaCrit.Sts2.Core.Models.Cards.Discovery's own OnPlay).
   'DiscoverCard',
+  // [Round 347, task #31] "EnterStance"/"ExitStance" -- ForgeStanceCmd.
+  // Enter<T>/Exit always take `fgPlayer` directly (stances are inherently
+  // self-only, same reasoning pet.arrivesWith's SummonPet call above
+  // never reads action.target either) -- no real Creature-target concept
+  // for action.target to pick between, same bucket as SummonPet right
+  // above for that same underlying reason.
+  'EnterStance', 'ExitStance',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -956,7 +963,9 @@ const CONDITION_SUBJECTS = ['Self', 'CardTarget', 'Pet'];
 // now its own dedicated `petRef`-driven kind (optional, defaults to
 // PET_ANY_SENTINEL) instead of a subject-capable one — see its own case
 // in conditionToCSharpRaw below.
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal'];
+// [Round 347] 'InStance' added — same subject mechanism (Self/CardTarget/
+// Pet), see conditionToCSharpRaw's own InStance case.
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'InStance'];
 
 // [VERIFIED via reflect-baselib round 5] `Player.Osty` — the "pet"
 // creature some STS2 characters have — is a real, public, concrete
@@ -3133,6 +3142,29 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       if (!reCardExpr) return `        ForgeActions.Todo("RemoveEnchantment -- no CardModel reference in scope on this hook"); // [UNVERIFIED] see compiler.js's own comment on this case`;
       return `        MegaCrit.Sts2.Core.Commands.CardCmd.ClearEnchantment(${reCardExpr}); // [VERIFIED via direct ECMA-335 metadata read of MegaCrit.Sts2.Core.Commands.CardCmd, round 197] CardCmd.ClearEnchantment(CardModel) is real, public, static, synchronous. Clears whatever enchantment the card currently has -- a card only ever carries one.`;
     }
+    // [Round 347] "Custom stances" -- see generateStanceSource/
+    // generateForgeStanceSupportSource's own headers for the full evidence
+    // trail. `fgPlayer` (NOT fgTarget) -- stances are always something YOU
+    // enter, same "Self" scoping resolveTargetExpr('Self') already gives
+    // every other self-only action (EndTurn, ModifyEnergy, etc.); `choiceContext`
+    // is unconditionally in scope here (every actionToCSharp call site
+    // already has it, same reasoning fgPlayer's own header comment above
+    // documents). cardSource passed as `null` -- same convention pet.
+    // arrivesWith's own direct PowerCmd.Apply<T> call already uses (round
+    // 299), not CardCmd.Afflict<T>/CardCmd.Enchant<T>'s "this card" either.
+    case 'EnterStance': {
+      const esCls = resolveStanceClassExpr(action);
+      if (!esCls) return `        ForgeActions.Todo("EnterStance -- no stance selected"); // pick a stance in this action's own dropdown`;
+      // ForgeStanceCmd referenced bare (not namespace-qualified) -- every
+      // template that can host generated action code already has a real
+      // `using {{namespace}}.Generated;` (same reason bare `ForgeActions`
+      // is referenced everywhere else in this file), and `namespace` isn't
+      // itself threaded into actionToCSharp's own scope.
+      return `        await ForgeStanceCmd.Enter<${esCls}>(choiceContext, fgPlayer, null);`;
+    }
+    case 'ExitStance': {
+      return `        await ForgeStanceCmd.Exit(choiceContext, fgPlayer, null);`;
+    }
     // [Round 199 -- "build out the full affliction section"] Directly
     // evidenced by Afflictions/Reckless.cs's own real, working OnPlay body
     // (Tyler's real "The Burdened" project, rounds 197-199's reference):
@@ -3814,6 +3846,23 @@ function conditionToCSharpRaw(cond, ctx = {}) {
         return `(${subjExpr}?.GetPowerAmount<${typeArg}>()).GetValueOrDefault() ${cmp} ${cond.value} /* ${evidenceNote} */`;
       }
       return `ForgeActions.GetStatusStacks<${typeArg}>(${resolveConditionSubjectExpr(cond.subject)}) ${cmp} ${cond.value} /* ${evidenceNote} */`;
+    }
+    // [Round 347] "Custom stances" -- same vanilla/custom split + subject
+    // mechanism HasStatusStacks right above already established, but a
+    // plain boolean presence check (Creature.HasPower<T>() -- [VERIFIED],
+    // same call pet.arrivesWith's own guard already uses), not a
+    // comparator+value stack count -- stances are StackType.None (binary
+    // present/absent), same reasoning DamageBrokeBlock/PetIsOut's own
+    // boolean-only shape already uses elsewhere in this switch. No
+    // comparator/value at all.
+    case 'InStance': {
+      const isCls = resolveStanceClassExpr(cond);
+      if (!isCls) return `false /* InStance -- no stance selected, pick one in this condition's own dropdown */`;
+      if (ctx.glowContext) {
+        const subjExpr = resolveGlowSubjectExpr(cond.subject);
+        return `(${subjExpr}?.HasPower<${isCls}>()).GetValueOrDefault() /* [VERIFIED] Creature.HasPower<T>(), see generateStanceSource's own header for the full evidence trail */`;
+      }
+      return `${resolveConditionSubjectExpr(cond.subject)}.HasPower<${isCls}>() /* [VERIFIED] Creature.HasPower<T>(), see generateStanceSource's own header for the full evidence trail */`;
     }
     case 'HpBelowPercent':
       // [UPGRADED to VERIFIED, 2026-08-27] Tyler's follow-up: "the hp below
@@ -8064,6 +8113,372 @@ function generateMechanicSource(mechanic, namespace, refMaps, iconOverride) {
   });
 }
 
+// [Round 347] "Custom stances" -- task #31 of the standing gap-analysis
+// list. Tyler: "lets do it", then, after being told sts2.dll has zero
+// native Stance support, uploaded a competing character-creator tool's own
+// real, compiled reference ("The Trainer - New Character") -- both its
+// source zip (Powers/_StanceSupport.cs, the real working implementation)
+// and its packaged project JSON (a `stances[]` array with every field this
+// project's own `stance` schema definition mirrors). That reference proves
+// stances are buildable entirely from already-[VERIFIED]-elsewhere real
+// primitives, reused here exactly as they're used everywhere else in this
+// file:
+//   - CustomPowerModel (same base every mechanics[] entry already extends)
+//   - ModifyDamageMultiplicative [VERIFIED, MODIFIER_HOOKS] -- damageDealtPercent/
+//     damageTakenPercent/adaptedAttackDealtPercent/adaptedAttackTakenPercent
+//   - TryModifyPowerAmountReceived [VERIFIED, MODIFIER_HOOKS] -- enemyBuffPercent
+//   - BeforeSideTurnStart [VERIFIED, MODIFIER_HOOKS] -- exitAtTurnStart
+//   - PowerCmd.Apply<T>(choiceContext, creature, amount, applier, cardSource)
+//     [VERIFIED, round 299 -- pet.arrivesWith's own real call] and
+//     PowerCmd.Remove(PowerModel) [VERIFIED, round 231's own disassembly --
+//     confirmed to call power.RemoveInternal() internally] -- the
+//     mutual-exclusivity swap (Generated/ForgeStanceSupport.cs)
+//   - Creature.Powers [VERIFIED, used by conditionToCSharp's DebuffStacksTotal
+//     case already] + plain LINQ OfType<T>() -- "which stance (if any) is
+//     currently active"
+//   - PlayerCmd.GainEnergy(decimal, Player) [VERIFIED, already used by
+//     ModifyEnergy] -- energyOnEnter/energyOnExit
+//   - Creature.HasPower<T>() [VERIFIED, same call pet.arrivesWith's own
+//     guard and HasStatusStacks already rely on] -- the InStance condition
+//   - CreatureCmd.Heal(Creature, decimal, bool) [VERIFIED via a direct
+//     ECMA-335 IL read of the real installed sts2.dll, this round] --
+//     healEffectivenessPercent, via a Harmony PREFIX patch (same technique
+//     this file already uses for WeakPower/VulnerablePower's own
+//     ModifyDamageMultiplicative and PowerModel.ShouldRemoveDueToAmount/
+//     SetAmount) -- see generateForgeStanceSupportSource below.
+//   - AfterDamageReceived [VERIFIED, MODIFIER_HOOKS] -- powers
+//     adaptedAttackDealtPercent/adaptedAttackTakenPercent's per-repeat
+//     tracking, [VERIFIED via Tyler's own uploaded reference]: the real
+//     NewStanceStance tracks a private Dictionary<string,int> keyed by
+//     Monster.NextMove.Id, incremented only when the OWNER takes a powered
+//     attack -- meaning adaptedAttackDealtPercent (bonus damage YOU deal)
+//     only ever activates once you've already been hit by that same move
+//     at least once; an honest quirk of the real reference's own design,
+//     not something this port papers over.
+//
+// Mutual exclusivity itself (entering a stance exits whichever one was
+// previously active) is NOT handled inside this generated class -- it's
+// Forge's own small, hand-written orchestration layer
+// (Generated/ForgeStanceSupport.cs, see generateForgeStanceSupportSource
+// below), built from the verified primitives above rather than a literal
+// port of the reference's own StancePower/StanceCmd (which needs
+// ModelDb.Power<T>()/.ToMutable(0) and a hand-rolled no-op
+// PlayerChoiceContext specifically because ITS StanceCmd is a raw static
+// helper with no natural choiceContext in scope -- Forge's own
+// ForgeStanceCmd.Enter<T>/Exit are instead always called from inside a
+// real action/hook body that already has one, so they take and forward it
+// directly, no no-op context needed).
+const BUILTIN_STANCES = ['Wrath', 'Calm', 'Divinity'];
+// Fixed preset field values for each vanilla stance -- NOT guessed. Lifted
+// directly from Tyler's own uploaded reference (Powers/_StanceSupport.cs's
+// real, compiled WrathStance/CalmStance/DivinityStance override bodies)
+// and translated into this project's own `stance` schema field shape.
+// generateStanceSource() below is the SAME function used for a user's own
+// custom stances[] entries -- a vanilla stance just feeds it one of these
+// fixed objects instead of a user-authored one, so it compiles through the
+// identical, already-evidenced codegen path rather than a second hand-
+// rolled one. Tyler explicitly chose (AskUserQuestion, round 347) to
+// present these three as a frozen, non-editable dropdown rather than
+// editable quick-start templates.
+const BUILTIN_STANCE_PRESETS = {
+  // real WrathStance.ModifyDamageMultiplicative: `if ((dealer==Owner ||
+  // target==Owner) && !props.HasFlag(Unpowered)) return 2m;` -- symmetric,
+  // both directions, no energy change, no auto-exit, no adapt/enemy-buff/
+  // heal fields touched at all.
+  Wrath: { damageDealtPercent: 200, damageTakenPercent: 200, adaptedAttackDealtPercent: 100, adaptedAttackTakenPercent: 100, enemyBuffPercent: 100, healEffectivenessPercent: 100, energyOnEnter: 0, energyOnExit: 0, exitAtTurnStart: false },
+  // real CalmStance.OnExitStance: `if (creature.IsPlayer) GainEnergy(2m);`
+  // -- no damage change at all, no energy on enter, no auto-exit.
+  Calm: { damageDealtPercent: 100, damageTakenPercent: 100, adaptedAttackDealtPercent: 100, adaptedAttackTakenPercent: 100, enemyBuffPercent: 100, healEffectivenessPercent: 100, energyOnEnter: 0, energyOnExit: 2, exitAtTurnStart: false },
+  // real DivinityStance: OnEnterStance `GainEnergy(3m)`;
+  // ModifyDamageMultiplicative gated on `dealer == base.Owner` ONLY --
+  // returns 3m there, with NO `target == base.Owner` branch at all (so
+  // damage taken is left at the real engine's own unmodified default, 100
+  // here); BeforeSideTurnStart calls StanceCmd.ExitStance when
+  // `side == base.Owner.Side` -- auto-exits at the start of your turn.
+  Divinity: { damageDealtPercent: 300, damageTakenPercent: 100, adaptedAttackDealtPercent: 100, adaptedAttackTakenPercent: 100, enemyBuffPercent: 100, healEffectivenessPercent: 100, energyOnEnter: 3, energyOnExit: 0, exitAtTurnStart: true },
+};
+// Fixed generated class names for the 3 vanilla presets above -- written
+// once per project (only when actually referenced by an EnterStance action
+// or InStance condition somewhere), same "only write what's used" gating
+// generatePetPositionSupportFile/generatePetAttackSupportFile already use.
+const BUILTIN_STANCE_CLASS_NAMES = { Wrath: 'ForgeVanillaWrathStancePower', Calm: 'ForgeVanillaCalmStancePower', Divinity: 'ForgeVanillaDivinityStancePower' };
+
+// Same module-level id->class-name map pattern as currentMechanicClassById
+// above (see its own comment for the full "why module-level" reasoning) --
+// set by generateProject() before any card/relic/mechanic source is
+// generated, so actionToCSharp's EnterStance case and conditionToCSharp's
+// InStance case can resolve a schema stance id to its real generated
+// Powers/XxxStancePower.cs class name.
+let currentStanceClassById = new Map();
+function stanceClassName(stanceRef) {
+  const cls = currentStanceClassById.get(stanceRef);
+  if (!cls) throw new Error(`Action/condition references stance id "${stanceRef}" which isn't defined in this character's stances[].`);
+  return cls;
+}
+// Resolves an EnterStance action's or InStance condition's stanceKind +
+// stanceRef/stanceVanillaRef pair to the real generated class name -- one
+// shared helper since both actionToCSharpRaw (EnterStance) and
+// conditionToCSharpRaw (InStance) need the identical vanilla/custom
+// resolution (same split afflictionKind established, round 340).
+// Deliberately NON-throwing (unlike stanceClassName above) -- same shape as
+// resolveAfflictionClassExpr(action, ctx) just above it in this file:
+// returns null on an unresolved/not-yet-chosen ref so the call site can
+// fall back to a graceful ForgeActions.Todo() instead of a hard crash,
+// matching every other ref-resolving action case in this file.
+function resolveStanceClassExpr(obj) {
+  if (obj.stanceKind === 'vanilla') {
+    return BUILTIN_STANCE_CLASS_NAMES[obj.stanceVanillaRef] || null;
+  }
+  return currentStanceClassById.get(obj.stanceRef) || null;
+}
+
+// Hand-writes the override bodies directly (same "fixed set of typed
+// number/boolean fields, not an {trigger, conditions[], actions[]} effect
+// list" reasoning generateEnchantmentSource's own header already
+// established) rather than routing through generateHookEffects/
+// MODIFIER_HOOKS' generic authoring path -- there's no per-field UI here to
+// drive that generic system, just 9 typed numeric/boolean fields on the
+// schema's own `stance` definition.
+function generateStanceSource(stance, namespace, className) {
+  const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v)) ? v : fallback;
+  const dealt = num(stance.damageDealtPercent, 100);
+  const taken = num(stance.damageTakenPercent, 100);
+  const adaptDealt = num(stance.adaptedAttackDealtPercent, 100);
+  const adaptTaken = num(stance.adaptedAttackTakenPercent, 100);
+  const enemyBuff = num(stance.enemyBuffPercent, 100);
+  const energyOnEnter = num(stance.energyOnEnter, 0);
+  const energyOnExit = num(stance.energyOnExit, 0);
+
+  const needsAdaptTracking = (adaptDealt !== 100) || (adaptTaken !== 100);
+  const needsDealtBranch = (dealt !== 100) || (adaptDealt !== 100);
+  const needsTakenBranch = (taken !== 100) || (adaptTaken !== 100);
+
+  // ModifyDamageMultiplicative -- [VERIFIED via Tyler's own uploaded
+  // reference] early-returns 1m on an Unpowered-flagged hit, same guard the
+  // real NewStanceStance uses, before either branch below runs.
+  let damageOverride = '';
+  if (needsDealtBranch || needsTakenBranch) {
+    const dealtBody = needsDealtBranch ? `
+        if (dealer == base.Owner)
+        {
+            decimal fgM = ${dealt}m / 100m;
+${adaptDealt !== 100 ? `            if (props.IsPoweredAttack() && target?.Monster != null)
+            {
+                for (int fgAdaptI = 0; fgAdaptI < FgAdaptCount(target.Monster.NextMove.Id); fgAdaptI++) fgM *= ${adaptDealt}m / 100m;
+            }
+` : ''}            return fgM;
+        }` : '';
+    const takenBody = needsTakenBranch ? `
+        if (target == base.Owner)
+        {
+            decimal fgM = ${taken}m / 100m;
+${adaptTaken !== 100 ? `            if (props.IsPoweredAttack() && dealer?.Monster != null)
+            {
+                for (int fgAdaptI = 0; fgAdaptI < FgAdaptCount(dealer.Monster.NextMove.Id); fgAdaptI++) fgM *= ${adaptTaken}m / 100m;
+            }
+` : ''}            return fgM;
+        }` : '';
+    damageOverride = `    // [VERIFIED] real ModifyDamageMultiplicative override -- see this
+    // file's own header for the full evidence trail.
+    public override decimal ModifyDamageMultiplicative(Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay)
+    {
+        if (props.HasFlag(ValueProp.Unpowered)) return 1m;${dealtBody}${takenBody}
+        return 1m;
+    }`;
+  }
+
+  // TryModifyPowerAmountReceived -- enemyBuffPercent. [VERIFIED via Tyler's
+  // own uploaded reference, same Buff-type + IsEnemy gating the real
+  // NewStanceStance uses.] Mirrors MODIFIER_HOOKS.TryModifyPowerAmountReceived's
+  // own shape (powerReceivedFilter) but always scoped to enemy targets
+  // receiving a Buff, matching the reference exactly.
+  let powerReceivedOverride = '';
+  if (enemyBuff !== 100) {
+    powerReceivedOverride = `    // [VERIFIED] real TryModifyPowerAmountReceived override -- see this
+    // file's own header for the full evidence trail.
+    public override bool TryModifyPowerAmountReceived(PowerModel canonicalPower, Creature target, decimal amount, Creature applier, ref decimal modifiedAmount)
+    {
+        modifiedAmount = amount;
+        if (canonicalPower.Type != PowerType.Buff) return false;
+        if (target == null || !target.IsEnemy || amount <= 0m) return false;
+        modifiedAmount = amount * ${enemyBuff}m / 100m;
+        return true;
+    }`;
+  }
+
+  // AfterDamageReceived -- the only place the adapt-count dictionary is
+  // ever incremented, gated on the OWNER taking a powered attack (see this
+  // file's own header for why adaptedAttackDealtPercent reads from the same
+  // dictionary this populates).
+  let adaptTrackingFields = '';
+  if (needsAdaptTracking) {
+    adaptTrackingFields = `    private readonly Dictionary<string, int> _fgAdaptedMoves = new Dictionary<string, int>();
+    private int FgAdaptCount(string moveId) => _fgAdaptedMoves.TryGetValue(moveId, out int fgC) ? fgC : 0;
+
+    // [VERIFIED] real AfterDamageReceived override.
+    public override async Task AfterDamageReceived(PlayerChoiceContext choiceContext, Creature target, DamageResult result, ValueProp props, Creature dealer, CardModel cardSource)
+    {
+        if (target == base.Owner && props.IsPoweredAttack() && dealer?.Monster != null)
+        {
+            string fgMid = dealer.Monster.NextMove.Id;
+            _fgAdaptedMoves[fgMid] = FgAdaptCount(fgMid) + 1;
+        }
+        await base.AfterDamageReceived(choiceContext, target, result, props, dealer, cardSource);
+    }`;
+  }
+
+  // BeforeSideTurnStart -- exitAtTurnStart. [VERIFIED via Tyler's own
+  // uploaded reference, the real, compiled DivinityStance.BeforeSideTurnStart]
+  let turnStartOverride = '';
+  if (stance.exitAtTurnStart === true) {
+    turnStartOverride = `    // [VERIFIED] real BeforeSideTurnStart override.
+    public override async Task BeforeSideTurnStart(PlayerChoiceContext choiceContext, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
+    {
+        if (side == base.Owner.Side) await ${namespace}.Generated.ForgeStanceCmd.Exit(choiceContext, base.Owner, null);
+        await base.BeforeSideTurnStart(choiceContext, side, participants, combatState);
+    }`;
+  }
+
+  const tpl = loadTemplate('Stance.cs.template');
+  return fillTemplate(tpl, {
+    namespace,
+    className,
+    energyOnEnterLiteral: String(energyOnEnter),
+    energyOnExitLiteral: String(energyOnExit),
+    damageOverride,
+    powerReceivedOverride,
+    adaptTrackingFields,
+    turnStartOverride,
+  });
+}
+
+// The shared mutual-exclusivity orchestration layer every generated stance
+// class relies on (IForgeStancePower) -- written once per project, only
+// when stances are actually used (at least one custom stances[] entry
+// exists, OR at least one EnterStance action/InStance condition anywhere
+// references a vanilla stance). See generateStanceSource's own header
+// comment for the full real-primitive evidence trail behind
+// PowerCmd.Apply<T>/PowerCmd.Remove/Creature.Powers.OfType<T>()/
+// PlayerCmd.GainEnergy below -- all independently [VERIFIED] in EARLIER
+// rounds, for other features, reused here as-is.
+//
+// Also carries healEffectivenessPercent's own Harmony patch: a single
+// shared PREFIX on the real, [VERIFIED via a direct ECMA-335 IL read of the
+// real installed sts2.dll, this round] CreatureCmd.Heal(Creature creature,
+// decimal amount, bool playAnim), multiplying `amount` before the real
+// method runs whenever `creature.HasPower<T>()` for one of this project's
+// own stance classes that actually sets this field -- ONE patch covers
+// every such stance (they're mutually exclusive, so at most one can ever
+// match at a time), same "one shared patch, not one per entity" shape this
+// file already uses for Pets' positioning/attack support files. Same
+// Harmony-PREFIX-on-a-real-engine-method technique this file already uses
+// for WeakPower/VulnerablePower's own ModifyDamageMultiplicative patches
+// and PowerModel.ShouldRemoveDueToAmount/SetAmount.
+function generateForgeStanceSupportSource(characterPackage, namespace, stanceClassByIdForHeal) {
+  const stances = characterPackage.stances || [];
+  const usedVanilla = collectUsedVanillaStances(characterPackage);
+
+  if (!stances.length && !usedVanilla.size) return null;
+
+  const healPatchEntries = [];
+  stances.forEach(s => {
+    const heal = (typeof s.healEffectivenessPercent === 'number' && Number.isFinite(s.healEffectivenessPercent)) ? s.healEffectivenessPercent : 100;
+    if (heal !== 100) healPatchEntries.push(`        if (creature.HasPower<${stanceClassByIdForHeal.get(s.id)}>()) amount *= ${heal}m / 100m;`);
+  });
+  usedVanilla.forEach(v => {
+    const heal = BUILTIN_STANCE_PRESETS[v].healEffectivenessPercent;
+    if (heal !== 100) healPatchEntries.push(`        if (creature.HasPower<${BUILTIN_STANCE_CLASS_NAMES[v]}>()) amount *= ${heal}m / 100m;`);
+  });
+  const healPatch = healPatchEntries.length ? `
+[HarmonyPatch(typeof(CreatureCmd), nameof(CreatureCmd.Heal))]
+internal static class ForgeStanceHealEffectivenessPatch
+{
+    // [VERIFIED via a direct ECMA-335 IL read of the real installed
+    // sts2.dll, round 347] CreatureCmd.Heal(Creature creature, decimal
+    // amount, bool playAnim) is real, public, static. Prefix multiplies
+    // amount in place before the real method runs -- same "Prefix
+    // short-circuits nothing, just mutates the ref param" shape this
+    // file's other Harmony patches already use.
+    [HarmonyPrefix]
+    private static void Prefix(Creature creature, ref decimal amount, bool playAnim)
+    {
+        if (creature == null || amount <= 0m) return;
+${healPatchEntries.join('\n')}
+    }
+}
+` : '';
+
+  return `// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on
+// next export.
+//
+// [Round 347] Shared stance-swap orchestration + (when needed)
+// healEffectivenessPercent's Harmony patch -- see
+// backend/compiler.js:generateStanceSource's own header for the full real-
+// primitive evidence trail every call below relies on.
+using System.Linq;
+using System.Threading.Tasks;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Models;
+
+namespace ${namespace}.Generated;
+
+// Implemented by every generated stance class (Powers/*StancePower.cs) so
+// this orchestration layer can read a currently-active stance's own energy
+// values generically, regardless of which concrete stance it is.
+public interface IForgeStancePower
+{
+    decimal ForgeStanceEnergyOnEnter { get; }
+    decimal ForgeStanceEnergyOnExit { get; }
+}
+
+public static class ForgeStanceCmd
+{
+    // Enters stance T, first exiting whichever stance (if any) was
+    // previously active -- [VERIFIED] Creature.Powers.OfType<IForgeStancePower>()
+    // (plain LINQ over the real Creature.Powers collection) finds it,
+    // PowerCmd.Remove(PowerModel) removes it (confirmed to call
+    // power.RemoveInternal() internally, round 231's own disassembly),
+    // PlayerCmd.GainEnergy(decimal, Player) pays out its own
+    // ForgeStanceEnergyOnExit first (real call, no-ops on amount <= 0 --
+    // same confirmed behavior ModifyEnergy's own codegen already relies
+    // on, so this is safe to call unconditionally rather than gating on
+    // amount != 0). Then PowerCmd.Apply<T> (real, same call pet.arrivesWith
+    // already uses) applies the new stance and its own
+    // ForgeStanceEnergyOnEnter is paid out the same way. A no-op if T is
+    // already the active stance.
+    public static async Task Enter<T>(PlayerChoiceContext choiceContext, Creature creature, CardModel cardSource) where T : PowerModel, IForgeStancePower, new()
+    {
+        if (creature?.Player == null) return;
+        IForgeStancePower fgCurrent = creature.Powers.OfType<IForgeStancePower>().FirstOrDefault();
+        if (fgCurrent != null)
+        {
+            if (fgCurrent.GetType() == typeof(T)) return;
+            await PlayerCmd.GainEnergy(fgCurrent.ForgeStanceEnergyOnExit, creature.Player);
+            await PowerCmd.Remove((PowerModel)fgCurrent);
+        }
+        T fgNew = await PowerCmd.Apply<T>(choiceContext, creature, 1m, null, cardSource);
+        await PlayerCmd.GainEnergy(fgNew.ForgeStanceEnergyOnEnter, creature.Player);
+    }
+
+    // Exits whichever stance (if any) is currently active -- same
+    // GainEnergy(ForgeStanceEnergyOnExit) + PowerCmd.Remove pair Enter<T>
+    // above performs when swapping away from the old stance, just with no
+    // new stance applied afterward.
+    public static async Task Exit(PlayerChoiceContext choiceContext, Creature creature, CardModel cardSource)
+    {
+        if (creature?.Player == null) return;
+        IForgeStancePower fgCurrent = creature.Powers.OfType<IForgeStancePower>().FirstOrDefault();
+        if (fgCurrent == null) return;
+        await PlayerCmd.GainEnergy(fgCurrent.ForgeStanceEnergyOnExit, creature.Player);
+        await PowerCmd.Remove((PowerModel)fgCurrent);
+    }
+}
+${healPatch}`;
+}
+
 // [Round 190] Real C# codegen for Enchantments -- Tyler: "lets wire this
 // up to the real OnCardPlay trigger... Go further -- wire the whole
 // schema." See Enchantment.cs.template's own header for the full
@@ -8832,6 +9247,58 @@ function packageUsesActionType(characterPackage, actionType) {
     if (Array.isArray(a.effects)) effectLists.push(a.effects);
   });
   return effectLists.some(effects => (effects || []).some(eff => containsType(eff.actions) || containsType(eff.elseActions)));
+}
+
+// [Round 347] Same "every place an action/condition list can live in a
+// character package" effectLists enumeration as packageUsesActionType just
+// above (kept in sync deliberately, same discipline) -- but walking BOTH
+// actions (EnterStance) AND conditions (InStance), recursing into
+// followUp.actions the same way containsType does, to find every VANILLA
+// stance name (Wrath/Calm/Divinity) actually referenced anywhere in this
+// package. Used by generateForgeStanceSupportSource to decide which (if
+// any) of the 3 fixed vanilla stance classes need to be written at all --
+// same "only write what's used" gating generatePetAttackSupportFile uses
+// for packageUsesActionType.
+function collectUsedVanillaStances(characterPackage) {
+  const used = new Set();
+  const scanActions = (actions) => {
+    if (!Array.isArray(actions)) return;
+    actions.forEach(act => {
+      if (!act) return;
+      if (act.type === 'EnterStance' && act.stanceKind === 'vanilla' && BUILTIN_STANCES.includes(act.stanceVanillaRef)) used.add(act.stanceVanillaRef);
+      if (act.followUp && Array.isArray(act.followUp.actions)) scanActions(act.followUp.actions);
+    });
+  };
+  const scanConditions = (conditions) => {
+    if (!Array.isArray(conditions)) return;
+    conditions.forEach(cond => {
+      if (cond && cond.kind === 'InStance' && cond.stanceKind === 'vanilla' && BUILTIN_STANCES.includes(cond.stanceVanillaRef)) used.add(cond.stanceVanillaRef);
+    });
+  };
+  const effectLists = [];
+  (characterPackage.cards || []).forEach(card => {
+    if (Array.isArray(card.effects)) effectLists.push(card.effects);
+    if (card.advancedOptions && Array.isArray(card.advancedOptions.whileInHand)) effectLists.push(card.advancedOptions.whileInHand);
+    (card.upgrades || []).forEach(tier => { if (Array.isArray(tier.effects)) effectLists.push(tier.effects); });
+  });
+  (characterPackage.relics || []).forEach(r => { if (Array.isArray(r.effects)) effectLists.push(r.effects); });
+  (characterPackage.mechanics || []).forEach(m => { if (Array.isArray(m.effects)) effectLists.push(m.effects); });
+  (characterPackage.enchantments || []).forEach(e => {
+    if (e.onPlay && Array.isArray(e.onPlay.effects)) effectLists.push(e.onPlay.effects);
+    if (e.whilePile && Array.isArray(e.whilePile.effects)) effectLists.push(e.whilePile.effects);
+    if (Array.isArray(e.effects)) effectLists.push(e.effects);
+  });
+  (characterPackage.afflictions || []).forEach(a => {
+    if (a.onPlay && Array.isArray(a.onPlay.effects)) effectLists.push(a.onPlay.effects);
+    if (a.whilePile && Array.isArray(a.whilePile.effects)) effectLists.push(a.whilePile.effects);
+    if (Array.isArray(a.effects)) effectLists.push(a.effects);
+  });
+  effectLists.forEach(effects => (effects || []).forEach(eff => {
+    scanActions(eff.actions);
+    scanActions(eff.elseActions);
+    scanConditions(eff.conditions);
+  }));
+  return used;
 }
 
 // [Round 286 — VERIFIED via direct IL disassembly of
@@ -11566,6 +12033,18 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // TOOLCHAIN_FINDINGS.md "reflect-baselib round 7").
   currentMechanicClassById = new Map((characterPackage.mechanics || []).map(m => [m.id, pascalCase(m.name) + 'Power']));
 
+  // [Round 347] Same reasoning as currentMechanicClassById right above —
+  // set early, before ANY card/relic/mechanic/affliction/enchantment
+  // source is generated (a mechanic's own effects can reference an
+  // EnterStance action or InStance condition just as easily as a card's
+  // can), so actionToCSharp's EnterStance case and conditionToCSharp's
+  // InStance case can always resolve a custom stance id regardless of
+  // which entity's effects happen to be compiled first. The actual stance
+  // .cs files are written later (after mechanics, alongside the other
+  // per-entity write() calls) — only this id->class-name map needs to
+  // exist this early.
+  currentStanceClassById = new Map((characterPackage.stances || []).map(s => [s.id, `${pascalCase(s.name)}StancePower`]));
+
   // [Round 232] Only writes a file at all when at least one mechanic in
   // the project sets stayVisibleAtZero -- see
   // generateStayVisibleAtZeroSupportFile's own header comment for the
@@ -11961,6 +12440,35 @@ function generateProject(characterPackage, outDir, opts = {}) {
     write(`Powers/${pascalCase(mechanic.name)}Power.cs`, src);
   }
 
+  // Stances (round 347, task #31) — see generateStanceSource's own header
+  // for the full evidence trail. currentStanceClassById was already set
+  // early (see that assignment's own comment, right by
+  // currentMechanicClassById) so EnterStance/InStance could resolve a
+  // custom stance id while cards/relics/mechanics were being generated
+  // above; this block just writes the actual .cs files now. Each custom
+  // stances[] entry always gets a real class (same "defining it always
+  // generates the class; a stance never referenced by any EnterStance/
+  // InStance just never gets instantiated" convention pets settled on
+  // round 289) — unlike pets/mechanics, vanilla stances are ALSO written
+  // here, but only the ones actually referenced somewhere
+  // (collectUsedVanillaStances), since there are only 3 possible vanilla
+  // names and writing all 3 unconditionally would mean dead code in the
+  // common case of a character using zero or one of them.
+  const stances = characterPackage.stances || [];
+  for (const stance of stances) {
+    const cls = currentStanceClassById.get(stance.id);
+    write(`Powers/${cls}.cs`, generateStanceSource(stance, namespace, cls));
+  }
+  const usedVanillaStances = collectUsedVanillaStances(characterPackage);
+  usedVanillaStances.forEach(v => {
+    const cls = BUILTIN_STANCE_CLASS_NAMES[v];
+    write(`Powers/${cls}.cs`, generateStanceSource(BUILTIN_STANCE_PRESETS[v], namespace, cls));
+  });
+  const stanceSupportSrc = generateForgeStanceSupportSource(characterPackage, namespace, currentStanceClassById);
+  if (stanceSupportSrc) {
+    write('Generated/ForgeStanceSupport.cs', stanceSupportSrc);
+  }
+
   // Static pack asset — Godot export preset, copied verbatim.
   fs.copyFileSync(path.join(TEMPLATES_DIR, 'export_presets.cfg'), path.join(outDir, 'pack', 'export_presets.cfg'));
   written.push(path.join(outDir, 'pack', 'export_presets.cfg'));
@@ -12090,6 +12598,12 @@ module.exports = {
   // PROTECTED_CTOR-style filter needed here — all 7 have confirmed public
   // parameterless constructors.
   BUILTIN_AFFLICTIONS: Object.keys(BUILTIN_AFFLICTION_CLASS_MAP),
+  // [Round 347] Same reasoning — EnterStance's stanceVanillaRef picker and
+  // InStance's own vanilla option, derived from BUILTIN_STANCES (see that
+  // const's own doc comment for the full "why these 3 are fixed presets,
+  // not real engine classes" evidence trail) so validate.js shares the one
+  // source of truth.
+  BUILTIN_STANCES,
   // [2026-09-22] Same reasoning as BUILTIN_STATUSES above — the 9 real
   // built-in RestSiteOption types TryModifyRestSiteOptions' 'restSiteOption'
   // shape can Add/Remove (see BUILTIN_REST_SITE_OPTION_CLASS_MAP), derived
