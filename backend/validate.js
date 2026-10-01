@@ -1230,13 +1230,37 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         errors.push(`${p}.afflictTargetKind is "${act.afflictTargetKind}" — must be "ThisCard" or "RandomFromPile" (or omitted, which defaults to "ThisCard").`);
       }
       if (act.afflictTargetKind === 'RandomFromPile') {
-        if (act.afflictRandomCount === undefined || act.afflictRandomCount === null || act.afflictRandomCount === '') {
-          errors.push(`${p}: action "AfflictCard" with afflictTargetKind "RandomFromPile" needs afflictRandomCount set — how many random cards to afflict.`);
-        } else if (!Number.isInteger(Number(act.afflictRandomCount)) || Number(act.afflictRandomCount) < 1) {
-          errors.push(`${p}.afflictRandomCount must be a whole number >= 1.`);
+        // [Round 342, 2026-10-01] afflictAllInPile -- Tyler: "currently if
+        // we want to afflict all cards in that pile we have to put in a
+        // really large number. can we add an 'afflict all cards in pile'
+        // checkbox at the end?" When checked, afflictRandomCount is
+        // meaningless (every card in the pile gets afflicted, not a count
+        // of random picks) so it's required to be ABSENT here, same
+        // "exactly one of these two is meaningful, never both" shape
+        // afflictionKind's custom/vanilla split already uses — keeps a
+        // stale leftover count from ever silently surviving a checkbox
+        // toggle unnoticed.
+        if (act.afflictAllInPile !== undefined && typeof act.afflictAllInPile !== 'boolean') {
+          errors.push(`${p}.afflictAllInPile must be a boolean.`);
         }
-      } else if (act.afflictRandomCount !== undefined) {
-        errors.push(`${p}: afflictRandomCount is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
+        if (act.afflictAllInPile) {
+          if (act.afflictRandomCount !== undefined) {
+            errors.push(`${p}: afflictRandomCount is only meaningful when afflictAllInPile is false — got both set.`);
+          }
+        } else {
+          if (act.afflictRandomCount === undefined || act.afflictRandomCount === null || act.afflictRandomCount === '') {
+            errors.push(`${p}: action "AfflictCard" with afflictTargetKind "RandomFromPile" needs afflictRandomCount set — how many random cards to afflict (or check "all cards in pile" instead).`);
+          } else if (!Number.isInteger(Number(act.afflictRandomCount)) || Number(act.afflictRandomCount) < 1) {
+            errors.push(`${p}.afflictRandomCount must be a whole number >= 1.`);
+          }
+        }
+      } else {
+        if (act.afflictRandomCount !== undefined) {
+          errors.push(`${p}: afflictRandomCount is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
+        }
+        if (act.afflictAllInPile !== undefined) {
+          errors.push(`${p}: afflictAllInPile is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
+        }
       }
     } else {
       if (act.afflictTargetKind !== undefined) {
@@ -1244,6 +1268,9 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       }
       if (act.afflictRandomCount !== undefined) {
         errors.push(`${p}: afflictRandomCount is only meaningful on "AfflictCard" — action type is "${act.type}".`);
+      }
+      if (act.afflictAllInPile !== undefined) {
+        errors.push(`${p}: afflictAllInPile is only meaningful on "AfflictCard" — action type is "${act.type}".`);
       }
     }
     // [Round 199] pile -- ClearAfflictionFromPile, or AfflictCard with

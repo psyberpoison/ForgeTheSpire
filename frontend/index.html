@@ -11755,8 +11755,16 @@ function describeAction(act){
       // convention as everywhere else, naming the pile and the count
       // instead of "this card".
       if(act.afflictTargetKind === 'RandomFromPile'){
-        const count = act.afflictRandomCount || 1;
         const pileLabel = (act.pile || 'Hand').toLowerCase();
+        // [Round 342, 2026-10-01] Tyler: "can we add an 'afflict all
+        // cards in pile' checkbox at the end?" -- deterministic, no
+        // count/"random" wording once checked (see this field's own
+        // compiler.js/schema comments for why "a really large number"
+        // isn't the same thing).
+        if(act.afflictAllInPile){
+          return `Afflict all cards in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
+        }
+        const count = act.afflictRandomCount || 1;
         return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
       }
       return `Afflict this card with ${n} stack${n===1?'':'s'} of ${name}`;
@@ -15639,13 +15647,28 @@ function ensureActionRefDefaults(act){
   if(act.type === 'AfflictCard'){
     if(!['ThisCard','RandomFromPile'].includes(act.afflictTargetKind)) act.afflictTargetKind = 'ThisCard';
     if(act.afflictTargetKind === 'RandomFromPile'){
-      if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)) act.afflictRandomCount = 1;
+      // [Round 342, 2026-10-01] afflictAllInPile -- Tyler: "currently if
+      // we want to afflict all cards in that pile we have to put in a
+      // really large number. can we add an 'afflict all cards in pile'
+      // checkbox at the end?" Mutually exclusive with afflictRandomCount
+      // (see schema's own doc comment for why a bigger count isn't the
+      // same thing) -- only fill in a count while the checkbox is OFF,
+      // and always drop it while the checkbox is ON, so toggling the
+      // checkbox never leaves a stale count sitting behind it.
+      if(typeof act.afflictAllInPile !== 'boolean') act.afflictAllInPile = false;
+      if(act.afflictAllInPile){
+        delete act.afflictRandomCount;
+      } else if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)){
+        act.afflictRandomCount = 1;
+      }
     } else {
       delete act.afflictRandomCount;
+      delete act.afflictAllInPile;
     }
   } else {
     delete act.afflictTargetKind;
     delete act.afflictRandomCount;
+    delete act.afflictAllInPile;
   }
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
@@ -16282,17 +16305,33 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'AfflictCard': {
       const afflOptions = afflictionSelectHtml(act);
       const acIsRandom = act.afflictTargetKind === 'RandomFromPile';
-      const acCountPrefixHtml = acIsRandom
+      // [Round 342, 2026-10-01] Tyler: "currently if we want to afflict
+      // all cards in that pile we have to put in a really large number.
+      // can we add an 'afflict all cards in pile' checkbox at the end?"
+      // Checked, this swaps the count input + "this card"/"random
+      // card(s)" select out for a plain "all cards" label -- leaving
+      // both visible at once would read as a contradiction ("random
+      // card(s) ... all of them" implies "random" AND "every one",
+      // which can't both be true). Unchecking the box (still rendered
+      // whenever a pile is in play) brings the count input and the
+      // target-kind select back, same as before this field existed.
+      const acAll = acIsRandom && !!act.afflictAllInPile;
+      const acCountPrefixHtml = (acIsRandom && !acAll)
         ? `<input type="number" class="a-afflict-random-count" min="1" step="1" value="${act.afflictRandomCount ?? 1}" style="width:56px; flex:none;">`
         : '';
-      const acTargetKindHtml = `<select class="a-afflict-target-kind">
+      const acTargetKindHtml = acAll
+        ? `<span class="cond-word">all cards</span>`
+        : `<select class="a-afflict-target-kind">
         <option value="ThisCard" ${(act.afflictTargetKind||'ThisCard')==='ThisCard'?'selected':''}>this card</option>
         <option value="RandomFromPile" ${acIsRandom?'selected':''}>random card(s)</option>
       </select>`;
       const acPileSuffixHtml = acIsRandom
         ? `<span class="cond-word">in your</span><select class="a-pile">${pileOptList(act.pile)}</select>`
         : '';
-      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      const acAllCheckboxHtml = acIsRandom
+        ? `<label class="cond-word" style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="a-afflict-all-in-pile" ${acAll?'checked':''}> all cards in pile</label>`
+        : '';
+      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml} ${acAllCheckboxHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
       break;
     }
     case 'RemoveAffliction':
@@ -16672,7 +16711,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
-    delete act.afflictTargetKind; delete act.afflictRandomCount;
+    delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
     delete act.discoverCount; delete act.discoverPool; delete act.discoverCardType; delete act.discoverCanSkip; delete act.discoverFreeCost;
@@ -16810,6 +16849,19 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   if(afflictRandomCountInput) afflictRandomCountInput.onchange = e=>{
     const v = parseInt(e.target.value, 10);
     act.afflictRandomCount = (Number.isFinite(v) && v >= 1) ? v : 1;
+  };
+  // [Round 342, 2026-10-01] AfflictCard's own "all cards in pile"
+  // checkbox -- Tyler: "can we add an 'afflict all cards in pile'
+  // checkbox at the end?" DOES need a re-render, same reasoning as
+  // afflictTargetKindSelect right above: toggling it swaps the count
+  // input + target-kind select out for a plain "all cards" label (and
+  // back), which are different DOM nodes, not just a value change.
+  const afflictAllInPileCheck = row.querySelector('.a-afflict-all-in-pile');
+  if(afflictAllInPileCheck) afflictAllInPileCheck.onchange = e=>{
+    act.afflictAllInPile = e.target.checked;
+    ensureActionRefDefaults(act);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
   // [2026-09-23] TransformDeckCards's own two card-picker selects -- no
   // re-render needed, same as afflictionRefSelect/enchantmentRefSelect above.

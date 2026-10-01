@@ -3030,9 +3030,40 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // (resolveRandomCardPickAndAct), just against AfflictCard's own
       // `pile` field instead of their hardcoded Hand.
       if (action.afflictTargetKind === 'RandomFromPile') {
-        const acCount = Number.isFinite(Number(action.afflictRandomCount)) && Number(action.afflictRandomCount) > 0 ? Math.floor(Number(action.afflictRandomCount)) : 1;
         const acPlayerExpr = resolvePlayerExpr(ctx);
         const acPileExpr = pileTypeExpr(action.pile);
+        // [Round 342, 2026-10-01] Tyler: "currently if we want to afflict
+        // all cards in that pile we have to put in a really large number.
+        // can we add an 'afflict all cards in pile' checkbox at the end?"
+        // -- a large afflictRandomCount doesn't even reliably hit every
+        // card: resolveRandomCardPickAndAct re-picks via
+        // Rng.CombatCardSelection.NextItem EACH iteration without removing
+        // the previous pick from the pile (afflicting a card never moves
+        // it out of its pile), so it's sampling WITH replacement -- a big
+        // count can re-afflict the same card several times while some
+        // other card in the pile never gets picked at all. "All" needed a
+        // genuinely different, deterministic shape rather than "a bigger
+        // random count". Composited from two independently-[VERIFIED] real
+        // primitives: PileTypeExtensions.GetPile(PileType, Player).Cards,
+        // snapshotted via .ToList() before the loop mutates the pile --
+        // the exact same real access pattern ClearAfflictionFromPile's own
+        // case above already uses (round 199, itself sourced from Tyler's
+        // real "The Burdened" project's Reckless.cs) -- and
+        // CardCmd.Afflict<T>(CardModel, decimal) (round 197, see this
+        // case's own header comment). No single decompiled example
+        // combines "iterate a whole pile" with "Afflict" specifically, but
+        // every individual piece is independently real -- same
+        // composition-confidence level as SwapDrawDiscard's own case
+        // above. No Rng involved at all here, unlike the random-N-picks
+        // branch just below -- every card in the pile is afflicted exactly
+        // once, never zero times, never twice.
+        if (action.afflictAllInPile) {
+          return `        foreach (CardModel fgAflAllC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(${acPileExpr}, ${acPlayerExpr}).Cards.ToList()) // [BEST EFFORT -- composited from two independently-VERIFIED real primitives, see this branch's own comment in compiler.js]
+        {
+            await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(fgAflAllC, (decimal)(${resolveAmountExpr(action, ctx)}));
+        }`;
+        }
+        const acCount = Number.isFinite(Number(action.afflictRandomCount)) && Number(action.afflictRandomCount) > 0 ? Math.floor(Number(action.afflictRandomCount)) : 1;
         return resolveRandomCardPickAndAct(
           'AfflictRandom',
           String(acCount),
