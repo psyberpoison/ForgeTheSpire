@@ -21018,7 +21018,7 @@ function renderStances(){
   state.stances.forEach(s=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(s.name||'Untitled')}</div><div class="t-meta">stance — compiles into a real, working custom Power</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(s.name||'Untitled')}</div><div class="t-meta">stance</div>`;
     t.onclick = ()=> openStanceEditor(s.id);
     stanceGrid.appendChild(t);
   });
