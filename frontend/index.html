@@ -16124,6 +16124,17 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // assigned-in-the-case, slotted-into-the-row-template-after pattern as
   // discoverOptionsBlockHtml above.
   let formulaBelowSentenceBlockHtml = '';
+  // [Round 344, 2026-10-01] Tyler: "take both checkboxes out of the
+  // sentence and put them below it" -- AfflictCard's "all cards in pile"
+  // (round 342) and "can afflict the same card twice" (round 343)
+  // checkboxes were landing inline inside the RandomFromPile sentence,
+  // same mid-sentence-clutter shape DiscoverCard's own options row and
+  // AfflictCard/EnchantCard's own formula toggle were already moved out
+  // of for the same reason (see discoverOptionsBlockHtml/
+  // formulaBelowSentenceBlockHtml's own comments above). Same declared-
+  // before-the-switch, assigned-in-the-case, slotted-into-the-row-
+  // template-after pattern.
+  let afflictOptionsBlockHtml = '';
   // formulaToggleHtml is always the LAST piece concatenated into
   // useXAmountHtml (see that const's own definition above) -- slicing its
   // known length off the end reliably strips just the formula checkbox,
@@ -16351,21 +16362,25 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const acPileSuffixHtml = acIsRandom
         ? `<span class="cond-word">in your</span><select class="a-pile">${pileOptList(act.pile)}</select>`
         : '';
+      // [Round 344, 2026-10-01] Tyler: "take both checkboxes out of the
+      // sentence and put them below it" -- both checkboxes below now live
+      // in afflictOptionsBlockHtml (declared above the switch, slotted
+      // into the row template after the sentence), not sentenceHtml.
+      // "all cards in pile" (round 342).
       const acAllCheckboxHtml = acIsRandom
-        ? `<label class="cond-word" style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="a-afflict-all-in-pile" ${acAll?'checked':''}> all cards in pile</label>`
+        ? `<label class="a-check-label"><input type="checkbox" class="a-afflict-all-in-pile" ${acAll?'checked':''}> all cards in pile</label>`
         : '';
-      // [Round 343, 2026-10-01] Tyler, after round 342 explained the
-      // random picker's own "with replacement" behavior: "can we add
-      // another checkbox for 'can afflict the same card twice'. unchecked
-      // means that it removes cards from the possible afflict list after
-      // it afflicts them." Only meaningful alongside an actual count of
-      // random picks -- hidden once "all cards in pile" is checked (acAll),
-      // same as the count input itself, since there's no pick-pool left to
+      // "can afflict the same card twice" (round 343) -- Tyler, after
+      // round 342 explained the random picker's own "with replacement"
+      // behavior. Only meaningful alongside an actual count of random
+      // picks -- hidden once "all cards in pile" is checked (acAll), same
+      // as the count input itself, since there's no pick-pool left to
       // dedupe once every card is already getting touched.
       const acAllowDupesCheckboxHtml = (acIsRandom && !acAll)
         ? `<label class="a-check-label" title="Checked (default): the same card can be picked -- and afflicted -- more than once. Unchecked: each card is removed from the pick pool once afflicted, so this action never afflicts the same card twice (the loop stops early if the pile runs out of cards first)."><input type="checkbox" class="a-afflict-allow-duplicates" ${act.afflictAllowDuplicates===false?'':'checked'}> can afflict the same card twice</label>`
         : '';
-      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml} ${acAllCheckboxHtml} ${acAllowDupesCheckboxHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      if(acIsRandom) afflictOptionsBlockHtml = `<div class="action-row-usex">${acAllCheckboxHtml}${acAllowDupesCheckboxHtml}</div>`;
+      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
       break;
     }
     case 'RemoveAffliction':
@@ -16685,6 +16700,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${formulaBelowSentenceBlockHtml ? `<div class="action-row-usex">${formulaBelowSentenceBlockHtml}</div>` : ''}
     ${discoverOptionsBlockHtml}
     ${discoverCardRefsBlockHtml}
+    ${afflictOptionsBlockHtml}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
     ${hasFormula ? `<div class="a-formula-slot"></div>` : ''}
     ${scaleWarningHtml}
