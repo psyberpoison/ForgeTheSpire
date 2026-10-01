@@ -16018,7 +16018,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const petOptions = state.pets.length
         ? `<select class="a-pet-ref">${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create a pet first)</span>`;
-      sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">HP (adds to its max HP instead if it's already out).</span>`;
+      sentenceHtml = `<span class="cond-word">Summon</span> ${petOptions} <span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">HP (adds to its max HP instead if it's already out).</span>`;
       break;
     }
     // [Round 293] New action type, sibling to SummonPet -- see
@@ -16035,7 +16035,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const petOptions = state.pets.length
         ? `<select class="a-pet-ref"><option value="${PET_ANY_SENTINEL}" ${act.petRef===PET_ANY_SENTINEL?'selected':''}>Whatever pet is out</option>${state.pets.map(pet=>`<option value="${escapeAttr(pet.id)}" ${act.petRef===pet.id?'selected':''}>${escapeHtml(pet.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create a pet first)</span>`;
-      sentenceHtml = `<span class="cond-word">Have</span> ${petOptions}<span class="cond-word">attack</span>${targetHtml}<span class="cond-word">for</span>${amountHtml}${useXAmountHtml}<span class="cond-word">damage.</span>`;
+      sentenceHtml = `<span class="cond-word">Have</span> ${petOptions} <span class="cond-word">attack</span>${targetHtml}<span class="cond-word">for</span>${amountHtml}${useXAmountHtml}<span class="cond-word">damage.</span>`;
       break;
     }
     // [Round 328] New action type -- Tyler: "do we have a card effect that
@@ -16063,7 +16063,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         <option value="ToFront" ${act.petPositionMode==='ToFront'?'selected':''}>to the front</option>
         <option value="ToBack" ${act.petPositionMode==='ToBack'?'selected':''}>to the back</option>
       </select>`;
-      sentenceHtml = `<span class="cond-word">Move</span> ${petOptions}${modeOptions}<span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Move</span> ${petOptions} ${modeOptions}<span class="cond-word">.</span>`;
       break;
     }
     // [2026-09-30, item #3 of the gap-analysis 35] "DiscoverCard" -- see
