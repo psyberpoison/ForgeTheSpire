@@ -3684,51 +3684,9 @@
     </div>
   </section>
 
-  <section class="panel" id="section-enchantments">
-    <div class="panel-head">
-      <h2><span class="num">03</span> Enchantments &amp; Afflictions</h2>
-    </div>
-    <div class="panel-body">
-      <!-- Round 95, Tyler: "Enchantments/Afflictions need their own
-           section after cards, we'll modify how it looks later, but it
-           needs to be its own section." UPDATED round 190 (Enchantments)
-           and round 196 (Afflictions) — both are now confirmed real,
-           separate base-game classes (EnchantmentModel/AfflictionModel)
-           and compile to real C#; see each editor's own in-modal banner
-           for the exact evidence tier per field. Two grids in one
-           section (Tyler grouped them together, not as separate
-           sections). UPDATED round 199, Tyler: "lets remove this [old
-           panel-desc text, including its now-stale 'nothing can
-           grant/apply either yet' known-gap line -- closed by round
-           197's AfflictCard/EnchantCard actions] ... put in a section of
-           information that tells the user that enchantments persist
-           unless removed, and afflictions are only per-combat." UPDATED
-           round 204, Tyler: "lets see about moving enchantments and
-           afflictions side-by-side instead of above and below. also
-           lets remove the [general intro] text" — panel-desc trimmed to
-           just the persist/per-combat behavior notes, and the two grids
-           moved into side-by-side columns (see .ench-afflict-columns). -->
-      <div class="panel-desc">
-        <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment
-        action) — they don't wear off on their own.
-        <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat.
-      </div>
-      <div class="ench-afflict-columns">
-        <div class="ench-afflict-col">
-          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
-          <div class="grid-cards" id="enchantments-grid"></div>
-        </div>
-        <div class="ench-afflict-col">
-          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Afflictions <span class="mono" style="font-size:11px" id="affliction-count">0</span></h3>
-          <div class="grid-cards" id="afflictions-grid"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <section class="panel" id="section-relics">
     <div class="panel-head">
-      <h2><span class="num">04</span> Relics</h2>
+      <h2><span class="num">03</span> Relics</h2>
       <div style="display:flex; align-items:center; gap:14px;">
         <!-- 2026-09-07 update -- Tyler: "move the check text up into the
              title bar for the relic section like it is in the card
@@ -3749,7 +3707,7 @@
 
   <section class="panel" id="section-mechanics">
     <div class="panel-head">
-      <h2><span class="num">05</span> Mechanics</h2>
+      <h2><span class="num">04</span> Mechanics</h2>
       <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="mech-count">0 mechanics</span>
     </div>
     <div class="panel-body">
@@ -3816,9 +3774,51 @@
     </div>
   </section>
 
+  <section class="panel" id="section-enchantments">
+    <div class="panel-head">
+      <h2><span class="num">06</span> Enchantments &amp; Afflictions</h2>
+    </div>
+    <div class="panel-body">
+      <!-- Round 95, Tyler: "Enchantments/Afflictions need their own
+           section after cards, we'll modify how it looks later, but it
+           needs to be its own section." UPDATED round 190 (Enchantments)
+           and round 196 (Afflictions) — both are now confirmed real,
+           separate base-game classes (EnchantmentModel/AfflictionModel)
+           and compile to real C#; see each editor's own in-modal banner
+           for the exact evidence tier per field. Two grids in one
+           section (Tyler grouped them together, not as separate
+           sections). UPDATED round 199, Tyler: "lets remove this [old
+           panel-desc text, including its now-stale 'nothing can
+           grant/apply either yet' known-gap line -- closed by round
+           197's AfflictCard/EnchantCard actions] ... put in a section of
+           information that tells the user that enchantments persist
+           unless removed, and afflictions are only per-combat." UPDATED
+           round 204, Tyler: "lets see about moving enchantments and
+           afflictions side-by-side instead of above and below. also
+           lets remove the [general intro] text" — panel-desc trimmed to
+           just the persist/per-combat behavior notes, and the two grids
+           moved into side-by-side columns (see .ench-afflict-columns). -->
+      <div class="panel-desc">
+        <strong>Enchantments persist</strong> on a card until explicitly removed (with a Remove Enchantment
+        action) — they don't wear off on their own.
+        <strong>Afflictions are per-combat</strong> — unlike Enchantments, they only last for the current combat.
+      </div>
+      <div class="ench-afflict-columns">
+        <div class="ench-afflict-col">
+          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Enchantments <span class="mono" style="font-size:11px" id="enchantment-count">0</span></h3>
+          <div class="grid-cards" id="enchantments-grid"></div>
+        </div>
+        <div class="ench-afflict-col">
+          <h3 style="margin:18px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--parchment-dim)">Afflictions <span class="mono" style="font-size:11px" id="affliction-count">0</span></h3>
+          <div class="grid-cards" id="afflictions-grid"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="panel" id="section-pets">
     <div class="panel-head">
-      <h2><span class="num">06</span> Pets</h2>
+      <h2><span class="num">07</span> Pets</h2>
       <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="pet-count">0 pets</span>
     </div>
     <div class="panel-body">
@@ -3837,7 +3837,7 @@
 
   <section class="panel" id="section-orbs">
     <div class="panel-head">
-      <h2><span class="num">07</span> Orbs</h2>
+      <h2><span class="num">08</span> Orbs</h2>
       <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="orb-count">0 orbs</span>
     </div>
     <div class="panel-body">
@@ -3851,6 +3851,36 @@
         graphic, not a gameplay Orb.)
       </div>
       <div class="grid-cards" id="orbs-grid"></div>
+    </div>
+  </section>
+
+  <!-- [Round 347, task #31] Stances — Tyler: "lets do it" (next item on the
+       standing gap-analysis list), then, asked how to handle it, uploaded a
+       real reference mod with a working custom stance. A direct ECMA-335
+       TypeDef scan of the real installed sts2.dll confirmed there is NO
+       native Stance support in the engine -- no StanceModel class, no
+       Wrath/Calm/Divinity Power classes -- so this whole feature (and even
+       the 3 "vanilla" presets below) is composed entirely from real,
+       already-[VERIFIED]-elsewhere primitives instead (see
+       backend/compiler.js:generateStanceSource's own header for the full
+       evidence trail). Same tile-grid + modal-editor pattern as Pets/Orbs
+       above and Chronicles below (renderStances/openStanceEditor, near the
+       bottom of the script). [Round 349] Panel moved from after Chronicles
+       to before it — see the section-reorder round doc. -->
+  <section class="panel" id="section-stances">
+    <div class="panel-head">
+      <h2><span class="num">09</span> Stances</h2>
+      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="stance-count">0 stances</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-desc">
+        A Stance (like Wrath/Calm/Divinity) a creature can enter and exit — modifying damage dealt/taken, enemy buff
+        strength, heal effectiveness, and energy on enter/exit, while active. There's no native Stance system in the
+        real game engine — every field below compiles into a real, working custom Power that your cards' own
+        "Enter Stance"/"Exit Stance" effects (and the "is in stance" condition) can reference, the exact same way
+        Wrath/Calm/Divinity themselves do once picked from the vanilla dropdown in those effects.
+      </div>
+      <div class="grid-cards" id="stances-grid"></div>
     </div>
   </section>
 
@@ -3869,7 +3899,7 @@
        script). -->
   <section class="panel" id="section-chronicles">
     <div class="panel-head">
-      <h2><span class="num">08</span> Chronicles</h2>
+      <h2><span class="num">10</span> Chronicles</h2>
       <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="chronicle-count">0 chronicles</span>
     </div>
     <div class="panel-body">
@@ -3880,35 +3910,6 @@
         when the epoch, and the cards behind it, actually unlocks for the player.
       </div>
       <div class="grid-cards" id="chronicles-grid"></div>
-    </div>
-  </section>
-
-  <!-- [Round 347, task #31] Stances — Tyler: "lets do it" (next item on the
-       standing gap-analysis list), then, asked how to handle it, uploaded a
-       real reference mod with a working custom stance. A direct ECMA-335
-       TypeDef scan of the real installed sts2.dll confirmed there is NO
-       native Stance support in the engine -- no StanceModel class, no
-       Wrath/Calm/Divinity Power classes -- so this whole feature (and even
-       the 3 "vanilla" presets below) is composed entirely from real,
-       already-[VERIFIED]-elsewhere primitives instead (see
-       backend/compiler.js:generateStanceSource's own header for the full
-       evidence trail). Same tile-grid + modal-editor pattern as Pets/Orbs/
-       Chronicles above (renderStances/openStanceEditor, near the bottom of
-       the script). -->
-  <section class="panel" id="section-stances">
-    <div class="panel-head">
-      <h2><span class="num">09</span> Stances</h2>
-      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="stance-count">0 stances</span>
-    </div>
-    <div class="panel-body">
-      <div class="panel-desc">
-        A Stance (like Wrath/Calm/Divinity) a creature can enter and exit — modifying damage dealt/taken, enemy buff
-        strength, heal effectiveness, and energy on enter/exit, while active. There's no native Stance system in the
-        real game engine — every field below compiles into a real, working custom Power that your cards' own
-        "Enter Stance"/"Exit Stance" effects (and the "is in stance" condition) can reference, the exact same way
-        Wrath/Calm/Divinity themselves do once picked from the vanilla dropdown in those effects.
-      </div>
-      <div class="grid-cards" id="stances-grid"></div>
     </div>
   </section>
 
