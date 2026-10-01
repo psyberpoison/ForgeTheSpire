@@ -15813,13 +15813,30 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // shared useXAmountHtml every amount-bearing action type concatenates
   // inline) was landing mid-sentence between the amount and "stack(s)
   // of", same awkward-interruption shape DiscoverCard's own options row
-  // was fixed for in follow-up #2. Scoped to AfflictCard only (Tyler's
-  // own wording names that one action type) rather than touching
-  // useXAmountHtml itself, which every other amount-bearing case still
-  // relies on rendering inline. Same declared-before-the-switch,
+  // was fixed for in follow-up #2. [2026-09-30 follow-up #6] Tyler:
+  // "also clean that up" -- EnchantCard has the exact same sentence
+  // shape ("Enchant this card with [amount][...] stack(s) of
+  // [enchantment].") and the same mid-sentence formula button, so it
+  // gets the identical treatment and now shares this same variable
+  // (only one of the two cases runs per render, so there's no
+  // collision). Any FUTURE amount-bearing single-card case with this
+  // same "...with [amount] stack(s) of [ref]." shape should get the
+  // same treatment rather than reintroducing the mid-sentence
+  // interruption. Rather than touching useXAmountHtml itself, which
+  // every OTHER amount-bearing case (DealDamage, ModifyEnergy, etc.)
+  // still relies on rendering inline. Same declared-before-the-switch,
   // assigned-in-the-case, slotted-into-the-row-template-after pattern as
   // discoverOptionsBlockHtml above.
-  let afflictFormulaBlockHtml = '';
+  let formulaBelowSentenceBlockHtml = '';
+  // formulaToggleHtml is always the LAST piece concatenated into
+  // useXAmountHtml (see that const's own definition above) -- slicing its
+  // known length off the end reliably strips just the formula checkbox,
+  // leaving any "Use X"/"Use X (Star)" checkboxes inline right where
+  // every other action type still shows them. Computed once here (not
+  // per-case) since both inputs are already fixed before the switch.
+  const useXAmountHtmlNoFormula = formulaToggleHtml
+    ? useXAmountHtml.slice(0, useXAmountHtml.length - formulaToggleHtml.length)
+    : useXAmountHtml;
   switch(act.type){
     // Kept as its own hand-built sentence (not amountForTargetSentence) —
     // the only type with BOTH an amount and a hit-count. Tyler's original
@@ -16003,16 +16020,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const afflOptions = state.afflictions.length
         ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
-      // formulaToggleHtml is always the LAST piece concatenated into
-      // useXAmountHtml (see that const's own definition) -- slicing its
-      // known length off the end reliably strips just the formula
-      // checkbox, leaving any "Use X"/"Use X (Star)" checkboxes inline
-      // right where every other action type still shows them.
-      const useXAmountHtmlNoFormula = formulaToggleHtml
-        ? useXAmountHtml.slice(0, useXAmountHtml.length - formulaToggleHtml.length)
-        : useXAmountHtml;
       sentenceHtml = `<span class="cond-word">Afflict this card with</span>${amountHtml}${useXAmountHtmlNoFormula}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
-      afflictFormulaBlockHtml = formulaToggleHtml;
+      formulaBelowSentenceBlockHtml = formulaToggleHtml;
       break;
     }
     case 'RemoveAffliction':
@@ -16022,7 +16031,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const enchOptions = state.enchantments.length
         ? `<select class="a-enchantment-ref">${state.enchantments.map(en=>`<option value="${escapeAttr(en.id)}" ${act.enchantmentRef===en.id?'selected':''}>${escapeHtml(en.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create an Enchantment first)</span>`;
-      sentenceHtml = `<span class="cond-word">Enchant this card with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${enchOptions}<span class="cond-word">.</span>`;
+      sentenceHtml = `<span class="cond-word">Enchant this card with</span>${amountHtml}${useXAmountHtmlNoFormula}<span class="cond-word">stack(s) of</span> ${enchOptions}<span class="cond-word">.</span>`;
+      formulaBelowSentenceBlockHtml = formulaToggleHtml;
       break;
     }
     case 'RemoveEnchantment':
@@ -16331,7 +16341,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
-    ${afflictFormulaBlockHtml ? `<div class="action-row-usex">${afflictFormulaBlockHtml}</div>` : ''}
+    ${formulaBelowSentenceBlockHtml ? `<div class="action-row-usex">${formulaBelowSentenceBlockHtml}</div>` : ''}
     ${discoverOptionsBlockHtml}
     ${discoverCardRefsBlockHtml}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
