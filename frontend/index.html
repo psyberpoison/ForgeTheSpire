@@ -4629,10 +4629,26 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
-  // [2026-09-30] "DiscoverCard" joins Card Effects -- same "generate/
-  // manipulate a card mid-combat" bucket as CreateCard/ShuffleCardIntoDraw,
-  // not a distinct-enough concept to warrant its own group the way Pets did.
-  { label: 'Card Effects', color: '#8a5fd6', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'SwapDrawDiscard', 'TransformDeckCards', 'DiscoverCard'] },
+  // [2026-09-30] "DiscoverCard" joined the old single "Card Effects" group
+  // -- same "generate/manipulate a card mid-combat" bucket as
+  // CreateCard/ShuffleCardIntoDraw, not a distinct-enough concept to
+  // warrant its own group the way Pets did. [2026-09-30, same day] Tyler:
+  // "currently we have 1 category for 'Card Effects' lets split that up
+  // into 'Move Cards' and 'Modify Cards'" -- that one group had grown to
+  // 15 types (the single biggest in this list), mixing two genuinely
+  // different concepts: which PILE a card ends up in (draw/discard/
+  // exhaust/hand, plus "bring a new card into a pile" for CreateCard/
+  // DiscoverCard) vs. changing a card's own PROPERTIES in place (cost,
+  // affliction/enchantment stacks, which card it transforms into) without
+  // relocating anything. Split on exactly that line. "Move Cards" reuses
+  // TRIGGER_CATEGORIES.draw's teal ('Draw / Hand / Shuffle') -- same
+  // "pile movement" concept, same consistent color language this file
+  // already commits to (see this array's own header comment). "Modify
+  // Cards" keeps the old group's purple (TRIGGER_CATEGORIES.cardplay) --
+  // it's still fundamentally card-play-time manipulation, same category
+  // that color always meant here.
+  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard'] },
+  { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
   // below). [Round 293] "PetAttack" joins it -- same pet-focused concept,
