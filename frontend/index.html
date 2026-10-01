@@ -11765,14 +11765,16 @@ function describeAction(act){
           return `Afflict all cards in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
         }
         const count = act.afflictRandomCount || 1;
-        // [Round 343, 2026-10-01] Tyler: "can we add another checkbox for
-        // 'can afflict the same card twice'. unchecked means that it
-        // removes cards from the possible afflict list after it afflicts
-        // them." -- only called out in the summary when turned off
-        // (afflictAllowDuplicates===false); the default (true/omitted,
-        // can repeat) reads the same as it always has, no suffix.
-        const noDupeSuffix = act.afflictAllowDuplicates === false ? ', never the same card twice' : '';
-        return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile${noDupeSuffix} with ${n} stack${n===1?'':'s'} of ${name}`;
+        // [Round 343, 2026-10-01, default FLIPPED round 346] Tyler: "can
+        // we add another checkbox for 'can afflict the same card twice'.
+        // unchecked means that it removes cards from the possible afflict
+        // list after it afflicts them" -- then round 346: "make sure that
+        // the afflict the same card twice checkbox is unchecked by
+        // default." Default (false/omitted, can't repeat) now reads the
+        // same as it always has, no suffix; only called out in the
+        // summary when explicitly turned ON (afflictAllowDuplicates===true).
+        const allowDupesSuffix = act.afflictAllowDuplicates === true ? ', may afflict the same card more than once' : '';
+        return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile${allowDupesSuffix} with ${n} stack${n===1?'':'s'} of ${name}`;
       }
       return `Afflict this card with ${n} stack${n===1?'':'s'} of ${name}`;
     }
@@ -15673,14 +15675,19 @@ function ensureActionRefDefaults(act){
         if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)){
           act.afflictRandomCount = 1;
         }
-        // [Round 343] afflictAllowDuplicates -- Tyler, after round 342
-        // explained the picker's "with replacement" behavior: "can we add
-        // another checkbox for 'can afflict the same card twice'.
-        // unchecked means that it removes cards from the possible afflict
-        // list after it afflicts them." Defaults to true (checked, "can
-        // repeat") -- the ORIGINAL round 339 behavior, so a package saved
-        // before this field existed keeps compiling exactly as before.
-        if(typeof act.afflictAllowDuplicates !== 'boolean') act.afflictAllowDuplicates = true;
+        // [Round 343, default FLIPPED round 346] afflictAllowDuplicates --
+        // Tyler, after round 342 explained the picker's "with
+        // replacement" behavior: "can we add another checkbox for 'can
+        // afflict the same card twice'. unchecked means that it removes
+        // cards from the possible afflict list after it afflicts them."
+        // Round 346: "make sure that the afflict the same card twice
+        // checkbox is unchecked by default." Defaults to false
+        // (unchecked, "can't repeat") -- note this is a deliberate
+        // default FLIP from round 343's original true: a package saved
+        // under round 343 with this field omitted now self-heals to
+        // false/no-duplicates instead of true, changing its compiled
+        // output. Per Tyler's explicit round 346 ask, not an oversight.
+        if(typeof act.afflictAllowDuplicates !== 'boolean') act.afflictAllowDuplicates = false;
       }
     } else {
       delete act.afflictRandomCount;
@@ -16370,14 +16377,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const acAllCheckboxHtml = acIsRandom
         ? `<label class="a-check-label"><input type="checkbox" class="a-afflict-all-in-pile" ${acAll?'checked':''}> all cards in pile</label>`
         : '';
-      // "can afflict the same card twice" (round 343) -- Tyler, after
-      // round 342 explained the random picker's own "with replacement"
+      // "can afflict the same card twice" (round 343, default FLIPPED
+      // round 346 -- Tyler: "make sure that the afflict the same card
+      // twice checkbox is unchecked by default") -- Tyler, after round
+      // 342 explained the random picker's own "with replacement"
       // behavior. Only meaningful alongside an actual count of random
       // picks -- hidden once "all cards in pile" is checked (acAll), same
       // as the count input itself, since there's no pick-pool left to
       // dedupe once every card is already getting touched.
       const acAllowDupesCheckboxHtml = (acIsRandom && !acAll)
-        ? `<label class="a-check-label" title="Checked (default): the same card can be picked -- and afflicted -- more than once. Unchecked: each card is removed from the pick pool once afflicted, so this action never afflicts the same card twice (the loop stops early if the pile runs out of cards first)."><input type="checkbox" class="a-afflict-allow-duplicates" ${act.afflictAllowDuplicates===false?'':'checked'}> can afflict the same card twice</label>`
+        ? `<label class="a-check-label" title="Unchecked (default): each card is removed from the pick pool once afflicted, so this action never afflicts the same card twice (the loop stops early if the pile runs out of cards first). Checked: the same card can be picked -- and afflicted -- more than once."><input type="checkbox" class="a-afflict-allow-duplicates" ${act.afflictAllowDuplicates===true?'checked':''}> can afflict the same card twice</label>`
         : '';
       // [Round 345, 2026-10-01] Tyler: "instead of having the checkboxes
       // be side by side, put them stacked above and below each other" --

@@ -1262,14 +1262,17 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
           } else if (!Number.isInteger(Number(act.afflictRandomCount)) || Number(act.afflictRandomCount) < 1) {
             errors.push(`${p}.afflictRandomCount must be a whole number >= 1.`);
           }
-          // [Round 343] afflictAllowDuplicates -- Tyler: "unchecked means
-          // that it removes cards from the possible afflict list after it
-          // afflicts them." Optional; omitted/true keeps the original
-          // round-339 "with replacement" behavior (Rng re-reads the live
-          // pile fresh each pick, so the same card can be picked more
-          // than once) byte-identical for every package saved before this
-          // field existed. Explicit false switches compiler.js to the new
-          // "without replacement" loop instead.
+          // [Round 343, default FLIPPED round 346] afflictAllowDuplicates
+          // -- Tyler: "unchecked means that it removes cards from the
+          // possible afflict list after it afflicts them," then round
+          // 346: "make sure that the afflict the same card twice checkbox
+          // is unchecked by default." Optional; omitted/false compiles to
+          // the "without replacement" loop (compiler.js) -- each pick
+          // removed from a local snapshot so it can't come up again this
+          // action. Explicit true switches compiler.js to the original
+          // round-339 "with replacement" loop instead (Rng re-reads the
+          // live pile fresh each pick, so the same card can be picked
+          // more than once).
           if (act.afflictAllowDuplicates !== undefined && typeof act.afflictAllowDuplicates !== 'boolean') {
             errors.push(`${p}.afflictAllowDuplicates must be a boolean.`);
           }
