@@ -5519,6 +5519,49 @@ const PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND = ['TemporaryDexterity', 'Temporary
 // for the full evidence trail (7 real classes, 3 Mocks-namespace ones
 // excluded, all 7 confirmed public-parameterless-constructor).
 const BUILTIN_AFFLICTIONS = ['Bound', 'Entangled', 'Galvanized', 'Hexed', 'Ringing', 'Smog', 'Tainted'];
+// [2026-09-30 follow-up] Tyler: "is it possible to have a hover tip of
+// what each vanilla affliction does when you hover over it in the
+// dropdown menu?" Same convention STATUS_DESCRIPTIONS above already
+// established: sourced from real-world references, cross-checked across
+// at least two independent sources per entry rather than a single
+// paraphrase, NOT tagged [VERIFIED] the way this file's decompile
+// evidence is (a wiki/community source can still be stale or slightly
+// off), but the best real-world reference available.
+//
+// Sources checked per entry: slaythespire.wiki.gg's dedicated
+// "Slay_the_Spire_2:Afflictions" page (scoped specifically to the card
+// mechanic, not the separate same-named vanilla STATUS some of these
+// words also are — see the Tainted/Ringing note below) AND
+// stratgg.com's own "Keywords & Mechanics" reference page gave matching
+// or equivalent text for Bound/Entangled/Galvanized/Hexed/Ringing/Smog;
+// spire-codex.com (an open-source project that decompiles sts2.dll and
+// resolves its own real localization strings — the same real
+// source-of-truth methodology this project uses, just someone else's
+// independent pipeline) independently matched Bound/Galvanized
+// word-for-word; mobalytics.gg's affliction guide independently matched
+// Ringing word-for-word.
+//
+// Tainted needed extra care: "Tainted" is ALSO a separate real vanilla
+// STATUS/Power class (already in BUILTIN_STATUSES above) — a
+// player-level stacking debuff, genuinely different from the card-level
+// AfflictionModel class of the same name (same kind of same-name,
+// different-namespace collision "Ringing" has between BUILTIN_STATUSES
+// and BUILTIN_AFFLICTIONS). Several sources found while researching
+// (spire-codex.com, allgamesdb.com) describe the STATUS version ("Gain X
+// Tainted when played") rather than the Affliction. The text below is
+// specifically the Affliction's own effect per wiki.gg's
+// Afflictions-scoped page, independently corroborated by a real player's
+// first-hand report on the game's own Steam discussion forum ("It makes
+// me take 1 more damage per stack of Tainted I have").
+const AFFLICTION_DESCRIPTIONS = {
+  Bound: 'Only 1 Bound card can be played each turn. Cards are un-Bound at end of turn.',
+  Entangled: 'Entangled cards cost an additional Colorless Energy to play.',
+  Galvanized: 'Take X damage when this card is played.',
+  Hexed: 'Hexed cards gain Ethereal.',
+  Ringing: 'You can only play 1 card this turn.',
+  Smog: 'You cannot play additional Skills this turn. Clears at the end of the turn.',
+  Tainted: 'Take X additional damage from Attacks this turn.',
+};
 // [Round 249] Retroactive cleanup for orphaned diamond-group members --
 // see the "m-bar-enabled" uncheck handler's own round-249 comment for the
 // bug this repairs: unchecking "Represent as a bar" only ever removed the
@@ -13670,11 +13713,21 @@ function pileOptList(selected){
 // BUILTIN_AFFLICTIONS always has 7 entries, but kept for symmetry with
 // tokenSelectHtml's own "create a Token card first" fallback).
 function afflictionSelectHtml(act){
+  // [2026-09-30 follow-up] Tyler: "is it possible to have a hover tip of
+  // what each vanilla affliction does when you hover over it in the
+  // dropdown menu?" `title` on each <option> is the same native,
+  // simplest, cross-browser hover-tooltip mechanism statusOptionsData's
+  // own comment already settled on — works over a plain <option> inside
+  // a <select> same as it does on a checkbox row. Custom afflictions get
+  // the same treatment for free (their own `description` field, same
+  // "No description set yet" fallback mechanicOptionsData already uses)
+  // so every option in this combined picker is consistently hoverable,
+  // not just half of it.
   const customGroup = state.afflictions.length
-    ? `<optgroup label="Your afflictions">${state.afflictions.map(a=>`<option value="custom:${escapeAttr(a.id)}" ${act.afflictionKind!=='vanilla'&&act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</optgroup>`
+    ? `<optgroup label="Your afflictions">${state.afflictions.map(a=>`<option value="custom:${escapeAttr(a.id)}" title="${escapeAttr(a.description || 'No description set for this affliction yet.')}" ${act.afflictionKind!=='vanilla'&&act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</optgroup>`
     : '';
   const vanillaGroup = BUILTIN_AFFLICTIONS.length
-    ? `<optgroup label="Vanilla afflictions">${BUILTIN_AFFLICTIONS.map(v=>`<option value="vanilla:${escapeAttr(v)}" ${act.afflictionKind==='vanilla'&&act.afflictionVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`
+    ? `<optgroup label="Vanilla afflictions">${BUILTIN_AFFLICTIONS.map(v=>`<option value="vanilla:${escapeAttr(v)}" title="${escapeAttr(AFFLICTION_DESCRIPTIONS[v] || 'No description available yet.')}" ${act.afflictionKind==='vanilla'&&act.afflictionVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`
     : '';
   if(!state.afflictions.length && !BUILTIN_AFFLICTIONS.length){
     return `<span class="cond-word hint-small">(create an Affliction first)</span>`;
