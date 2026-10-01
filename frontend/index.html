@@ -4607,7 +4607,17 @@ const ACTION_TYPE_LABELS = {
   ModifyOrbSlots: 'Modify Orb Slots',
   ReturnToHand: 'Return This Card To Hand',
   ModifyCost: `Modify This Card's Cost`,
-  AfflictCard: 'Afflict This Card',
+  // [Round 342, 2026-10-01] Tyler: "instead of the top level saying
+  // 'afflict THIS card' have it say 'afflict A card' meaning that if this
+  // effect is on a card, it might not necessarily afflict the card the
+  // effect it on" -- since round 339's afflictTargetKind, this action can
+  // target either the card it's attached to OR N random cards in a pile,
+  // so the type-picker label (shown before a target kind is even chosen)
+  // shouldn't presume "this card." The per-instance sentence already says
+  // the right thing either way (describeAction's AfflictCard case, and
+  // the sentenceHtml builder's own "this card"/"random card(s)" toggle)
+  // -- this only changes the generic label in the action-TYPE dropdown.
+  AfflictCard: 'Afflict A Card',
   RemoveAffliction: `Remove This Card's Affliction`,
   EnchantCard: 'Enchant This Card',
   RemoveEnchantment: `Remove This Card's Enchantment`,
