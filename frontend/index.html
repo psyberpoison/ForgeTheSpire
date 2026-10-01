@@ -5024,8 +5024,10 @@ const ROOM_TYPE_VALUES = ["Monster","Elite","Boss","Treasure","Shop","Event","Re
 // own comment for the full evidence trail. [REMOVED 2026-09-30, later the
 // same day] "Token" dropped too -- Tyler: "remove 'token' as an option" --
 // a real, concrete pool (unlike Deprived), removed on Tyler's own explicit
-// direction rather than an evidence finding.
-const CARD_POOL_VALUES = ["Colorless","Curse","Status","Ironclad","Silent","Defect","Necrobinder","Regent"];
+// direction rather than an evidence finding. [REMOVED 2026-09-30, later
+// still the same day] "Curse" and "Status" dropped the same way -- Tyler:
+// "remove status and curse pool."
+const CARD_POOL_VALUES = ["Colorless","Ironclad","Silent","Defect","Necrobinder","Regent"];
 
 // [2026-09-30 follow-up #2] DiscoverCard's own SpecificCards card-search
 // widget needs a fresh, document-unique <datalist> id every time its row
@@ -16115,10 +16117,17 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       // this file) already reads fine with bare pool names, since its own
       // intro text ends "...add these card pools to this reward's
       // options:" immediately before the checkboxes.
+      // [2026-09-30 follow-up #7] Tyler: "change colorless to read 'the
+      // colorless pool'" -- "Colorless" isn't a character name that owns a
+      // pool the way Ironclad/Silent/etc. do, so the possessive "'s Pool"
+      // suffix read oddly there ("Colorless's Pool"); it gets its own
+      // "The ... Pool" phrasing instead, matching the article-based way
+      // Tyler described it.
+      const discoverPoolLabel = p => p === 'Colorless' ? 'The Colorless Pool' : `${p}'s Pool`;
       const discoverSourceHtml = `<select class="a-discover-source" title="Where to draw the discover candidates from -- a real card pool, or cards you hand-pick yourself.">
         <option value="SpecificCards" ${sourceKind === 'SpecificCards' ? 'selected' : ''}>specific cards</option>
         <option value="Pool:OwnCharacter" ${(sourceKind === 'Pool' && (!act.discoverPool || act.discoverPool === 'OwnCharacter')) ? 'selected' : ''}>Your Own Character's Pool</option>
-        ${CARD_POOL_VALUES.map(p => `<option value="Pool:${p}" ${(sourceKind === 'Pool' && act.discoverPool === p) ? 'selected' : ''}>${p}'s Pool</option>`).join('')}
+        ${CARD_POOL_VALUES.map(p => `<option value="Pool:${p}" ${(sourceKind === 'Pool' && act.discoverPool === p) ? 'selected' : ''}>${discoverPoolLabel(p)}</option>`).join('')}
       </select>`;
       // [2026-09-30 follow-up #2] Tyler: "if 'specific cards' is selected
       // then we dont need to put the whole 'only attacks/skill/etc'

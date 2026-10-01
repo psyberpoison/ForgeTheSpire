@@ -824,10 +824,11 @@ const VANILLA_TOKEN_CARD_CLASS_MAP = {
 // cardRewardPoolAppend read this one map" propagation as Deprived's own
 // removal above -- see frontend/index.html's CARD_POOL_VALUES and schema/
 // character.schema.json's discoverPool enum, both updated to match.
+// [REMOVED 2026-09-30, later still the same day] `Curse: '...CurseCardPool'`
+// and `Status: '...StatusCardPool'` removed the same way, same
+// explicit-direction reasoning -- Tyler: "remove status and curse pool."
 const CARD_POOL_CLASS_MAP = {
   Colorless: 'MegaCrit.Sts2.Core.Models.CardPools.ColorlessCardPool',
-  Curse: 'MegaCrit.Sts2.Core.Models.CardPools.CurseCardPool',
-  Status: 'MegaCrit.Sts2.Core.Models.CardPools.StatusCardPool',
   Ironclad: 'MegaCrit.Sts2.Core.Models.CardPools.IroncladCardPool',
   Silent: 'MegaCrit.Sts2.Core.Models.CardPools.SilentCardPool',
   Defect: 'MegaCrit.Sts2.Core.Models.CardPools.DefectCardPool',
