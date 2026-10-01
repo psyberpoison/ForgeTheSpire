@@ -15805,6 +15805,21 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // slotted-into-the-row-template-after pattern discoverCardRefsBlockHtml
   // just above already established.
   let discoverOptionsBlockHtml = '';
+  // [2026-09-30 follow-up #5] Tyler, re: "Afflict a Card": "there is a
+  // 'use a formula' button in the middle of the sentence. remove that
+  // and throw it under the sentence." AfflictCard's sentence is
+  // "Afflict this card with [amount][Use X/Use a formula] stack(s) of
+  // [affliction]." -- formulaToggleHtml (declared above, part of the
+  // shared useXAmountHtml every amount-bearing action type concatenates
+  // inline) was landing mid-sentence between the amount and "stack(s)
+  // of", same awkward-interruption shape DiscoverCard's own options row
+  // was fixed for in follow-up #2. Scoped to AfflictCard only (Tyler's
+  // own wording names that one action type) rather than touching
+  // useXAmountHtml itself, which every other amount-bearing case still
+  // relies on rendering inline. Same declared-before-the-switch,
+  // assigned-in-the-case, slotted-into-the-row-template-after pattern as
+  // discoverOptionsBlockHtml above.
+  let afflictFormulaBlockHtml = '';
   switch(act.type){
     // Kept as its own hand-built sentence (not amountForTargetSentence) —
     // the only type with BOTH an amount and a hit-count. Tyler's original
@@ -15988,7 +16003,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const afflOptions = state.afflictions.length
         ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
         : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
-      sentenceHtml = `<span class="cond-word">Afflict this card with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      // formulaToggleHtml is always the LAST piece concatenated into
+      // useXAmountHtml (see that const's own definition) -- slicing its
+      // known length off the end reliably strips just the formula
+      // checkbox, leaving any "Use X"/"Use X (Star)" checkboxes inline
+      // right where every other action type still shows them.
+      const useXAmountHtmlNoFormula = formulaToggleHtml
+        ? useXAmountHtml.slice(0, useXAmountHtml.length - formulaToggleHtml.length)
+        : useXAmountHtml;
+      sentenceHtml = `<span class="cond-word">Afflict this card with</span>${amountHtml}${useXAmountHtmlNoFormula}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      afflictFormulaBlockHtml = formulaToggleHtml;
       break;
     }
     case 'RemoveAffliction':
@@ -16307,6 +16331,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
+    ${afflictFormulaBlockHtml ? `<div class="action-row-usex">${afflictFormulaBlockHtml}</div>` : ''}
     ${discoverOptionsBlockHtml}
     ${discoverCardRefsBlockHtml}
     ${needsStatusPicker ? `<div class="a-picker-slot"></div>` : ''}
