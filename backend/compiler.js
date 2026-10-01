@@ -3064,6 +3064,39 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         }`;
         }
         const acCount = Number.isFinite(Number(action.afflictRandomCount)) && Number(action.afflictRandomCount) > 0 ? Math.floor(Number(action.afflictRandomCount)) : 1;
+        // [Round 343, 2026-10-01] afflictAllowDuplicates -- Tyler, after
+        // round 342 explained the picker's "with replacement" behavior:
+        // "can we add another checkbox for 'can afflict the same card
+        // twice'. unchecked means that it removes cards from the possible
+        // afflict list after it afflicts them." Defaults to true/omitted
+        // -- the ORIGINAL round 339 shape (resolveRandomCardPickAndAct,
+        // re-reads the live pile fresh each pick) is untouched below, so
+        // every package saved before this field existed keeps generating
+        // byte-identical code. Explicit false takes a DIFFERENT shape
+        // here: the pile is snapshotted ONCE into a local List<CardModel>
+        // before picking starts (afflicting never moves a card out of its
+        // real pile, so there's nothing to re-read there anyway), each
+        // pick is removed from that LOCAL list so it can't be picked
+        // again this action, and the loop stops early if the pool runs
+        // dry before afflictRandomCount is reached (same defensive
+        // "Count == 0" guard resolveRandomCardPickAndAct's own loop
+        // already uses). Still the exact same real
+        // Rng.CombatCardSelection.NextItem(IReadOnlyList<CardModel>) call
+        // (round 339, [VERIFIED]) -- just handed a locally-mutated
+        // snapshot instead of the live pile each time; List<T>.Remove is
+        // plain C#, not game-specific. [BEST EFFORT] composition, same
+        // confidence level as afflictAllInPile right above -- no single
+        // decompiled example of a "distinct random picks" card exists.
+        if (action.afflictAllowDuplicates === false) {
+          return `        var fgAflDistinctPool = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(${acPileExpr}, ${acPlayerExpr}).Cards.ToList(); // [BEST EFFORT] snapshotted once so a card already afflicted this action can't be picked again -- see this branch's own comment in compiler.js
+        for (var fgAflDistinctI = 0; fgAflDistinctI < ${acCount}; fgAflDistinctI++)
+        {
+            if (fgAflDistinctPool.Count == 0) break;
+            var fgAflDistinctPick = ${acPlayerExpr}.RunState.Rng.CombatCardSelection.NextItem(fgAflDistinctPool);
+            await MegaCrit.Sts2.Core.Commands.CardCmd.Afflict<${afflCls}>(fgAflDistinctPick, (decimal)(${resolveAmountExpr(action, ctx)}));
+            fgAflDistinctPool.Remove(fgAflDistinctPick);
+        }`;
+        }
         return resolveRandomCardPickAndAct(
           'AfflictRandom',
           String(acCount),

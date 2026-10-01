@@ -11765,7 +11765,14 @@ function describeAction(act){
           return `Afflict all cards in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
         }
         const count = act.afflictRandomCount || 1;
-        return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile with ${n} stack${n===1?'':'s'} of ${name}`;
+        // [Round 343, 2026-10-01] Tyler: "can we add another checkbox for
+        // 'can afflict the same card twice'. unchecked means that it
+        // removes cards from the possible afflict list after it afflicts
+        // them." -- only called out in the summary when turned off
+        // (afflictAllowDuplicates===false); the default (true/omitted,
+        // can repeat) reads the same as it always has, no suffix.
+        const noDupeSuffix = act.afflictAllowDuplicates === false ? ', never the same card twice' : '';
+        return `Afflict ${count} random card${count===1?'':'s'} in your ${pileLabel} pile${noDupeSuffix} with ${n} stack${n===1?'':'s'} of ${name}`;
       }
       return `Afflict this card with ${n} stack${n===1?'':'s'} of ${name}`;
     }
@@ -15658,17 +15665,33 @@ function ensureActionRefDefaults(act){
       if(typeof act.afflictAllInPile !== 'boolean') act.afflictAllInPile = false;
       if(act.afflictAllInPile){
         delete act.afflictRandomCount;
-      } else if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)){
-        act.afflictRandomCount = 1;
+        // [Round 343, 2026-10-01] afflictAllowDuplicates has no meaning
+        // once "all cards in pile" is on -- every card's already touched
+        // exactly once, there's no pick-pool left to dedupe.
+        delete act.afflictAllowDuplicates;
+      } else {
+        if(!(Number.isFinite(act.afflictRandomCount) && act.afflictRandomCount >= 1)){
+          act.afflictRandomCount = 1;
+        }
+        // [Round 343] afflictAllowDuplicates -- Tyler, after round 342
+        // explained the picker's "with replacement" behavior: "can we add
+        // another checkbox for 'can afflict the same card twice'.
+        // unchecked means that it removes cards from the possible afflict
+        // list after it afflicts them." Defaults to true (checked, "can
+        // repeat") -- the ORIGINAL round 339 behavior, so a package saved
+        // before this field existed keeps compiling exactly as before.
+        if(typeof act.afflictAllowDuplicates !== 'boolean') act.afflictAllowDuplicates = true;
       }
     } else {
       delete act.afflictRandomCount;
       delete act.afflictAllInPile;
+      delete act.afflictAllowDuplicates;
     }
   } else {
     delete act.afflictTargetKind;
     delete act.afflictRandomCount;
     delete act.afflictAllInPile;
+    delete act.afflictAllowDuplicates;
   }
   // [Round 199] ClearAfflictionFromPile's own pile select -- same
   // PILE_TYPES/pileOptList vocabulary card.advancedOptions.whileInHand
@@ -16331,7 +16354,18 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const acAllCheckboxHtml = acIsRandom
         ? `<label class="cond-word" style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="a-afflict-all-in-pile" ${acAll?'checked':''}> all cards in pile</label>`
         : '';
-      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml} ${acAllCheckboxHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
+      // [Round 343, 2026-10-01] Tyler, after round 342 explained the
+      // random picker's own "with replacement" behavior: "can we add
+      // another checkbox for 'can afflict the same card twice'. unchecked
+      // means that it removes cards from the possible afflict list after
+      // it afflicts them." Only meaningful alongside an actual count of
+      // random picks -- hidden once "all cards in pile" is checked (acAll),
+      // same as the count input itself, since there's no pick-pool left to
+      // dedupe once every card is already getting touched.
+      const acAllowDupesCheckboxHtml = (acIsRandom && !acAll)
+        ? `<label class="a-check-label" title="Checked (default): the same card can be picked -- and afflicted -- more than once. Unchecked: each card is removed from the pick pool once afflicted, so this action never afflicts the same card twice (the loop stops early if the pile runs out of cards first)."><input type="checkbox" class="a-afflict-allow-duplicates" ${act.afflictAllowDuplicates===false?'':'checked'}> can afflict the same card twice</label>`
+        : '';
+      sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml} ${acAllCheckboxHtml} ${acAllowDupesCheckboxHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
       break;
     }
     case 'RemoveAffliction':
@@ -16711,7 +16745,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
-    delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile;
+    delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
     delete act.discoverCount; delete act.discoverPool; delete act.discoverCardType; delete act.discoverCanSkip; delete act.discoverFreeCost;
@@ -16862,6 +16896,18 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  // [Round 343, 2026-10-01] AfflictCard's own "can afflict the same card
+  // twice" checkbox -- Tyler: "can we add another checkbox for 'can
+  // afflict the same card twice'. unchecked means that it removes cards
+  // from the possible afflict list after it afflicts them." No re-render
+  // needed -- unlike the two checkboxes/selects above, toggling this one
+  // never changes which sibling fields this row shows (same shape as
+  // afflictRandomCountInput right above), it only flips which compiler.js
+  // codegen branch gets used.
+  const afflictAllowDuplicatesCheck = row.querySelector('.a-afflict-allow-duplicates');
+  if(afflictAllowDuplicatesCheck) afflictAllowDuplicatesCheck.onchange = e=>{
+    act.afflictAllowDuplicates = e.target.checked;
   };
   // [2026-09-23] TransformDeckCards's own two card-picker selects -- no
   // re-render needed, same as afflictionRefSelect/enchantmentRefSelect above.

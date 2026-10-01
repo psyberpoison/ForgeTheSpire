@@ -1247,11 +1247,31 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
           if (act.afflictRandomCount !== undefined) {
             errors.push(`${p}: afflictRandomCount is only meaningful when afflictAllInPile is false — got both set.`);
           }
+          // [Round 343, 2026-10-01] afflictAllowDuplicates -- Tyler:
+          // "can we add another checkbox for 'can afflict the same card
+          // twice'" -- meaningless once afflictAllInPile is true (every
+          // card is already touched exactly once, there's no pick-pool
+          // to dedupe), same "only one of these is meaningful" discipline
+          // as afflictRandomCount just above.
+          if (act.afflictAllowDuplicates !== undefined) {
+            errors.push(`${p}: afflictAllowDuplicates is only meaningful when afflictAllInPile is false — got both set.`);
+          }
         } else {
           if (act.afflictRandomCount === undefined || act.afflictRandomCount === null || act.afflictRandomCount === '') {
             errors.push(`${p}: action "AfflictCard" with afflictTargetKind "RandomFromPile" needs afflictRandomCount set — how many random cards to afflict (or check "all cards in pile" instead).`);
           } else if (!Number.isInteger(Number(act.afflictRandomCount)) || Number(act.afflictRandomCount) < 1) {
             errors.push(`${p}.afflictRandomCount must be a whole number >= 1.`);
+          }
+          // [Round 343] afflictAllowDuplicates -- Tyler: "unchecked means
+          // that it removes cards from the possible afflict list after it
+          // afflicts them." Optional; omitted/true keeps the original
+          // round-339 "with replacement" behavior (Rng re-reads the live
+          // pile fresh each pick, so the same card can be picked more
+          // than once) byte-identical for every package saved before this
+          // field existed. Explicit false switches compiler.js to the new
+          // "without replacement" loop instead.
+          if (act.afflictAllowDuplicates !== undefined && typeof act.afflictAllowDuplicates !== 'boolean') {
+            errors.push(`${p}.afflictAllowDuplicates must be a boolean.`);
           }
         }
       } else {
@@ -1260,6 +1280,9 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         }
         if (act.afflictAllInPile !== undefined) {
           errors.push(`${p}: afflictAllInPile is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
+        }
+        if (act.afflictAllowDuplicates !== undefined) {
+          errors.push(`${p}: afflictAllowDuplicates is only meaningful on "AfflictCard" with afflictTargetKind "RandomFromPile" — got afflictTargetKind="${act.afflictTargetKind || 'ThisCard'}".`);
         }
       }
     } else {
@@ -1271,6 +1294,9 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       }
       if (act.afflictAllInPile !== undefined) {
         errors.push(`${p}: afflictAllInPile is only meaningful on "AfflictCard" — action type is "${act.type}".`);
+      }
+      if (act.afflictAllowDuplicates !== undefined) {
+        errors.push(`${p}: afflictAllowDuplicates is only meaningful on "AfflictCard" — action type is "${act.type}".`);
       }
     }
     // [Round 199] pile -- ClearAfflictionFromPile, or AfflictCard with
