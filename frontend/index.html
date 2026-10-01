@@ -5510,6 +5510,15 @@ function blankState(){
 // stripping is caught by the existing "needs at least one" validation the
 // same as if the user had never picked one, not silently dropped.
 const PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND = ['TemporaryDexterity', 'TemporaryFocus', 'TemporaryStrength'];
+// [2026-09-30 follow-up] Tyler: "there are vanilla afflictions. lets pull
+// those and add them alongside the custom options" — mirrors
+// backend/compiler.js:BUILTIN_AFFLICTION_CLASS_MAP's own keys (the browser
+// has no require(), same reason BUILTIN_STATUSES above is a hand-mirrored
+// literal rather than an import). [VERIFIED via a direct ECMA-335 TypeDef
+// scan of the real installed sts2.dll] — see that const's own doc comment
+// for the full evidence trail (7 real classes, 3 Mocks-namespace ones
+// excluded, all 7 confirmed public-parameterless-constructor).
+const BUILTIN_AFFLICTIONS = ['Bound', 'Entangled', 'Galvanized', 'Hexed', 'Ringing', 'Smog', 'Tainted'];
 // [Round 249] Retroactive cleanup for orphaned diamond-group members --
 // see the "m-bar-enabled" uncheck handler's own round-249 comment for the
 // bug this repairs: unchecking "Represent as a bar" only ever removed the
@@ -11681,7 +11690,13 @@ function describeAction(act){
     // (see compiler.js's resolveActedCardExpr). Amount shown only for the
     // "apply" pair -- ClearAffliction/ClearEnchantment take no amount.
     case 'AfflictCard': {
-      const name = (state.afflictions.find(a=>a.id===act.afflictionRef) || {}).name || 'an affliction';
+      // [2026-09-30 follow-up, round 340] Tyler: "there are vanilla
+      // afflictions. lets pull those and add them alongside the custom
+      // options" -- vanilla afflictions have no state.afflictions entry to
+      // look a name up in; afflictionKind picks which ref field names it.
+      const name = act.afflictionKind === 'vanilla'
+        ? (act.afflictionVanillaRef || 'an affliction')
+        : ((state.afflictions.find(a=>a.id===act.afflictionRef) || {}).name || 'an affliction');
       // [Round 339] "RandomFromPile" targeting -- Tyler: "just add a [x]
       // number of random cards in pile option" -- same plain-sentence
       // convention as everywhere else, naming the pile and the count
@@ -13642,6 +13657,31 @@ function pileOptList(selected){
   return PILE_TYPES.map(v=>`<option value="${v}" ${v===(selected||'Hand')?'selected':''}>${PILE_TYPE_LABELS[v]}</option>`).join('');
 }
 
+// [2026-09-30 follow-up, round 340] Tyler: "there are vanilla afflictions.
+// lets pull those and add them alongside the custom options" — shared by
+// AfflictCard and ClearAfflictionFromPile (the only two action types that
+// ever read act.afflictionRef/afflictionKind), same combined
+// custom-optgroup + vanilla-optgroup single-select shape CreateCard's own
+// tokenSelectHtml already established (value prefixed "custom:"/"vanilla:",
+// split back out by wireActionRowHandlers' own afflictionRefSelect
+// handler below). Falls back to the old plain hint-text/single-select
+// shape when there's nothing to combine (no custom afflictions AND
+// BUILTIN_AFFLICTIONS somehow empty — never actually happens today since
+// BUILTIN_AFFLICTIONS always has 7 entries, but kept for symmetry with
+// tokenSelectHtml's own "create a Token card first" fallback).
+function afflictionSelectHtml(act){
+  const customGroup = state.afflictions.length
+    ? `<optgroup label="Your afflictions">${state.afflictions.map(a=>`<option value="custom:${escapeAttr(a.id)}" ${act.afflictionKind!=='vanilla'&&act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</optgroup>`
+    : '';
+  const vanillaGroup = BUILTIN_AFFLICTIONS.length
+    ? `<optgroup label="Vanilla afflictions">${BUILTIN_AFFLICTIONS.map(v=>`<option value="vanilla:${escapeAttr(v)}" ${act.afflictionKind==='vanilla'&&act.afflictionVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`
+    : '';
+  if(!state.afflictions.length && !BUILTIN_AFFLICTIONS.length){
+    return `<span class="cond-word hint-small">(create an Affliction first)</span>`;
+  }
+  return `<select class="a-affliction-ref" title="Choose from your own created afflictions, or a vanilla affliction.">${customGroup}${vanillaGroup}</select>`;
+}
+
 // Lazily backfills card.advancedOptions and every sub-field to a safe,
 // correctly-shaped default — same "migrate on touch" convention every
 // other optional nested object in this editor already uses (eff.conditions/
@@ -15407,17 +15447,36 @@ function ensureActionRefDefaults(act){
     }
   }
 
-  // [Round 197] AfflictCard/EnchantCard's own entity pickers -- same
-  // self-healing shape as CreateCard's tokenRef just above (defaults to
-  // the first available entity, or leaves it unset if none exist yet;
-  // dropped entirely on any other action type so a stale ref never
-  // survives a type switch).
+  // [Round 197] AfflictCard/ClearAfflictionFromPile's own affliction
+  // picker -- same self-healing shape as CreateCard's tokenRef just above.
+  // [2026-09-30 follow-up, round 340] Tyler: "there are vanilla
+  // afflictions. lets pull those and add them alongside the custom
+  // options" -- same vanilla/custom dual-field self-heal CreateCard's own
+  // tokenRefKind block just above already established, INCLUDING its
+  // round-20 "fall through to vanilla when there are zero custom options"
+  // fix (a character with no custom Afflictions defined yet would
+  // otherwise self-heal to afflictionKind:'custom' + an empty afflictionRef
+  // with nothing for the dropdown to actually show selected).
   if(act.type === 'AfflictCard' || act.type === 'ClearAfflictionFromPile'){
-    if(state.afflictions.length && (!act.afflictionRef || !state.afflictions.find(a=>a.id===act.afflictionRef))){
-      act.afflictionRef = state.afflictions[0].id;
+    if(act.afflictionKind !== 'vanilla') act.afflictionKind = 'custom';
+    if(act.afflictionKind === 'custom' && !state.afflictions.length){
+      act.afflictionKind = 'vanilla';
+    }
+    if(act.afflictionKind === 'custom'){
+      if(!act.afflictionRef || !state.afflictions.find(a=>a.id===act.afflictionRef)){
+        act.afflictionRef = state.afflictions[0].id;
+      }
+      delete act.afflictionVanillaRef;
+    } else {
+      if(!BUILTIN_AFFLICTIONS.includes(act.afflictionVanillaRef)){
+        act.afflictionVanillaRef = BUILTIN_AFFLICTIONS[0];
+      }
+      delete act.afflictionRef;
     }
   } else {
+    delete act.afflictionKind;
     delete act.afflictionRef;
+    delete act.afflictionVanillaRef;
   }
   if(act.type === 'EnchantCard'){
     if(state.enchantments.length && (!act.enchantmentRef || !state.enchantments.find(en=>en.id===act.enchantmentRef))){
@@ -16158,9 +16217,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // card(s) in your Discard Pile with..." rather than "...random
     // card(s) 3 in your...".
     case 'AfflictCard': {
-      const afflOptions = state.afflictions.length
-        ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
-        : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
+      const afflOptions = afflictionSelectHtml(act);
       const acIsRandom = act.afflictTargetKind === 'RandomFromPile';
       const acCountPrefixHtml = acIsRandom
         ? `<input type="number" class="a-afflict-random-count" min="1" step="1" value="${act.afflictRandomCount ?? 1}" style="width:56px; flex:none;">`
@@ -16193,9 +16250,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // in hand. Generalized to any pile + any afflictionRef here (see
     // compiler.js's actionToCSharp case for the full evidence).
     case 'ClearAfflictionFromPile': {
-      const cafpOptions = state.afflictions.length
-        ? `<select class="a-affliction-ref">${state.afflictions.map(a=>`<option value="${escapeAttr(a.id)}" ${act.afflictionRef===a.id?'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('')}</select>`
-        : `<span class="cond-word hint-small">(create an Affliction first)</span>`;
+      const cafpOptions = afflictionSelectHtml(act);
       const cafpPileHtml = `<select class="a-pile">${pileOptList(act.pile)}</select>`;
       sentenceHtml = `<span class="cond-word">Clear</span> ${cafpOptions} <span class="cond-word">from every other card in your</span> ${cafpPileHtml}<span class="cond-word">.</span>`;
       break;
@@ -16553,7 +16608,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.mode; delete act.statusEntries; delete act.drawNextTurn;
     delete act.doubleEnergy; delete act.random; delete act.destination;
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
-    delete act.retainThisTurn; delete act.afflictionRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
+    delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
     delete act.afflictTargetKind; delete act.afflictRandomCount;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -16630,11 +16685,24 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     if(kind === 'vanilla'){ act.tokenVanillaRef = value; delete act.tokenRef; }
     else { act.tokenRef = value; delete act.tokenVanillaRef; }
   };
-  // [Round 197] AfflictCard/EnchantCard's own entity-picker selects --
-  // no re-render needed, same as tokenRefSelect above (doesn't change
-  // which other fields this row shows).
+  // [Round 197] AfflictCard/ClearAfflictionFromPile's own combined
+  // custom/vanilla affliction select -- [2026-09-30 follow-up, round 340]
+  // same "custom:"/"vanilla:" prefixed-value split as tokenRefSelect just
+  // above, now that this select offers both kinds too (Tyler: "there are
+  // vanilla afflictions. lets pull those and add them alongside the
+  // custom options"). No re-render needed -- doesn't change which other
+  // fields this row shows.
   const afflictionRefSelect = row.querySelector('.a-affliction-ref');
-  if(afflictionRefSelect) afflictionRefSelect.onchange = e=> act.afflictionRef = e.target.value;
+  if(afflictionRefSelect) afflictionRefSelect.onchange = (e)=>{
+    const raw = e.target.value;
+    const sep = raw.indexOf(':');
+    const kind = raw.slice(0, sep), value = raw.slice(sep + 1);
+    act.afflictionKind = kind;
+    if(kind === 'vanilla'){ act.afflictionVanillaRef = value; delete act.afflictionRef; }
+    else { act.afflictionRef = value; delete act.afflictionVanillaRef; }
+  };
+  // EnchantCard's own entity-picker select -- no re-render needed, same as
+  // tokenRefSelect above (doesn't change which other fields this row shows).
   const enchantmentRefSelect = row.querySelector('.a-enchantment-ref');
   if(enchantmentRefSelect) enchantmentRefSelect.onchange = e=> act.enchantmentRef = e.target.value;
   // [Round 286] SummonPet's own entity-picker select -- same "no

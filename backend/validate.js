@@ -293,7 +293,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
 // [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
 // one real Discovery card's own default pool) plus every real
 // CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
@@ -1134,14 +1134,33 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // EnchantCard only, same "reject an empty pick with a friendlier
     // message, reject a stale/unknown id otherwise" shape as CreateCard's
     // tokenRef right above.
+    // [2026-09-30 follow-up] Tyler: "there are vanilla afflictions. lets
+    // pull those and add them alongside the custom options" -- same
+    // afflictionKind/afflictionVanillaRef dual-field shape CreateCard's
+    // own tokenRefKind/tokenVanillaRef already uses right above.
+    // afflictionKind defaults to "custom" when omitted (every package
+    // saved before this field existed only ever set afflictionRef as a
+    // custom id), so this stays fully backward compatible.
+    if (act.afflictionKind !== undefined) {
+      if (!['custom', 'vanilla'].includes(act.afflictionKind)) errors.push(`${p}.afflictionKind "${act.afflictionKind}" is not one of: custom, vanilla.`);
+      if (act.type !== 'AfflictCard' && act.type !== 'ClearAfflictionFromPile') errors.push(`${p}: afflictionKind is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+    }
     if (act.type === 'AfflictCard' || act.type === 'ClearAfflictionFromPile') {
-      if (act.afflictionRef === '' || act.afflictionRef === undefined) {
+      const afflictionKind = act.afflictionKind === 'vanilla' ? 'vanilla' : 'custom';
+      if (afflictionKind === 'vanilla') {
+        if (act.afflictionVanillaRef !== undefined && !BUILTIN_AFFLICTIONS.includes(act.afflictionVanillaRef)) {
+          errors.push(`${p}.afflictionVanillaRef "${act.afflictionVanillaRef}" is not one of: ${BUILTIN_AFFLICTIONS.join(', ')}.`);
+        } else if (act.afflictionVanillaRef === undefined || act.afflictionVanillaRef === '') {
+          errors.push(`${p}: action "${act.type}" needs a vanilla affliction selected — pick one from the dropdown.`);
+        }
+      } else if (act.afflictionRef === '' || act.afflictionRef === undefined) {
         errors.push(`${p}: action "${act.type}" needs an affliction selected — pick one from the dropdown, or add an Affliction first if none exist yet (Enchantments & Afflictions section).`);
       } else if (!afflictionIds.has(act.afflictionRef)) {
         errors.push(`${p}.afflictionRef "${act.afflictionRef}" doesn't match any defined affliction id.`);
       }
-    } else if (act.afflictionRef !== undefined) {
-      errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+    } else {
+      if (act.afflictionRef !== undefined) errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+      if (act.afflictionVanillaRef !== undefined) errors.push(`${p}: afflictionVanillaRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
     }
     // [Round 286] petRef -- SummonPet only, same "reject an empty pick
     // with a friendlier message, reject a stale/unknown id otherwise"

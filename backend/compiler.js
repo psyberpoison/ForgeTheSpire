@@ -578,6 +578,37 @@ const BUILTIN_POWER_CLASS_MAP = {
 // reflect-baselib round so far.
 const PROTECTED_CTOR_BUILTIN_POWERS = new Set(['TemporaryDexterity', 'TemporaryFocus', 'TemporaryStrength']);
 
+// [2026-09-30 follow-up] Tyler: "there are vanilla afflictions. lets pull
+// those and add them alongside the custom options" -- same shape as
+// BUILTIN_POWER_CLASS_MAP above for the real built-in status/Power
+// classes, but for AfflictionModel instead. [VERIFIED via a direct
+// ECMA-335 TypeDef scan of the real installed sts2.dll — every TypeDef
+// whose `Extends` resolves directly to
+// MegaCrit.Sts2.Core.Models.AfflictionModel] found exactly 10 classes;
+// 3 live under the Afflictions.Mocks namespace (MockNoUnplayableAffliction/
+// MockSelfDamageAffliction/MockUselessAffliction — test/dev-only
+// scaffolding, never shown to a player, excluded here) leaving these 7
+// real, shipped vanilla afflictions. None of the 7 is itself subclassed by
+// anything else (a second scan for any TypeDef extending one of these 7
+// by simple name came back empty — no deeper hierarchy to worry about,
+// unlike a few of the 247 Powers that subclass another concrete Power
+// instead of PowerModel directly). Each also has a CONFIRMED real public
+// parameterless constructor (direct MethodDef dump, `.ctor()` on all 7) —
+// same "safe to `new()` up generically" requirement
+// ApplyStatus<T>()/CardCmd.Afflict<T>() already need — so unlike
+// BUILTIN_POWER_CLASS_MAP there's no PROTECTED_CTOR_BUILTIN_POWERS-style
+// exclusion set needed here; all 7 are selectable both to Afflict and to
+// ClearAfflictionFromPile's own afflictionRef picker.
+const BUILTIN_AFFLICTION_CLASS_MAP = {
+  Bound: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Bound',
+  Entangled: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Entangled',
+  Galvanized: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Galvanized',
+  Hexed: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Hexed',
+  Ringing: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Ringing',
+  Smog: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Smog',
+  Tainted: 'global::MegaCrit.Sts2.Core.Models.Afflictions.Tainted',
+};
+
 // Action types with no grounding for a Creature target at all — these act
 // on the PLAYER's own hand/deck/discard/energy/gold, not on any creature,
 // so "target: AllEnemies" (etc.) on one of these is nonsensical no matter
@@ -1697,6 +1728,26 @@ function resolveRandomCardPickAndAct(loopVarPrefix, amountExpr, actExprBuilder, 
     `            }`,
     `        }`,
   ].join('\n');
+}
+
+// [2026-09-30 follow-up] Tyler: "there are vanilla afflictions. lets pull
+// those and add them alongside the custom options" -- shared by
+// AfflictCard and ClearAfflictionFromPile, the two action types that ever
+// read action.afflictionRef (see BUILTIN_AFFLICTION_CLASS_MAP's own doc
+// comment for the real, [VERIFIED] 7-class evidence trail). Same
+// vanilla/custom dual-field shape CreateCard's own tokenRefKind/tokenRef/
+// tokenVanillaRef already established: `afflictionKind` picks which of
+// the two ref fields to read, defaulting to "custom" so every package
+// saved before this field existed (when afflictionRef only ever meant a
+// custom affliction id) keeps resolving exactly the same way it always
+// did. Returns null (not a Todo stub) when nothing resolves -- both
+// callers already have their own "no affliction selected" Todo fallback,
+// same as before this helper existed.
+function resolveAfflictionClassExpr(action, ctx) {
+  if (action.afflictionKind === 'vanilla') {
+    return BUILTIN_AFFLICTION_CLASS_MAP[action.afflictionVanillaRef] || null;
+  }
+  return (ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef)) || null;
 }
 
 function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
@@ -2964,7 +3015,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // generateAfflictionSource's onPlayCtx, which sets
     // affectedCardIsThisCard: true).
     case 'AfflictCard': {
-      const afflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
+      const afflCls = resolveAfflictionClassExpr(action, ctx);
       if (!afflCls) return `        ForgeActions.Todo("AfflictCard -- no affliction selected"); // pick an affliction in this action's own dropdown`;
       // [Round 339, 2026-09-30] Tyler: "we currently only have the option
       // to afflict this card. we should give the option to afflict other
@@ -3029,7 +3080,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // pile's owner -- so this never falls back to Todo() for lack of a
     // CardModel the way the four actions above can.
     case 'ClearAfflictionFromPile': {
-      const cafpAfflCls = ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef);
+      const cafpAfflCls = resolveAfflictionClassExpr(action, ctx);
       if (!cafpAfflCls) return `        ForgeActions.Todo("ClearAfflictionFromPile -- no affliction selected"); // pick an affliction in this action's own dropdown`;
       const cafpPileExpr = pileTypeExpr(action.pile);
       const cafpOwnerExpr = resolvePlayerExpr(ctx);
@@ -11958,6 +12009,16 @@ module.exports = {
   // ApplyStatus<T>()'s "new()" constraint — see that const above) — 244
   // selectable, not 247.
   BUILTIN_STATUSES: Object.keys(BUILTIN_POWER_CLASS_MAP).filter(k => !PROTECTED_CTOR_BUILTIN_POWERS.has(k)),
+  // [2026-09-30 follow-up] Same reasoning as BUILTIN_STATUSES right above
+  // — the 7 real built-in AfflictionModel classes AfflictCard/
+  // ClearAfflictionFromPile's afflictionRef picker can select alongside
+  // this character's own custom afflictions, derived from
+  // BUILTIN_AFFLICTION_CLASS_MAP's own keys (see that const's own doc
+  // comment for the full evidence trail) so validate.js shares the one
+  // source of truth instead of a second hand-typed list. No
+  // PROTECTED_CTOR-style filter needed here — all 7 have confirmed public
+  // parameterless constructors.
+  BUILTIN_AFFLICTIONS: Object.keys(BUILTIN_AFFLICTION_CLASS_MAP),
   // [2026-09-22] Same reasoning as BUILTIN_STATUSES above — the 9 real
   // built-in RestSiteOption types TryModifyRestSiteOptions' 'restSiteOption'
   // shape can Add/Remove (see BUILTIN_REST_SITE_OPTION_CLASS_MAP), derived
