@@ -16379,7 +16379,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       const acAllowDupesCheckboxHtml = (acIsRandom && !acAll)
         ? `<label class="a-check-label" title="Checked (default): the same card can be picked -- and afflicted -- more than once. Unchecked: each card is removed from the pick pool once afflicted, so this action never afflicts the same card twice (the loop stops early if the pile runs out of cards first)."><input type="checkbox" class="a-afflict-allow-duplicates" ${act.afflictAllowDuplicates===false?'':'checked'}> can afflict the same card twice</label>`
         : '';
-      if(acIsRandom) afflictOptionsBlockHtml = `<div class="action-row-usex">${acAllCheckboxHtml}${acAllowDupesCheckboxHtml}</div>`;
+      // [Round 345, 2026-10-01] Tyler: "instead of having the checkboxes
+      // be side by side, put them stacked above and below each other" --
+      // .action-row-usex itself is a flex ROW (see its own CSS, shared by
+      // every other below-sentence options block), so two checkboxes
+      // inside ONE .action-row-usex sit side by side. Two SEPARATE
+      // .action-row-usex divs, each holding one checkbox, stack instead --
+      // same "multiple stacked option rows" shape DealDamage's own
+      // dealDamageUseXHtml/dealDamageScaleRowHtml pair already uses
+      // (two sibling .action-row-usex divs in the row template below).
+      if(acIsRandom) afflictOptionsBlockHtml = `<div class="action-row-usex">${acAllCheckboxHtml}</div>${acAllowDupesCheckboxHtml ? `<div class="action-row-usex">${acAllowDupesCheckboxHtml}</div>` : ''}`;
       sentenceHtml = `<span class="cond-word">Afflict</span> ${acCountPrefixHtml}${acTargetKindHtml} ${acPileSuffixHtml}<span class="cond-word">with</span>${amountHtml}${useXAmountHtml}<span class="cond-word">stack(s) of</span> ${afflOptions}<span class="cond-word">.</span>`;
       break;
     }
