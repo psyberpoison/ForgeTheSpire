@@ -1549,14 +1549,43 @@
      intro line" shape .a-status-picker's own slot already has, just with
      a visible border/padding since (unlike the status picker) this one
      has no chip row of its own to visually separate it from the sentence
-     above. Each term is a single flex-wrap row (sign/value/source/subject/
-     status-ref/remove), same compact-atom style as .a-scale-inline. */
+     above. Each term is a single flex-wrap row (sign/value/connector/
+     source/status-ref/subject/remove), same compact-atom style as
+     .a-scale-inline. [2026-09-30 follow-up #7] Tyler: "looks awful...
+     more sentence structure" — sign select now reads "Add"/"Subtract"
+     (was a bare "+"/"−" symbol, needs more width) and a .cond-word
+     connector ("×" or ",") sits between the value and source select, same
+     connector-span convention every other sentence builder in this file
+     uses. */
   .a-formula-builder{display:flex; flex-direction:column; gap:8px; margin-top:4px; padding:8px 10px; border:1px solid var(--border); border-radius:4px;}
   .a-formula-terms{display:flex; flex-direction:column; gap:6px;}
   .a-formula-term{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
   .a-formula-term select, .a-formula-term input{font-size:12.5px;}
-  .a-formula-sign{width:46px; flex:none;}
-  .a-formula-value{width:66px; flex:none;}
+  /* width:auto is the fix that actually matters here — same root cause as
+     .condition-row's own matching comment above: the app's global
+     `select,input{width:100%}` rule would otherwise make every select in
+     this row claim the full row width as its flex-basis, forcing every
+     sibling (including the .cond-word connectors between them) onto its
+     own line regardless of gap/font-size, which is exactly what made this
+     look like a stacked form instead of a sentence. field-sizing:content
+     additionally sizes each select to its CURRENT selection rather than
+     its widest option (same .condition-row .c-kind fix), so e.g. the
+     source select doesn't sit oversized to fit "stacks of a custom
+     status/mechanic" while "Gold" is actually selected. */
+  .a-formula-term select{min-width:0; width:auto; flex:0 0 auto; field-sizing:content;}
+  .a-formula-sign{flex:none;}
+  /* [2026-09-30 follow-up #7] The plain `.a-formula-value{width:66px}`
+     this used to be (one class, specificity 0,0,1,0) never actually beat
+     the global `input[type=number]{width:100%}` rule above (one
+     attribute + one type selector, specificity 0,0,1,1 — strictly
+     higher), so the value box was ALWAYS full-width even before this
+     round's changes; it just wasn't obvious until the row was reflowed
+     into a tighter sentence shape. Adding the `input` type selector here
+     ties the specificity at (0,0,2,1) vs the global rule's (0,0,1,1),
+     which wins outright rather than relying on source-order (the fix
+     .a-formula-term select above relies on a tie broken by appearing
+     later in the sheet; this one just wins cleanly). */
+  .a-formula-term input{width:66px; flex:none;}
   .a-formula-remove-term{margin-left:auto; flex:none;}
   .a-formula-clamp{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;}
   .a-formula-clamp input[type=number]{width:66px;}
@@ -15158,7 +15187,7 @@ function renderAmountFormulaBuilder(act, trigger){
   function render(){
     const overCap = terms.length >= MAX_AMOUNT_FORMULA_TERMS;
     wrap.innerHTML = `
-      <div class="hint-small">Every term below is added together (or subtracted, for “−”) to make this amount — pick pieces, no typing required.</div>
+      <div class="hint-small">Every line below reads as its own instruction, combined together to make this amount — pick pieces, no typing required.</div>
       <div class="a-formula-terms"></div>
       <button type="button" class="ghost a-formula-add-term" ${overCap?'disabled':''}>${overCap ? `Max ${MAX_AMOUNT_FORMULA_TERMS} terms` : '+ Add term'}</button>
       <div class="a-formula-clamp">
@@ -15172,19 +15201,47 @@ function renderAmountFormulaBuilder(act, trigger){
       </div>
     `;
     const termsEl = wrap.querySelector('.a-formula-terms');
+    // [2026-09-30 follow-up #7] Tyler: "the 'use a formula' section looks
+    // awful. lets see what we can do to make that more sentence
+    // structure." Previously a bare, label-less form row -- sign symbol,
+    // bare number, a source <select>, maybe "of"+subject, maybe a status
+    // ref <select>, a trailing ✕ -- with nothing telling the eye how the
+    // pieces relate (the exact "looks like a spreadsheet, not a
+    // sentence" problem every OTHER control in this file solves with
+    // .cond-word connector spans between pickers, e.g. AfflictCard's
+    // "Afflict this card with [amount] stack(s) of [affliction]."). Same
+    // treatment here: the sign <select> now reads "Add"/"Subtract" (a
+    // verb opening the line, not a bare "+"/"−" symbol) -- same stored
+    // '+'/'-' values, compiler.js/validate.js read those unchanged, only
+    // the <option> TEXT changed. A .cond-word "×" connector sits between
+    // the value and the source select for every real multiplier source
+    // (the value IS a multiplier on the chosen source, per that input's
+    // own title text) -- omitted for Literal specifically, since the
+    // value there IS the whole term, not a multiplier on anything; "Add
+    // 6" already reads complete on its own, so claiming a "×" relation
+    // to "a flat number" right after it would be misleading. For the two
+    // status sources,
+    // the status-ref <select> (which real status/mechanic) now renders
+    // immediately after the source select rather than after "of
+    // [subject]" -- "stacks of a vanilla status [Weak ▾] of yourself"
+    // puts the actual choice where the eye expects it, right next to the
+    // label describing it, with "of [subject]" correctly trailing as the
+    // sentence's final clause either way.
     termsEl.innerHTML = terms.map((term, ti) => {
       const needsSubject = AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source);
       const needsStatusRef = AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source);
+      const isLiteral = term.source === 'Literal';
       return `
       <div class="a-formula-term" data-idx="${ti}">
         <select class="a-formula-sign" title="Add or subtract this term.">
-          <option value="+" ${(term.sign||'+')==='+'?'selected':''}>+</option>
-          <option value="-" ${term.sign==='-'?'selected':''}>−</option>
+          <option value="+" ${(term.sign||'+')==='+'?'selected':''}>Add</option>
+          <option value="-" ${term.sign==='-'?'selected':''}>Subtract</option>
         </select>
-        <input type="number" class="a-formula-value" value="${term.value ?? 0}" title="${term.source==='Literal' ? 'This flat number.' : 'Multiplier on the chosen value.'}">
+        <input type="number" class="a-formula-value" value="${term.value ?? 0}" title="${isLiteral ? 'This flat number.' : 'Multiplier on the chosen value.'}">
+        ${isLiteral ? '' : `<span class="cond-word">×</span>`}
         <select class="a-formula-source" title="What this term's value comes from.">${amountFormulaSourceOptList(term.source, trigger)}</select>
-        ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(term.subject)}</select>` : ''}
         ${needsStatusRef ? statusRefOptList(term) : ''}
+        ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(term.subject)}</select>` : ''}
         <button type="button" class="ghost a-formula-remove-term" title="Remove this term." ${terms.length<=1?'disabled':''}>✕</button>
       </div>`;
     }).join('');
