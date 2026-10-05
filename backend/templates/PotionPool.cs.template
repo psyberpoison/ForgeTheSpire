@@ -1,6 +1,7 @@
 using BaseLib.Abstracts;
 using System.Collections.Generic;
 using MegaCrit.Sts2.Core.Models;
+using {{namespace}}.Potions;
 
 namespace {{namespace}}.PotionPools;
 
@@ -10,17 +11,18 @@ namespace {{namespace}}.PotionPools;
 // sts2.dll + BaseLib.dll — see TOOLCHAIN_FINDINGS.md "reflect-baselib round
 // 1". This also CONFIRMED the base class name guessed in the previous
 // version of this file (`CustomPotionPoolModel`) is real. PotionPoolModel's
-// abstract surface is exactly these three members. character.schema.json
-// has no potion concept yet, so GenerateAllPotions() always returns empty —
-// nothing populates this pool; it exists purely to satisfy the override.
+// abstract surface is exactly these three members.
+// [Round 357, task #32] GenerateAllPotions() now lists every potion the
+// character defines (ModelDb.Potion<T>(), same shape RelicPool uses with
+// ModelDb.Relic<T>()); a character with no potions still gets an empty list.
 public sealed class {{className}} : CustomPotionPoolModel
 {
     // [UNVERIFIED — cosmetic only, any string compiles]
-    public override string EnergyColorName => "";
+    public override string EnergyColorName => "{{energyColorName}}";
 
     // `protected` (NOT `public`) — CONFIRMED by a real build (CS0507); the
     // base `PotionPoolModel.GenerateAllPotions()` is declared `protected`.
-    protected override IEnumerable<PotionModel> GenerateAllPotions() => new List<PotionModel>();
+    protected override IEnumerable<PotionModel> GenerateAllPotions() => new List<PotionModel> { {{generateAllPotionsExprs}} };
 
     // [VERIFIED to be required via reflect-baselib; value guessed]
     public override bool ShouldReceiveCombatHooks => false;

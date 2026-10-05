@@ -615,6 +615,16 @@
     border:1px solid var(--border-soft, var(--border));
     object-fit:cover; background:var(--stone-2);
   }
+  /* [Round 357] Missing-art flag (relic/status/potion tiles + editor note +
+     post-compile notice). Informational only -- never blocks compiling. */
+  .noart-flag{display:inline-block; margin-left:6px; padding:0 6px; border-radius:8px; font-size:10.5px; line-height:16px; color:#d9a94a; border:1px solid rgba(217,169,74,.55); background:rgba(217,169,74,.08); white-space:nowrap; cursor:help;}
+  .noart-note{margin-top:6px; font-size:11.5px; color:#d9a94a; line-height:1.35;}
+  .missing-art-notice{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:9000; max-width:min(760px, calc(100vw - 32px)); display:flex; align-items:flex-start; gap:12px; padding:10px 14px; background:var(--stone-2); border:1px solid rgba(217,169,74,.6); border-radius:var(--radius); color:var(--parchment); font-size:13px; line-height:1.4; box-shadow:0 6px 24px rgba(0,0,0,.45);}
+  .missing-art-notice button{flex:0 0 auto; padding:0 6px;}
+  /* Potion editor: an AnyTime potion has no combat state, so its "If" conditions are hidden;
+     an Automatic potion's trigger blocks only choose WHEN (the "Then" half lives in "When it is used"). */
+  .potion-no-conditions .eb-conditions, .potion-no-conditions .a-usex-label, .potion-no-conditions .a-scale-label{display:none;}
+  .potion-auto-wrap .eb-then-label, .potion-auto-wrap .eb-actions, .potion-auto-wrap .eb-add-action, .potion-auto-wrap .eb-else{display:none;}
   .card-selection-bar{
     display:flex; align-items:center; flex-wrap:wrap; gap:14px;
     margin:-6px 0 16px; padding:10px 14px;
@@ -3808,6 +3818,17 @@
     </div>
   </section>
 
+  <section class="panel" id="section-potions">
+    <div class="panel-head">
+      <h2><span class="num">05</span> Potions</h2>
+      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="potion-count">0 potions</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-desc">Custom potions for your character's potion pool. Pick what the potion targets and when it can be used; "Automatic" potions (like Fairy in a Bottle) are consumed by the game itself when a trigger you choose fires. Potion art is optional &mdash; without it the game shows its own &ldquo;no texture&rdquo; placeholder (flagged below, never blocks compiling).</div>
+      <div class="grid-cards" id="potions-grid"></div>
+    </div>
+  </section>
+
   <section class="panel" id="section-enchantments">
     <div class="panel-head">
       <h2><span class="num">06</span> Enchantments &amp; Afflictions</h2>
@@ -4140,7 +4161,10 @@ const HOOK_TRIGGER_LABELS = {
 // Merged lookup — CARD_TRIGGER_LABELS first (OnAnyCardPlayed's card-context
 // wording), then HOOK_TRIGGER_LABELS, then the raw id as a last resort (a
 // future trigger added to only one list without a label yet).
-function triggerLabel(id){ return CARD_TRIGGER_LABELS[id] || HOOK_TRIGGER_LABELS[id] || id; }
+function triggerLabel(id){
+  if(id === 'OnPlay' && potionEditCtx) return 'When this potion is used'; // [Round 357] a potion's drink effect reuses the OnPlay trigger id
+  return CARD_TRIGGER_LABELS[id] || HOOK_TRIGGER_LABELS[id] || id;
+}
 // Shown under the trigger picker (see renderEffectsList) for triggers
 // whose action bodies aren't wired to a real player/target binding yet —
 // same honest-caveat pattern as the keyword tooltips. Only OnDiscard/
@@ -4367,6 +4391,13 @@ const CARD_PLAYER_ONLY_TRIGGERS = new Set(['OnDiscard', 'OnTurnEndInHand', 'OnRe
 function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   const hidden = new Set();
   if(!returnToHandEligible) hidden.add('ReturnToHand');
+  // [Round 357] AnyTime potions can be drunk outside combat, where Forge's
+  // combat-state actions have nothing to act on -- only HP/gold are offered
+  // (mirrors backend/validate.js's AnyTime check on potions).
+  if(potionEditCtx && trigger === 'OnPlay' && potionEditCtx.usage === 'AnyTime'){
+    ACTION_TYPES.forEach(t=>{ if(t !== 'ModifyHp' && t !== 'ModifyGold') hidden.add(t); });
+    return hidden;
+  }
   if(HOOK_TRIGGER_BINDING[trigger] === 'unbound') return hidden;
   if(!CARD_PLAY_BOUND_TRIGGERS.has(trigger)){
     for(const t of CARD_PLAY_BOUND_ONLY_ACTION_TYPES) hidden.add(t);
@@ -4381,6 +4412,13 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
 // filtered-out type. GainBlock is real on every non-unbound trigger (the
 // only case DealDamage gets hidden), so it's a safe universal fallback.
 function defaultActionForTrigger(trigger){
+  if(potionEditCtx && trigger === 'OnPlay'){
+    // [Round 357] a potion's drink effect: pick something valid for its usage/target.
+    if(potionEditCtx.usage === 'AnyTime') return {type:'ModifyHp', mode:'Gain', target:'Self', amount:10};
+    if(potionEditCtx.target === 'SingleEnemy') return {type:'DealDamage', target:'SingleEnemy', amount:10};
+    if(potionEditCtx.target === 'AllEnemies') return {type:'DealDamage', target:'AllEnemies', amount:6};
+    return {type:'GainBlock', target:'Self', amount:12};
+  }
   if(hiddenActionTypesForTrigger(trigger).has('DealDamage')) return {type:'GainBlock', target:'Self', amount:6};
   return {type:'DealDamage', target:'SingleEnemy', amount:6};
 }
@@ -4421,6 +4459,13 @@ function defaultActionForTrigger(trigger){
 // convention applies the same way here.
 function hiddenTargetsForTrigger(actionType, mode, trigger){
   const hidden = new Set();
+  // [Round 357] potion drink effects ('OnPlay' while the potion editor is
+  // open): SingleEnemy/SingleAlly need a clicked enemy, which only a
+  // SingleEnemy potion has; an AnyTime potion is limited to "yourself".
+  if(potionEditCtx && trigger === 'OnPlay'){
+    if(potionEditCtx.target !== 'SingleEnemy'){ hidden.add('SingleEnemy'); hidden.add('SingleAlly'); }
+    if(potionEditCtx.usage === 'AnyTime') validTargetsForAction(actionType).forEach(v=>{ if(v !== 'Self') hidden.add(v); });
+  }
   // [Round 57] CARD_PLAYER_ONLY_TRIGGERS (OnDiscard/OnTurnEndInHand) join
   // HOOK_TRIGGER_BINDING's 'player' shape here — same real fgPlayer/no-
   // fgTarget situation, just a card trigger instead of a relic/mechanic
@@ -5547,6 +5592,7 @@ function blankState(){
     },
     cards: [strike, defend],
     relics: [],
+    potions: [],
     mechanics: [],
     enchantments: [],
     afflictions: [],
@@ -5934,6 +5980,8 @@ function migrateLegacyStatusActions(pkg){
   // [Round 353] Stance art library + links -- same additive-only backfill.
   if(!Array.isArray(pkg.stanceArt)) pkg.stanceArt = [];
   if(!Array.isArray(pkg.stanceArtLinks)) pkg.stanceArtLinks = [];
+  // [Round 357, task #32] Custom potions -- additive-only backfill.
+  if(!Array.isArray(pkg.potions)) pkg.potions = [];
 
   // v6 -> v7: character-level ART additions (Tyler's "move on to the art
   // items next" round — items 2/3/4/5/7/9/10/11/16/18 from the list).
@@ -9550,6 +9598,14 @@ function openChronicleEditor(chronicleId){
 // for card art (see openCardEditor's own save handler).
 let pendingEpochPortraitDataUrl = undefined;
 let pendingRelicIconDataUrl = undefined;
+// [Round 357, task #32] Set by openPotionEditor() for as long as its modal is
+// open ({target, usage} of the potion being edited), null otherwise. The
+// effect editor's action-type/target/subject filters are keyed by trigger id
+// only, and a potion's drink effects reuse the 'OnPlay' trigger -- so while
+// this is set, trigger 'OnPlay' means "a potion's OnUse" (see
+// hiddenActionTypesForTrigger / hiddenTargetsForTrigger / defaultActionForTrigger
+// / availableSubjects). openModal()/closeModal() both reset it.
+let potionEditCtx = null;
 let pendingMechIconDataUrl = undefined;
 let pendingPetArtDataUrl = undefined;
 
@@ -9762,6 +9818,7 @@ let modalCloseGuard = null;
 let modalSaveOnOutsideClick = null;
 function openModal(html, opts){
   modalCloseGuard = null;
+  potionEditCtx = null;
   modalSaveOnOutsideClick = null;
   modal.innerHTML = html;
   // `wide` is used by the card editor (and anything else with a
@@ -9788,6 +9845,7 @@ function closeModal(){
     if(blockReason){ alert(blockReason); return; }
   }
   modalCloseGuard = null;
+  potionEditCtx = null;
   modalSaveOnOutsideClick = null;
   overlay.classList.remove('open');
   modal.classList.remove('wide');
@@ -11129,7 +11187,8 @@ function availableSubjects(eff, kind){
   // only matter for relic/mechanic effect blocks (a card's own trigger id
   // was never a HOOK_TRIGGER_BINDING key), but now that these two ARE
   // real, non-Todo triggers, 'CardTarget' has to be excluded here too.
-  const noCardTargetBound = HOOK_TRIGGER_BINDING[eff.trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(eff.trigger);
+  const noCardTargetBound = HOOK_TRIGGER_BINDING[eff.trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(eff.trigger)
+    || !!(potionEditCtx && eff.trigger === 'OnPlay' && potionEditCtx.target !== 'SingleEnemy'); // [Round 357] a non-SingleEnemy potion has no clicked target to check
   return CONDITION_SUBJECTS.filter(s => {
     if(!onlyForKindOk(s)) return false;
     if(!onlyForTriggerOk(s)) return false;
@@ -11211,6 +11270,7 @@ function fixConditionSubjectForTrigger(cond, trigger){
   // invariant for no real reason.
   if(cond.subject === 'Pet' && cond.kind !== 'PetIsOut' && !PET_SUPPORTED_TRIGGERS.includes(trigger)) cond.subject = 'Self';
   if(cond.subject === 'CardTarget' && (HOOK_TRIGGER_BINDING[trigger] === 'player' || CARD_PLAYER_ONLY_TRIGGERS.has(trigger))) cond.subject = 'Self';
+  if(cond.subject === 'CardTarget' && potionEditCtx && trigger === 'OnPlay' && potionEditCtx.target !== 'SingleEnemy') cond.subject = 'Self'; // [Round 357]
 }
 function fixConditionsForTrigger(conditions, trigger){
   (conditions||[]).forEach(c=>fixConditionSubjectForTrigger(c, trigger));
@@ -15456,7 +15516,8 @@ function targetOptList(actionType, selected, trigger, mode, cardIsSingleTarget){
   // target of the card", mirroring his original SingleEnemy wording).
   return validTargetsForAction(actionType).filter(v => v === selected || !hidden.has(v))
     .map(v=>{
-      const label = (v === 'SingleEnemy' && cardIsSingleTarget === 'enemy') ? "This Card's Target"
+      const label = (v === 'SingleEnemy' && potionEditCtx && cardIsSingleTarget === 'enemy') ? 'The Targeted Enemy'
+        : (v === 'SingleEnemy' && cardIsSingleTarget === 'enemy') ? "This Card's Target"
         : (v === 'SingleAlly' && cardIsSingleTarget === 'ally') ? "This Card's Target"
         : (ACTION_TARGET_LABELS[v] || v);
       return `<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(label)}</option>`;
@@ -18279,7 +18340,7 @@ function renderRelics(){
     const iconUrl = findAssetDataUrl(relic.iconAssetRef, 'relicIcon');
     t.className = 'tile' + (iconUrl ? ' tile-has-icon' : '');
     const starterBadge = (Array.isArray(state.character.startingRelicIds) && state.character.startingRelicIds.includes(relic.id)) ? ' <span title="Starting relic" style="color:#c9a24a">\u2605</span>' : '';
-    t.innerHTML = `<div class="t-name">${escapeHtml(relic.name||'Untitled')}${starterBadge}</div><div class="t-meta">${relic.rarity}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(relic.name||'Untitled')}${starterBadge}</div><div class="t-meta">${relic.rarity}${iconUrl ? '' : noArtFlagHtml()}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
     t.onclick = ()=> openRelicEditor(relic.id);
     relicsGrid.appendChild(t);
   });
@@ -18535,6 +18596,318 @@ function openRelicEditor(relicId){
   modalSaveOnOutsideClick = doSaveRelic;
 }
 
+/* ---------- POTIONS (round 357, task #32) ----------
+   Tyler: "keep the 3 rarities. look into targeting" + "potion art, status
+   art, and relic art should flag that they are missing, but not stop
+   compile." Compiles to a real BaseLib CustomPotionModel per potion --
+   see backend/compiler.js:generatePotionSource's header for the full IL
+   evidence trail, and schema/character.schema.json's `potion` definition. */
+const potionsGrid = document.getElementById('potions-grid');
+const POTION_RARITIES = ['Common','Uncommon','Rare'];
+const POTION_USAGES = ['CombatOnly','AnyTime','Automatic'];
+const POTION_USAGE_LABELS = {
+  CombatOnly: 'Combat only',
+  AnyTime: 'Any time (also outside combat)',
+  Automatic: 'Automatic (used by the game itself)',
+};
+const POTION_USAGE_SHORT = { CombatOnly: 'combat only', AnyTime: 'any time', Automatic: 'automatic' };
+// Forge vocabulary -> real TargetType (backend/compiler.js POTION_TARGET_MAP):
+// Self->Self, AnyPlayer->AnyPlayer, SingleEnemy->AnyEnemy, AllEnemies->AllEnemies.
+// The real game only has a click-to-target UI for an enemy (AnyEnemy) or a
+// teammate (AnyPlayer, co-op only) -- every other TargetType resolves to a
+// null/self target -- so these four are the whole offered vocabulary.
+const POTION_TARGETS = ['Self','AnyPlayer','SingleEnemy','AllEnemies'];
+const POTION_TARGET_LABELS = {
+  Self: 'Yourself',
+  AnyPlayer: 'Any player (you in solo; click a teammate in co-op)',
+  SingleEnemy: 'One enemy (you click it)',
+  AllEnemies: 'All enemies',
+};
+const POTION_TARGET_SHORT = { Self: 'self', AnyPlayer: 'any player', SingleEnemy: 'one enemy', AllEnemies: 'all enemies' };
+// Mirrors backend/validate.js POTION_AUTO_TRIGGERS (kept as a literal copy --
+// this file has no require(); tests/test_round357_potions.js asserts the two
+// lists are identical): every hook trigger whose real signature binds a
+// creature/player (so the potion can consume itself from it), minus the
+// "this status" AfterThisPower* hooks.
+const POTION_AUTO_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterShuffle","AfterPlayerTurnStart","AfterOrbChanneled","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const POTION_ANYTIME_ACTION_TYPES = ['ModifyHp','ModifyGold']; // mirrors backend/validate.js's AnyTime allow-list
+
+function potionTargetsForUsage(usage){
+  if(usage === 'Automatic') return ['Self'];       // consumed with no click -> no target to pick
+  if(usage === 'AnyTime') return ['Self','AnyPlayer']; // drinkable outside combat -> no enemies exist
+  return POTION_TARGETS;
+}
+function ensurePotionDefaults(p){
+  if(!p.onUse || typeof p.onUse !== 'object' || !Array.isArray(p.onUse.effects)) p.onUse = { effects: Array.isArray(p.onUse && p.onUse.effects) ? p.onUse.effects : [] };
+  if(!Array.isArray(p.effects)) p.effects = [];
+}
+// Plain-English guess at what the potion does (same convention as relics'
+// "Auto: ..." hint; used as the description fallback when none is typed).
+function generatePotionDescription(p){
+  const parts = [];
+  const drink = (p.onUse && Array.isArray(p.onUse.effects) ? p.onUse.effects : []).map(describeEffectBlock).filter(Boolean).join(' ').trim();
+  if(drink) parts.push(drink);
+  if(p.usage === 'Automatic'){
+    const trig = (p.effects || []).map(e => {
+      const cond = (e.conditions||[]).map(c => describeCondition(c, e.trigger)).filter(Boolean).join(' and ');
+      const lbl = triggerLabel(e.trigger);
+      return `${lbl.charAt(0).toLowerCase()}${lbl.slice(1)}${cond ? `, if ${cond}` : ''}`;
+    });
+    if(p.preventsDeath) trig.unshift('instead of dying');
+    if(trig.length) parts.push(`Used automatically: ${trig.join('; ')}.`);
+  }
+  return parts.join(' ').trim() || 'This potion has no effects defined yet.';
+}
+
+// [Round 357] Art that's missing -- relics, statuses and potions. Never
+// blocks compiling (the game shows its own "no texture" placeholder for
+// any image we don't ship); this just lets the UI flag it. A status with
+// "Hide status icon" checked genuinely has no icon, so it isn't flagged.
+const NO_ART_TOOLTIP = "No art uploaded — the game will show its own “no texture” placeholder. This does NOT stop compiling.";
+function missingArtItems(){
+  const out = [];
+  (state.relics||[]).forEach(r=>{ if(!findAssetDataUrl(r.iconAssetRef, 'relicIcon')) out.push({ kind:'Relic', name:r.name||'Untitled', section:'section-relics' }); });
+  (state.mechanics||[]).forEach(m=>{ if(!m.hideIcon && !findAssetDataUrl(m.iconAssetRef, 'mechanicIcon')) out.push({ kind:'Status', name:m.name||'Untitled', section:'section-mechanics' }); });
+  (state.potions||[]).forEach(p=>{ if(!findAssetDataUrl(p.iconAssetRef, 'potionIcon')) out.push({ kind:'Potion', name:p.name||'Untitled', section:'section-potions' }); });
+  return out;
+}
+function noArtFlagHtml(){ return ` <span class="noart-flag" title="${escapeAttr(NO_ART_TOOLTIP)}">⚠ no art</span>`; }
+// Non-blocking notice shown after a successful compile (the zip has already
+// downloaded) -- a dismissible bar, NOT a modal, so it can't be mistaken for
+// a failure.
+function showMissingArtNotice(){
+  const old = document.getElementById('missing-art-notice');
+  if(old) old.remove();
+  const items = missingArtItems();
+  if(!items.length) return;
+  const bar = document.createElement('div');
+  bar.id = 'missing-art-notice';
+  bar.className = 'missing-art-notice';
+  const names = items.slice(0, 6).map(i=>`${i.kind} “${escapeHtml(i.name)}”`).join(', ') + (items.length > 6 ? `, and ${items.length - 6} more` : '');
+  bar.innerHTML = `<span><strong>Compiled — ${items.length} item${items.length===1?'':'s'} ${items.length===1?'has':'have'} no art:</strong> ${names}. The game will show its own “no texture” placeholder for ${items.length===1?'it':'them'}.</span><button class="ghost" type="button" aria-label="Dismiss">✕</button>`;
+  bar.querySelector('button').onclick = ()=> bar.remove();
+  document.body.appendChild(bar);
+}
+
+function renderPotions(){
+  if(!potionsGrid) return;
+  if(!Array.isArray(state.potions)) state.potions = [];
+  potionsGrid.innerHTML = '';
+  state.potions.forEach(p=>{
+    const t = document.createElement('div');
+    const iconUrl = findAssetDataUrl(p.iconAssetRef, 'potionIcon');
+    t.className = 'tile' + (iconUrl ? ' tile-has-icon' : '');
+    t.innerHTML = `<div class="t-name">${escapeHtml(p.name||'Untitled')}</div><div class="t-meta">${escapeHtml(p.rarity||'Common')} · ${escapeHtml(POTION_USAGE_SHORT[p.usage]||p.usage||'')} · ${escapeHtml(POTION_TARGET_SHORT[p.target]||p.target||'')}${iconUrl ? '' : noArtFlagHtml()}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
+    t.onclick = ()=> openPotionEditor(p.id);
+    potionsGrid.appendChild(t);
+  });
+  const addTile = document.createElement('div');
+  addTile.className = 'tile add-tile';
+  addTile.textContent = '+';
+  addTile.onclick = ()=>{
+    const p = { id: uid('potion'), name:'New Potion', rarity:'Common', usage:'CombatOnly', target:'Self', description:'', onUse:{ effects:[] }, effects:[] };
+    state.potions.push(p);
+    save(); renderPotions();
+    openPotionEditor(p.id);
+  };
+  potionsGrid.appendChild(addTile);
+  document.getElementById('potion-count').textContent = `${state.potions.length} potion${state.potions.length===1?'':'s'}`;
+}
+
+let pendingPotionIconDataUrl = undefined;
+function openPotionEditor(potionId){
+  const potion = state.potions.find(x=>x.id===potionId);
+  if(!potion) return;
+  ensurePotionDefaults(potion);
+  pendingPotionIconDataUrl = undefined;
+  // Working copies -- nothing touches `potion` for usage/target until Done,
+  // same "editor fields commit on Done" convention as the relic editor; the
+  // effect lists mutate potion.onUse/potion.effects live (renderEffectsList's
+  // own convention), so a usage/target change is applied to them right away
+  // with a confirm when it would drop something.
+  let usage = POTION_USAGES.includes(potion.usage) ? potion.usage : 'CombatOnly';
+  let target = POTION_TARGETS.includes(potion.target) ? potion.target : 'Self';
+  if(!potionTargetsForUsage(usage).includes(target)) target = potionTargetsForUsage(usage)[0];
+  openModal(`
+    <div class="modal-head"><h3>Edit Potion</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <div style="display:flex; gap:24px; align-items:stretch;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <div style="display:flex; gap:12px;">
+            <div style="flex:1; min-width:0;"><label>Name</label><input type="text" id="m-name" value="${escapeAttr(potion.name)}"></div>
+            <div style="flex:0 0 140px;"><label>Rarity</label><select id="m-rarity">${optList(POTION_RARITIES, potion.rarity)}</select></div>
+          </div>
+          <div style="display:flex; gap:12px; margin-top:14px;">
+            <div style="flex:1; min-width:0;"><label title="When the potion can be used. Automatic potions (like Fairy in a Bottle) are consumed by the game itself when one of the triggers below fires.">Usage</label><select id="pt-usage"></select></div>
+            <div style="flex:1; min-width:0;"><label title="Who the potion is aimed at. 'One enemy' and 'Any player' show the game's own click-to-target picker.">Target</label><select id="pt-target"></select></div>
+          </div>
+          <div class="hint-small" id="pt-usage-hint" style="margin-top:4px"></div>
+          <label style="margin-top:14px" title="The game's own color tags work here too: select some text and click a swatch below, or type [gold]word[/gold] (also red/blue/purple/green) by hand. Leave this blank and Forge fills in its own approximation from this potion's effects (shown below in italics until you type your own).">Description</label>
+          <div class="desc-colorbar" title="Wrap the selected description text in the game's own real color tag.">
+            <button type="button" class="desc-color-btn bb-gold" onclick="wrapDescriptionSelection('gold')" title="[gold]...[/gold]"></button>
+            <button type="button" class="desc-color-btn bb-red" onclick="wrapDescriptionSelection('red')" title="[red]...[/red]"></button>
+            <button type="button" class="desc-color-btn bb-blue" onclick="wrapDescriptionSelection('blue')" title="[blue]...[/blue]"></button>
+            <button type="button" class="desc-color-btn bb-purple" onclick="wrapDescriptionSelection('purple')" title="[purple]...[/purple]"></button>
+            <button type="button" class="desc-color-btn bb-green" onclick="wrapDescriptionSelection('green')" title="[green]...[/green]"></button>
+          </div>
+          <textarea id="m-description" placeholder="Leave blank to auto-fill from its effects." style="min-height:44px;">${escapeHtml(potion.description||'')}</textarea>
+          <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
+        </div>
+        <div style="flex:0 0 160px;">
+          <label>Potion art <span class="dim-hint">(optional)</span></label>
+          <div class="art-preview-frame" id="pt-icon-frame" style="aspect-ratio:1/1; max-width:160px; cursor:pointer;">
+            <img id="pt-icon-img" style="display:none">
+            <div class="art-placeholder" id="pt-icon-placeholder">Click to upload (optional)</div>
+            <div class="art-click-hint">Click to change</div>
+            <div class="art-icon-overlay">
+              <button class="ghost icon-btn icon-btn-danger" id="pt-icon-clear" type="button" title="Remove" aria-label="Remove" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              </button>
+            </div>
+          </div>
+          <input type="file" class="art-upload-input" id="pt-icon-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <div class="art-field-error" id="pt-icon-error"></div>
+          <div class="noart-note" id="pt-noart-note" style="display:none">⚠ No art — the game will show its “no texture” placeholder. Compiling still works.</div>
+        </div>
+      </div>
+
+      <label style="margin-top:20px" id="pt-onuse-label">When drunk</label>
+      <div id="potion-onuse-list" class="potion-onuse-wrap"></div>
+      <button class="secondary" id="pt-onuse-add" style="margin-top:6px" type="button">+ Add effect block</button>
+
+      <div id="pt-auto-section" style="display:none">
+        <label style="margin-top:20px" title="An Automatic potion has no click to drink it: the game consumes it by itself the moment one of these happens (and its conditions hold), then runs the effects above.">Used automatically when&hellip;</label>
+        <label style="margin:6px 0 8px; font-weight:normal; display:flex; align-items:center; gap:6px;" title="Like Fairy in a Bottle: while this potion is on your belt, you can't die; the potion is consumed when it saves you, then its effects above run.">
+          <input type="checkbox" id="pt-prevents-death" ${potion.preventsDeath?'checked':''}> Prevents your death (consumed when it saves you)
+        </label>
+        <div id="potion-auto-list" class="potion-auto-wrap"></div>
+        <button class="secondary" id="pt-auto-add" style="margin-top:6px" type="button">+ Add another trigger</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="danger" id="delete-potion">Delete potion</button>
+      <button id="save-potion">Done</button>
+    </div>
+  `, { wide: true });
+
+  const usageSel = document.getElementById('pt-usage');
+  const targetSel = document.getElementById('pt-target');
+  const usageHint = document.getElementById('pt-usage-hint');
+  const autoSection = document.getElementById('pt-auto-section');
+  const onUseWrap = document.getElementById('potion-onuse-list');
+  const onUseLabel = document.getElementById('pt-onuse-label');
+
+  const renderLists = ()=>{
+    potionEditCtx = { target, usage };
+    // Repair already-saved actions/conditions the new usage/target no longer allows.
+    sanitizeEffectsArray(potion.onUse.effects);
+    renderEffectsList(potion.onUse, ['OnPlay'], 'potion-onuse-list', { target, costsX:false });
+    if(usage === 'Automatic') renderEffectsList(potion, POTION_AUTO_TRIGGERS, 'potion-auto-list');
+  };
+  const refreshControls = ()=>{
+    usageSel.innerHTML = POTION_USAGES.map(u=>`<option value="${u}" ${u===usage?'selected':''}>${escapeHtml(POTION_USAGE_LABELS[u])}</option>`).join('');
+    targetSel.innerHTML = potionTargetsForUsage(usage).map(t=>`<option value="${t}" ${t===target?'selected':''}>${escapeHtml(POTION_TARGET_LABELS[t])}</option>`).join('');
+    usageHint.textContent = usage === 'AnyTime'
+      ? 'Drinkable outside combat too, so only “Modify HP” and “Modify Gold” effects (on yourself, no conditions) are offered — nothing else can run without a fight.'
+      : usage === 'Automatic'
+        ? 'No click to drink it: it targets yourself, and the game uses it when a trigger below fires.'
+        : '';
+    autoSection.style.display = usage === 'Automatic' ? '' : 'none';
+    onUseWrap.classList.toggle('potion-no-conditions', usage === 'AnyTime');
+    onUseLabel.textContent = usage === 'Automatic' ? 'When it is used' : 'When drunk';
+  };
+  refreshControls();
+  renderLists();
+
+  usageSel.onchange = ()=>{
+    const next = usageSel.value;
+    if(next === 'AnyTime'){
+      const bad = potion.onUse.effects.reduce((n, eff)=> n + [...(eff.actions||[]), ...(eff.elseActions||[])].filter(a=>!POTION_ANYTIME_ACTION_TYPES.includes(a.type)).length + ((eff.conditions||[]).length ? 1 : 0), 0);
+      if(bad && !confirm(`An “Any time” potion can be drunk outside combat, so it can only Modify HP / Modify Gold with no conditions. Switching will remove ${bad} effect${bad===1?'':'s'}/condition${bad===1?'':'s'} that need combat. Continue?`)){
+        usageSel.value = usage; return;
+      }
+      potion.onUse.effects.forEach(eff=>{
+        eff.actions = (eff.actions||[]).filter(a=>POTION_ANYTIME_ACTION_TYPES.includes(a.type));
+        eff.elseActions = [];
+        eff.conditions = [];
+      });
+    }
+    usage = next;
+    if(!potionTargetsForUsage(usage).includes(target)) target = potionTargetsForUsage(usage)[0];
+    if(usage !== 'Automatic'){ potion.effects = []; potion.preventsDeath = false; document.getElementById('pt-prevents-death').checked = false; }
+    refreshControls(); renderLists(); refreshDescHint();
+  };
+  targetSel.onchange = ()=>{ target = targetSel.value; renderLists(); refreshDescHint(); };
+  document.getElementById('pt-onuse-add').onclick = ()=>{ potion.onUse.effects.push({ trigger:'OnPlay', conditions:[], actions:[], elseActions:[] }); renderLists(); };
+  document.getElementById('pt-auto-add').onclick = ()=>{ potion.effects.push({ trigger:'OnMyDamageTaken', conditions:[], actions:[], elseActions:[] }); renderLists(); };
+
+  // Live "Auto: ..." description hint (MutationObserver, same approach as the relic editor).
+  const refreshDescHint = ()=>{
+    const hintEl = document.getElementById('m-desc-auto-hint');
+    const descEl = document.getElementById('m-description');
+    if(!hintEl || !descEl) return;
+    if(descEl.value.trim()){ hintEl.innerHTML = ''; return; }
+    hintEl.innerHTML = 'Auto: ' + bbcodeToHtml(generatePotionDescription({ ...potion, usage, target, preventsDeath: document.getElementById('pt-prevents-death').checked }));
+  };
+  refreshDescHint();
+  document.getElementById('m-description').addEventListener('input', refreshDescHint);
+  document.getElementById('pt-prevents-death').addEventListener('change', refreshDescHint);
+  const obsOpts = { childList:true, subtree:true, characterData:true };
+  new MutationObserver(refreshDescHint).observe(onUseWrap, obsOpts);
+  new MutationObserver(refreshDescHint).observe(document.getElementById('potion-auto-list'), obsOpts);
+
+  // Art upload/preview -- same flow as the relic editor's icon field (no
+  // fixed dimensions: the game scales whatever image it's handed).
+  const iconFrame = document.getElementById('pt-icon-frame');
+  const iconImg = document.getElementById('pt-icon-img');
+  const iconPh = document.getElementById('pt-icon-placeholder');
+  const iconUpload = document.getElementById('pt-icon-upload');
+  const iconClear = document.getElementById('pt-icon-clear');
+  const iconError = document.getElementById('pt-icon-error');
+  const noArtNote = document.getElementById('pt-noart-note');
+  const refreshIconPreview = ()=>{
+    const url = pendingPotionIconDataUrl !== undefined ? pendingPotionIconDataUrl : findAssetDataUrl(potion.iconAssetRef, 'potionIcon');
+    if(url){ iconImg.src = url; iconImg.style.display = ''; iconPh.style.display = 'none'; iconClear.style.display = ''; noArtNote.style.display = 'none'; }
+    else { iconImg.style.display = 'none'; iconImg.removeAttribute('src'); iconPh.style.display = ''; iconClear.style.display = 'none'; noArtNote.style.display = ''; }
+  };
+  refreshIconPreview();
+  iconFrame.addEventListener('click', ()=> iconUpload.click());
+  iconUpload.addEventListener('change', ev=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    iconError.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=>{ pendingPotionIconDataUrl = dataUrl; refreshIconPreview(); }).catch(err=>{
+      iconError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
+      iconError.style.display = 'block';
+      iconUpload.value = '';
+    });
+  });
+  iconClear.onclick = (ev)=>{ ev.stopPropagation(); pendingPotionIconDataUrl = null; refreshIconPreview(); };
+
+  document.getElementById('delete-potion').onclick = ()=>{
+    if(potion.iconAssetRef) state.assets = state.assets.filter(a=>a.id!==potion.iconAssetRef);
+    state.potions = state.potions.filter(x=>x.id!==potionId);
+    save(); renderPotions(); closeModal();
+  };
+  const doSavePotion = ()=>{
+    potion.name = document.getElementById('m-name').value;
+    potion.rarity = document.getElementById('m-rarity').value;
+    potion.usage = usage;
+    potion.target = target;
+    potion.preventsDeath = usage === 'Automatic' && document.getElementById('pt-prevents-death').checked;
+    if(usage !== 'Automatic') potion.effects = [];
+    const typed = document.getElementById('m-description').value.trim();
+    potion.description = typed || undefined;
+    potion.autoGeneratedDescription = typed ? undefined : generatePotionDescription(potion);
+    if(pendingPotionIconDataUrl !== undefined){
+      potion.iconAssetRef = commitAsset(pendingPotionIconDataUrl, potion.iconAssetRef, 'potionIcon');
+    }
+    save(); renderPotions(); closeModal();
+  };
+  document.getElementById('save-potion').onclick = doSavePotion;
+  modalSaveOnOutsideClick = doSavePotion;
+}
+
 /* ---------- MECHANICS ---------- */
 const mechGrid = document.getElementById('mechanics-grid');
 // [Round 284] Mirrors allCardTags() (see that function's own comment) —
@@ -18600,7 +18973,7 @@ function renderMechanics(){
     // .tile-has-icon/.tile-icon-preview. Same pattern, reused verbatim.
     const iconUrl = findAssetDataUrl(m.iconAssetRef, 'mechanicIcon');
     t.className = 'tile' + (iconUrl ? ' tile-has-icon' : '');
-    t.innerHTML = `<div class="t-name">${escapeHtml(m.name||'Untitled')}</div><div class="t-meta">${m.stackable?'stacking':'binary'} · ${m.isBuff?'buff':'debuff'}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(m.name||'Untitled')}</div><div class="t-meta">${m.stackable?'stacking':'binary'} · ${m.isBuff?'buff':'debuff'}${(iconUrl || m.hideIcon) ? '' : noArtFlagHtml()}</div>${iconUrl ? `<img class="tile-icon-preview" src="${iconUrl}" alt="">` : ''}`;
     t.onclick = ()=> openMechEditor(m.id);
     mechGrid.appendChild(t);
   });
@@ -21685,18 +22058,19 @@ function openStanceEditor(stanceId){
 // lines — see this function's own JSON-then-text fallback below for what
 // happens against an older backend or a genuine 500 (build failure, no
 // structured error list to group).
-const ENTITY_KIND_LABELS = { cards: 'Card', relics: 'Relic', mechanics: 'Mechanic' };
+const ENTITY_KIND_LABELS = { cards: 'Card', relics: 'Relic', mechanics: 'Mechanic', potions: 'Potion' };
 function parseCompileError(err){
-  const m = err.match(/^(cards|relics|mechanics)\[(\d+)\](?:\s+"([^"]*)")?\.?(.*)$/s);
+  const m = err.match(/^(cards|relics|mechanics|potions)\[(\d+)\](?:\s+"([^"]*)")?\.?(.*)$/s);
   if(!m) return { entityKind: null, entityIndex: null, entityName: null, rest: err };
   return { entityKind: m[1], entityIndex: parseInt(m[2], 10), entityName: m[3] || null, rest: m[4] || err };
 }
 function openEditorForEntity(kind, index){
   closeModal();
-  const entity = kind === 'cards' ? state.cards[index] : kind === 'relics' ? state.relics[index] : state.mechanics[index];
+  const entity = kind === 'cards' ? state.cards[index] : kind === 'relics' ? state.relics[index] : kind === 'potions' ? state.potions[index] : state.mechanics[index];
   if(!entity) return;
   if(kind === 'cards') openCardEditor(entity.id);
   else if(kind === 'relics') openRelicEditor(entity.id);
+  else if(kind === 'potions') openPotionEditor(entity.id);
   else if(kind === 'mechanics') openMechEditor(entity.id);
 }
 function showCompileErrorModal(errors){
@@ -21802,6 +22176,7 @@ document.getElementById('exportBtn').onclick = async ()=>{
     a.download = `${state.character.id || 'custom_character'}.zip`;
     a.click();
     URL.revokeObjectURL(url);
+    showMissingArtNotice(); // [Round 357] non-blocking -- the compile already succeeded
   }catch(err){
     showCompileErrorText('Compile failed: ' + err.message + '\n\n(Nothing you entered was sent anywhere except this one request — check the backend console.)');
   }finally{
@@ -21816,7 +22191,7 @@ document.getElementById('resetBtn').onclick = ()=>{
   clearStoredAssets();
   state = blankState();
   hydrateCharacterForm();
-  renderCards(); renderRelics(); renderMechanics(); renderEnchantments(); renderAfflictions(); renderPets(); renderOrbs(); renderStances();
+  renderCards(); renderRelics(); renderPotions(); renderMechanics(); renderEnchantments(); renderAfflictions(); renderPets(); renderOrbs(); renderStances();
 };
 
 /* ---------- import project ----------
@@ -22836,6 +23211,7 @@ function renderAllFromState(){
   hydrateCharacterForm();
   renderCards();
   renderRelics();
+  renderPotions();
   renderMechanics();
   renderEnchantments();
   renderAfflictions();

@@ -53,6 +53,9 @@ const CARD_RARITIES = ['Basic', 'Common', 'Uncommon', 'Rare', 'Ancient', 'Event'
 // cardPlay.Target too, so every action on the card that targets "this
 // card's own bound target" (SingleEnemy) hits that same enemy.
 const CARD_TARGETS = ['SingleEnemy', 'AllEnemies', 'Self', 'None', 'SingleAlly', 'AllAllies', 'RandomEnemy'];
+const POTION_RARITIES = ['Common', 'Uncommon', 'Rare'];
+const POTION_USAGES = ['CombatOnly', 'AnyTime', 'Automatic'];
+const POTION_TARGETS = ['Self', 'AnyPlayer', 'SingleEnemy', 'AllEnemies'];
 const RELIC_RARITIES = ['Starter', 'Common', 'Uncommon', 'Rare', 'Shop', 'Event', 'Ancient'];
 // [VERIFIED via reflect-baselib round 9] a full After*/On*/Before* hook
 // sweep of CustomCardModel (the same sweep round 2 ran on CustomRelicModel)
@@ -315,6 +318,17 @@ const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_S
 // discoverPool enum spells out literally (kept in sync by hand there,
 // since JSON Schema can't reference a JS const — see that field's own
 // description for the full evidence trail).
+// Auto-triggers an Automatic potion can listen on: only hooks whose real
+// signature binds a Creature/Player (playerExpr) or a participant collection
+// -- an unbound hook (e.g. OnCombatStart, OnKillEnemy) compiles to a runtime
+// Todo() throw instead of a body, which would silently never consume the
+// potion. 'Passive' is excluded (it generates no override at all), as are the
+// four AfterThisPower* hooks (they describe "this status", which a potion isn't).
+// [VERIFIED via IL of RunState/CombatState.IterateHookListeners MoveNext, round 357]
+// both enumerate every active player's belt potions (Player.Potions /
+// PotionSlots) as hook listeners, so the remaining hooks genuinely reach a
+// potion -- including run-level ones that fire outside combat.
+const POTION_AUTO_TRIGGERS = HOOK_TRIGGERS.filter(t => t !== 'Passive' && !/^AfterThisPower/.test(t) && TRIGGER_HOOKS[t] && (TRIGGER_HOOKS[t].playerExpr || TRIGGER_HOOKS[t].collectionExpr));
 const DISCOVER_POOL_VALUES = ['OwnCharacter', ...Object.keys(CARD_POOL_CLASS_MAP)];
 // Round 19 — derived (not hand-maintained) from TRIGGER_HOOKS: every
 // trigger whose hook binds a real fgPlayer but has no fgTarget (playerExpr
@@ -2735,6 +2749,87 @@ function validateCharacterPackage(pkg) {
     }
   });
 
+  // --- potions [Round 357, task #32] ---
+  // See schema/character.schema.json's `potion` definition and
+  // compiler.js:generatePotionSource for the full evidence trail.
+  const potions = Array.isArray(pkg.potions) ? pkg.potions : [];
+  if (pkg.potions !== undefined && !Array.isArray(pkg.potions)) errors.push('"potions" must be an array.');
+  const potionClassSeen = new Map();
+  potions.forEach((potion, i) => {
+    const named = potion && typeof potion === 'object' && isNonEmptyString(potion.name);
+    const p = `potions[${i}]${named ? ` "${potion.name}"` : ''}`;
+    if (!potion || typeof potion !== 'object') { errors.push(`${p} must be an object.`); return; }
+    if (!isNonEmptyString(potion.id)) errors.push(`${p}.id must be a non-empty string.`);
+    if (!isNonEmptyString(potion.name)) errors.push(`${p}.name must be a non-empty string.`);
+    else {
+      const key = potion.name.replace(/[^A-Za-z0-9]+/g, '').toLowerCase();
+      if (!key) errors.push(`${p}.name has no letters or digits to build a class name from.`);
+      else if (potionClassSeen.has(key)) errors.push(`${p}.name collides with potion "${potionClassSeen.get(key)}" — two potions can't share a class name (ignoring case/spacing).`);
+      else potionClassSeen.set(key, potion.name);
+    }
+    if (!POTION_RARITIES.includes(potion.rarity)) errors.push(`${p}.rarity "${potion.rarity}" is not one of: ${POTION_RARITIES.join(', ')}.`);
+    if (!POTION_USAGES.includes(potion.usage)) errors.push(`${p}.usage "${potion.usage}" is not one of: ${POTION_USAGES.join(', ')}.`);
+    if (!POTION_TARGETS.includes(potion.target)) errors.push(`${p}.target "${potion.target}" is not one of: ${POTION_TARGETS.join(', ')}.`);
+    const isAuto = potion.usage === 'Automatic';
+    const isAnyTime = potion.usage === 'AnyTime';
+    if (isAuto && potion.target !== 'Self') errors.push(`${p}: an Automatic potion is consumed by the game with no player click, so its target must be "Self" (got "${potion.target}").`);
+    if (isAnyTime && !['Self', 'AnyPlayer'].includes(potion.target)) errors.push(`${p}: an AnyTime potion can be drunk outside combat where no enemy exists, so its target must be "Self" or "AnyPlayer" (got "${potion.target}").`);
+    if (potion.onUse !== undefined && (!potion.onUse || typeof potion.onUse !== 'object' || Array.isArray(potion.onUse))) {
+      errors.push(`${p}.onUse must be an object with an effects array.`);
+    }
+    const onUseEffects = (potion.onUse && Array.isArray(potion.onUse.effects)) ? potion.onUse.effects : [];
+    validateEffects(onUseEffects, `${p}.onUse`, errors, { allowedTriggers: ['OnPlay'], mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'potion', gameplayTagsInUse });
+    // Target-vs-action coherence: fgTarget is only bound to a real enemy
+    // for a SingleEnemy potion. For Self/AnyPlayer/AllEnemies it's null
+    // (or, for AnyPlayer, a teammate), so SingleEnemy/SingleAlly actions
+    // and CardTarget conditions would compile to a null/wrong reference.
+    if (potion.target !== 'SingleEnemy') {
+      const checkActs = (arr, where) => (Array.isArray(arr) ? arr : []).forEach((act, ai) => {
+        if (act && (act.target === 'SingleEnemy' || act.target === 'SingleAlly')) {
+          errors.push(`${p}.onUse.${where}[${ai}]: action target "${act.target}" needs a clicked enemy, but this potion's target is "${potion.target}" — use "Self"${potion.target === 'AllEnemies' ? ', "AllEnemies"' : ''} instead, or change the potion's target to "SingleEnemy".`);
+        }
+      });
+      onUseEffects.forEach((eff, ei) => {
+        if (!eff) return;
+        checkActs(eff.actions, `effects[${ei}].actions`);
+        checkActs(eff.elseActions, `effects[${ei}].elseActions`);
+        (Array.isArray(eff.conditions) ? eff.conditions : []).forEach((c, ci) => {
+          if (c && c.subject === 'CardTarget') errors.push(`${p}.onUse.effects[${ei}].conditions[${ci}]: subject "CardTarget" needs a clicked enemy, but this potion's target is "${potion.target}".`);
+        });
+      });
+    }
+    if (isAnyTime) {
+      // Forge's combat actions lean on fgPlayer.CombatState (null outside
+      // combat), so an AnyTime potion is limited to the out-of-combat-safe
+      // real calls: ForgeActions.Heal/LoseHp/GainMaxHp/LoseMaxHp and
+      // PlayerCmd.GainGold/LoseGold.
+      const SAFE = ['ModifyHp', 'ModifyGold'];
+      onUseEffects.forEach((eff, ei) => {
+        if (!eff) return;
+        if (Array.isArray(eff.conditions) && eff.conditions.length) errors.push(`${p}.onUse.effects[${ei}]: an AnyTime potion can be drunk outside combat, where combat-state conditions have nothing to read — remove the conditions (or switch usage to CombatOnly).`);
+        [['actions', eff.actions], ['elseActions', eff.elseActions]].forEach(([where, arr]) => (Array.isArray(arr) ? arr : []).forEach((act, ai) => {
+          if (!act) return;
+          if (!SAFE.includes(act.type)) errors.push(`${p}.onUse.effects[${ei}].${where}[${ai}]: "${act.type}" needs combat state, but an AnyTime potion can be drunk outside combat. AnyTime potions support only: ${SAFE.join(', ')} (or switch usage to CombatOnly).`);
+          else if (act.amountFormula || act.amountScalesWithStatus || act.amountScalesWithBuiltinStatus || act.amountScalesWithStatusKind) errors.push(`${p}.onUse.effects[${ei}].${where}[${ai}]: an AnyTime potion can be drunk outside combat, where status-stack/combat formulas have nothing to read — use a plain number for the amount.`);
+          else if (act.type === 'ModifyHp' && act.target !== 'Self') errors.push(`${p}.onUse.effects[${ei}].${where}[${ai}]: ModifyHp on an AnyTime potion must target "Self" (the drinker).`);
+        }));
+      });
+    }
+    // Automatic-only fields.
+    if (potion.effects !== undefined && !Array.isArray(potion.effects)) errors.push(`${p}.effects must be an array.`);
+    const autoEffects = Array.isArray(potion.effects) ? potion.effects : [];
+    if (!isAuto && autoEffects.length) errors.push(`${p}.effects (auto-triggers) are only valid on an Automatic potion — this potion's usage is "${potion.usage}".`);
+    if (potion.preventsDeath !== undefined && typeof potion.preventsDeath !== 'boolean') errors.push(`${p}.preventsDeath must be a boolean.`);
+    if (potion.preventsDeath === true && !isAuto) errors.push(`${p}.preventsDeath is only valid on an Automatic potion — this potion's usage is "${potion.usage}".`);
+    if (isAuto) {
+      if (!autoEffects.length && potion.preventsDeath !== true) errors.push(`${p}: an Automatic potion needs at least one auto-trigger (or "prevents death") — otherwise nothing would ever use it.`);
+      validateEffects(autoEffects, p, errors, { allowedTriggers: POTION_AUTO_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'potion', gameplayTagsInUse });
+      autoEffects.forEach((eff, ei) => {
+        if (eff && Array.isArray(eff.actions) && eff.actions.length) errors.push(`${p}.effects[${ei}].actions must be empty — an auto-trigger only decides WHEN the potion is used; what it does lives in "onUse".`);
+      });
+    }
+  });
+
   // --- mechanics ---
   mechanics.forEach((mech, i) => {
     const named = mech && typeof mech === 'object' && isNonEmptyString(mech.name);
@@ -3111,4 +3206,4 @@ function validateCharacterPackage(pkg) {
   return { valid: errors.length === 0, errors };
 }
 
-module.exports = { validateCharacterPackage };
+module.exports = { validateCharacterPackage, POTION_AUTO_TRIGGERS };
