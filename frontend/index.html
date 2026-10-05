@@ -2835,6 +2835,23 @@
   .pose-sheet-fields label{display:block; font-size:8px; text-transform:uppercase; letter-spacing:.04em; color:var(--parchment-dim); margin-bottom:2px;}
   .pose-sheet-fields input[type=number]{width:100%; box-sizing:border-box; font-size:11px; padding:3px 4px;}
   .pose-sheet-error{display:none; color:var(--danger-bright); font-size:9px; margin-top:4px;}
+  /* [Round 356] Sprite-sheet preview modal */
+  .sp-toolbar{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-bottom:8px;}
+  .sp-seg{display:inline-flex; gap:0;}
+  .sp-seg button{border-radius:0; padding:3px 10px; font-size:12px;}
+  .sp-seg button:first-child{border-radius:6px 0 0 6px;}
+  .sp-seg button:last-child{border-radius:0 6px 6px 0;}
+  .sp-seg button.active{background:var(--accent); color:#fff;}
+  .sp-inline{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--parchment-dim); margin:0;}
+  .sp-inline select{font-size:12px; padding:2px 4px;}
+  .sp-canvas{display:block; width:100%; max-width:640px; aspect-ratio:640/400; border:1px solid var(--border-soft); border-radius:6px; margin:0 auto;}
+  .sp-bg-dark{background:#05080f;}
+  .sp-bg-light{background:#e9e4d8;}
+  .sp-bg-checker{background-color:#8a8a8a; background-image:linear-gradient(45deg,#6d6d6d 25%,transparent 25%,transparent 75%,#6d6d6d 75%),linear-gradient(45deg,#6d6d6d 25%,transparent 25%,transparent 75%,#6d6d6d 75%); background-size:20px 20px; background-position:0 0,10px 10px;}
+  .sp-controls{display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap;}
+  .sp-controls input[type=range]{flex:1 1 160px; min-width:120px;}
+  .sp-fields{max-width:320px; margin-top:10px;}
+  .preview-btn{font-size:11px; padding:2px 8px;}
   /* [Round 353] Stance art library (lives in #stances-art-body) */
   #stances-art-body{font-style:normal;}
   .stance-art-lib{display:flex; flex-wrap:wrap; gap:14px; margin-top:6px;}
@@ -9211,6 +9228,7 @@ function renderPoseSheetGrid(){
         <div class="field-col"><label>Frames</label><input type="number" class="ps-framecount" data-pose="${p.id}" min="1" step="1" value="${entry.frameCount}"></div>
         <div class="field-col"><label title="Frames per row in the sheet. Leave at 0 to treat the whole sheet as a single row.">Cols</label><input type="number" class="ps-columns" data-pose="${p.id}" min="0" step="1" value="${entry.columns}"></div>
       </div>
+      <button type="button" class="secondary preview-btn ps-preview" data-pose="${p.id}" style="margin-top:6px; display:none;">&#9654; Preview</button>
       <div class="pose-sheet-error" id="ps-error-${p.id}"></div>
     </div>`;
   }).join('');
@@ -9264,6 +9282,20 @@ function renderPoseSheetGrid(){
     };
   });
 
+  grid.querySelectorAll('.ps-preview').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      const pose = btn.dataset.pose;
+      const label = (POSE_SHEETS.find(x=>x.id===pose)||{}).label || pose;
+      openSpritePreview({
+        title: `Preview — ${label} sheet`,
+        getEntry: ()=> poseSheetEntry(pose),
+        getUrl: ()=> findAssetDataUrl(poseSheetEntry(pose).assetRef, 'poseSheet'),
+        onChange: ()=>{ renderPoseSheetGrid(); renderCombatSizePreview(); },
+      });
+    };
+  });
+
   grid.querySelectorAll('.ps-fps').forEach(inp=>{
     inp.addEventListener('change', ()=>{
       const entry = poseSheetEntry(inp.dataset.pose);
@@ -9306,6 +9338,8 @@ function renderPoseSheetPreview(pose){
   if(url){ img.src = url; img.style.display = ''; ph.style.display = 'none'; }
   else { img.style.display = 'none'; img.removeAttribute('src'); ph.style.display = ''; }
   if(clearBtn) clearBtn.style.display = url ? '' : 'none';
+  const prevBtn = document.querySelector(`.ps-preview[data-pose="${pose}"]`);
+  if(prevBtn) prevBtn.style.display = url ? '' : 'none';
 }
 
 // [Round 203] Lore's old renderLoreList()/#add-lore handler pair (a flat,
@@ -21176,6 +21210,147 @@ function openOrbEditor(orbId){
 // enemyBuffPercent) are capped at 100 (reduction only, per Tyler's own
 // uploaded example) -- those two number inputs get `max="100"`; every
 // other percent field is uncapped, same as orbs' own passive/evoke values.
+// [Round 356] Sprite-sheet preview -- Tyler: "i'd like a way to preview the
+// sprite sheet both in stances as well as in the character art section."
+// One shared modal used by BOTH the Stances panel's Art library and the
+// Character Art section's pose-sheet cards. Plays the sheet exactly the way
+// the compiled mod will slice it (same math as MakeAtlasFrame in the
+// generated C#: columns<=0 = one row of `frames` frames, otherwise
+// `columns` per row, frame size = sheet / (cols, rows)) at the entry's FPS,
+// plus a "sheet grid" view that overlays the frame boundaries so a wrong
+// Frames/Cols value is obvious. FPS / Frames / Cols are editable right in
+// the preview and write straight back to the entry.
+//   opts: { title, getEntry:()=>entry, getUrl:()=>dataUrl, onChange:()=>void }
+function openSpritePreview(opts){
+  const url = opts.getUrl();
+  if(!url) return;
+  const entry0 = opts.getEntry();
+  openModal(`
+    <div class="modal-head"><h3>${escapeHtml(opts.title)}</h3><span class="close" onclick="closeModal()">&times;</span></div>
+    <div class="modal-body">
+      <div class="sp-toolbar">
+        <div class="sp-seg" role="group" aria-label="View">
+          <button type="button" class="secondary sp-view active" data-view="anim">Animation</button>
+          <button type="button" class="secondary sp-view" data-view="sheet">Sheet &amp; frame grid</button>
+        </div>
+        <label class="sp-inline">Background
+          <select id="sp-bg"><option value="dark">Dark</option><option value="light">Light</option><option value="checker">Checkerboard</option></select>
+        </label>
+      </div>
+      <canvas id="sp-canvas" width="640" height="400" class="sp-canvas sp-bg-dark"></canvas>
+      <div class="sp-controls">
+        <button type="button" class="secondary" id="sp-play">&#10074;&#10074; Pause</button>
+        <input type="range" id="sp-frame" min="0" max="${Math.max(0, (entry0.frameCount||1)-1)}" step="1" value="0" aria-label="Frame">
+        <span class="mono" id="sp-frame-label"></span>
+        <label class="sp-inline"><input type="checkbox" id="sp-loop" checked> Loop</label>
+      </div>
+      <div class="pose-sheet-fields sp-fields">
+        <div class="field-col"><label>FPS</label><input type="number" id="sp-fps" min="1" step="1" value="${entry0.fps ?? 12}"></div>
+        <div class="field-col"><label>Frames</label><input type="number" id="sp-frames" min="1" step="1" value="${entry0.frameCount ?? 1}"></div>
+        <div class="field-col"><label title="Frames per row in the sheet. Leave at 0 to treat the whole sheet as a single row.">Cols</label><input type="number" id="sp-cols" min="0" step="1" value="${entry0.columns ?? 0}"></div>
+      </div>
+      <div class="hint-small" id="sp-info" style="margin-top:6px;"></div>
+    </div>
+    <div class="modal-foot"><button id="sp-close">Close</button></div>
+  `, {wide:true});
+
+  const canvas = document.getElementById('sp-canvas');
+  const ctx = canvas.getContext('2d');
+  const slider = document.getElementById('sp-frame');
+  const playBtn = document.getElementById('sp-play');
+  const info = document.getElementById('sp-info');
+  const frameLabel = document.getElementById('sp-frame-label');
+  const img = new Image();
+  img.src = url;
+  let view = 'anim', playing = true, idx = 0, acc = 0, last = performance.now();
+
+  document.getElementById('sp-close').onclick = ()=> closeModal();
+  const geom = ()=>{
+    const e = opts.getEntry();
+    const frames = Math.max(1, e.frameCount || 1);
+    const cols = e.columns > 0 ? e.columns : frames;
+    const rows = Math.ceil(frames / cols);
+    const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+    return { frames, cols, rows, fw: w/cols, fh: h/rows, fps: Math.max(1, e.fps || 12), w, h };
+  };
+  const setPlaying = p=>{ playing = p; playBtn.innerHTML = p ? '&#10074;&#10074; Pause' : '&#9654; Play'; };
+  playBtn.onclick = ()=>{
+    const g = geom();
+    if(!playing && !document.getElementById('sp-loop').checked && idx >= g.frames-1) idx = 0; // replay a finished one-shot
+    setPlaying(!playing); acc = 0; last = performance.now();
+  };
+  slider.oninput = ()=>{ idx = parseInt(slider.value,10) || 0; setPlaying(false); };
+  document.getElementById('sp-bg').onchange = e=>{ canvas.className = 'sp-canvas sp-bg-' + e.target.value; };
+  document.querySelectorAll('.sp-view').forEach(b=> b.onclick = ()=>{
+    view = b.dataset.view;
+    document.querySelectorAll('.sp-view').forEach(x=> x.classList.toggle('active', x===b));
+  });
+  const wire = (id, key, parse, min)=>{
+    const inp = document.getElementById(id);
+    inp.addEventListener('change', ()=>{
+      const e = opts.getEntry();
+      e[key] = Math.max(min, parse(inp.value) || (key==='columns' ? 0 : (key==='fps' ? 12 : 1)));
+      inp.value = e[key];
+      slider.max = Math.max(0, geom().frames - 1);
+      if(idx > geom().frames - 1) idx = 0;
+      save(); if(opts.onChange) opts.onChange();
+    });
+  };
+  wire('sp-fps', 'fps', parseFloat, 1);
+  wire('sp-frames', 'frameCount', v=>parseInt(v,10), 1);
+  wire('sp-cols', 'columns', v=>parseInt(v,10), 0);
+
+  const draw = ()=>{
+    const g = geom();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    if(view === 'anim'){
+      const s = Math.min(canvas.width / g.fw, canvas.height / g.fh);
+      const dw = g.fw * s, dh = g.fh * s;
+      const sx = (idx % g.cols) * g.fw, sy = Math.floor(idx / g.cols) * g.fh;
+      ctx.drawImage(img, sx, sy, g.fw, g.fh, (canvas.width-dw)/2, (canvas.height-dh)/2, dw, dh);
+    }else{
+      const s = Math.min(canvas.width / g.w, canvas.height / g.h);
+      const dw = g.w * s, dh = g.h * s, ox = (canvas.width-dw)/2, oy = (canvas.height-dh)/2;
+      ctx.drawImage(img, ox, oy, dw, dh);
+      ctx.lineWidth = 1;
+      for(let i=0; i<g.cols*g.rows; i++){
+        const x = ox + (i % g.cols) * g.fw * s, y = oy + Math.floor(i / g.cols) * g.fh * s;
+        if(i >= g.frames){ ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(x, y, g.fw*s, g.fh*s); }
+        ctx.strokeStyle = i === idx ? 'rgba(255,215,64,1)' : 'rgba(122,184,255,.7)';
+        ctx.lineWidth = i === idx ? 3 : 1;
+        ctx.strokeRect(x+.5, y+.5, g.fw*s-1, g.fh*s-1);
+        if(g.fw*s > 22){ ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = '11px monospace'; ctx.fillText(String(i+1), x+4, y+13); }
+      }
+    }
+    frameLabel.textContent = `Frame ${idx+1} / ${g.frames}`;
+    slider.value = idx;
+    const even = Number.isInteger(g.fw) && Number.isInteger(g.fh);
+    info.textContent = `Sheet ${g.w}×${g.h}px · ${g.cols} column${g.cols===1?'':'s'} × ${g.rows} row${g.rows===1?'':'s'} · each frame ${Math.round(g.fw*100)/100}×${Math.round(g.fh*100)/100}px` +
+      (even ? '' : ' — ⚠ the sheet does not divide evenly into these frames; check Frames / Cols (the Sheet & frame grid view shows where the cuts fall).');
+  };
+  const tick = now=>{
+    if(!document.body.contains(canvas)) return; // modal closed -> stop
+    const dt = Math.min(0.25, (now - last) / 1000); last = now;
+    if(img.complete && img.naturalWidth){
+      const g = geom();
+      if(playing && g.frames > 1){
+        acc += dt * g.fps;
+        while(acc >= 1){
+          acc -= 1; idx++;
+          if(idx >= g.frames){
+            if(document.getElementById('sp-loop').checked) idx = 0;
+            else { idx = g.frames - 1; setPlaying(false); acc = 0; break; }
+          }
+        }
+      }
+      draw();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 // [Round 353] Stance art -- see the #stances-art-col markup comment for the
 // design. Data model (schema stanceArt / stanceArtLinks): the library
 // (state.stanceArt) holds uploaded sprites/sheets; state.stanceArtLinks is the
@@ -21281,7 +21456,7 @@ function renderStanceArt(){
       </div>
       <div class="pose-sheet-error sa-error"></div>
       <div class="stance-art-used"><div>Used by:</div><div class="sa-chips">${chips}</div>${addRow}</div>
-      <div style="margin-top:8px; text-align:right;"><button type="button" class="danger sa-delete" style="font-size:11px; padding:2px 8px;">Delete art</button></div>
+      <div style="margin-top:8px; display:flex; justify-content:space-between; gap:8px;">${hasImg ? `<button type="button" class="secondary preview-btn sa-preview">&#9654; Preview</button>` : '<span></span>'}<button type="button" class="danger sa-delete" style="font-size:11px; padding:2px 8px;">Delete art</button></div>
     </div>`;
   }).join('');
   body.innerHTML = `
@@ -21364,6 +21539,15 @@ function renderStanceArt(){
       stanceArtAfterLinkChange();
     });
   });
+  body.querySelectorAll('.sa-preview').forEach(btn=> btn.addEventListener('click', ()=>{
+    const a = entryOf(btn);
+    openSpritePreview({
+      title: `Preview — ${a.name || 'Stance art'}`,
+      getEntry: ()=> state.stanceArt.find(x=>x.id===a.id) || a,
+      getUrl: ()=> findAssetDataUrl(a.assetRef, 'stanceArt'),
+      onChange: ()=> renderStanceArt(),
+    });
+  }));
   body.querySelectorAll('.sa-delete').forEach(btn=> btn.addEventListener('click', ()=>{
     const a = entryOf(btn);
     const n = state.stanceArtLinks.filter(l=>l.artRef===a.id).length;
