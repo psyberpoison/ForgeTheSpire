@@ -1315,6 +1315,9 @@
     background:var(--cat-color); color:#0a121e; cursor:pointer;
   }
   .trig-picker-btn::after{content:' \25BE'; opacity:.65; font-weight:400;}
+  /* [Round 360] Only one trigger to choose (e.g. a potion's "When this potion is used"): the button is a plain label -- no caret, no pointer, no flyout. */
+  .trig-picker-btn.trig-picker-static{cursor:default;}
+  .trig-picker-btn.trig-picker-static::after{content:none;}
   /* [Tyler: "the cascading element doesn't appear overlayed. I don't
      want a sidescrolling bar"] The shared .picker-list{max-height:210px;
      overflow-y:auto;} base rule (further down this stylesheet, so it
@@ -22384,8 +22387,20 @@ function renderTriggerPicker(container, values, selected, onSelect){
     return cat ? cat.color : '#7a8699';
   };
 
+  // [Round 360, Tyler: "there is only 1 option here, so don't have
+  // anything pop up at all when the user clicks on the 'when the potion
+  // is used' button"] With exactly one selectable trigger there is
+  // nothing to choose, so render the pill as a static label with no
+  // flyout and no click handler.
+  const onlyOneTrigger = rows.reduce((n, c) => n + c.triggers.length, 0) <= 1;
+
   function render(){
     container.classList.remove('open');
+    if(onlyOneTrigger){
+      container.innerHTML = `<button type="button" class="trig-picker-btn trig-picker-static" style="--cat-color:${catColorFor(selected)}" tabindex="-1">${escapeHtml(triggerLabel(selected))}</button>`;
+      container.querySelector('.trig-picker-btn').onclick = (e)=>{ e.stopPropagation(); };
+      return;
+    }
     container.innerHTML = `
       <button type="button" class="trig-picker-btn" style="--cat-color:${catColorFor(selected)}" title="Click to change trigger">${escapeHtml(triggerLabel(selected))}</button>
       <div class="picker-list trig-picker-list">
