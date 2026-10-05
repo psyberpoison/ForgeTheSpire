@@ -3874,11 +3874,7 @@
     </div>
     <div class="panel-body">
       <div class="panel-desc">
-        A Stance (like Wrath/Calm/Divinity) a creature can enter and exit — modifying damage dealt/taken, enemy buff
-        strength, heal effectiveness, and energy on enter/exit, while active. There's no native Stance system in the
-        real game engine — every field below compiles into a real, working custom Power that your cards' own
-        "Enter Stance"/"Exit Stance" effects (and the "is in stance" condition) can reference, the exact same way
-        Wrath/Calm/Divinity themselves do once picked from the vanilla dropdown in those effects.
+        A Stance (like Wrath/Calm/Divinity) a creature can enter and exit
       </div>
       <div class="grid-cards" id="stances-grid"></div>
     </div>
@@ -21018,7 +21014,7 @@ function renderStances(){
   state.stances.forEach(s=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(s.name||'Untitled')}</div><div class="t-meta">stance</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(s.name||'Untitled')}</div><div class="t-meta">stance — compiles into a real, working custom Power</div>`;
     t.onclick = ()=> openStanceEditor(s.id);
     stanceGrid.appendChild(t);
   });
