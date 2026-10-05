@@ -445,6 +445,16 @@
         "$ref": "#/definitions/stance"
       }
     },
+    "stanceArt": {
+      "type": "array",
+      "description": "[Round 351] Tyler: \"stances should also allow animation/sprite changes while the character is in that stance. Add an art tab like we have for the card section. allow the user to upload custom sprites and animations there, but they will remain unused until the creator links them to a stance that has been created, or the user reuses the existing stances for it. dont delete the custom sprite/animation if the user deletes the stance, just unlink it, allow it to sit in the art tab unused.\" The Stances panel's Art library: each entry is one uploaded sprite-sheet (same fps/frameCount/columns shape as character.poseSheets; frameCount 1 = a plain static sprite). An entry compiles into nothing on its own -- it only reaches the generated mod once at least one stanceArtLinks[] entry points at it (and that link's stance actually exists in the compiled output). Deleting a stance (or a link) never deletes the entry; only deleting the entry itself from the library does.\n",
+      "items": { "$ref": "#/definitions/stanceArtEntry" }
+    },
+    "stanceArtLinks": {
+      "type": "array",
+      "description": "[Round 351] Which stanceArt[] entry plays for which pose while a given stance is active. At most one link per (stance, pose); a stance pose with no link keeps playing the character's normal art for that pose. Edited from BOTH the stance's own editor (pose slots) and the Art library entry's own 'Used by' list (Tyler: \"add a link in both places that updates the other\") -- this array is the single source of truth for both views. A custom stance's links are removed when that stance is deleted; the stanceArt[] entries they pointed at are left in the library, unlinked. Vanilla Wrath/Calm/Divinity are linkable too (stanceKind:'vanilla'), and are only compiled when that vanilla stance is itself referenced by an EnterStance/InStance somewhere.",
+      "items": { "$ref": "#/definitions/stanceArtLink" }
+    },
     "orbs": {
       "type": "array",
       "description": "Tyler's request: \"a section to the page to create custom ... orbs\" (a Defect-style gameplay Orb \u2014 NOT the character's energy-orb art, see character.orb above). UPDATED after reflect-baselib rounds 11/12 found a REAL, WORKING example (TheBurdenedNewCharacter.Orbs.MoonOrb) \u2014 passiveValue/evokeValue now compile into a real BaseLib.Abstracts.CustomOrbModel subclass (see backend/templates/Orb.cs.template and definitions/orb below). What's still NOT compiled: passiveText/evokeText (what Passive()/Evoke() actually DO) \u2014 Forge has no effect editor for orb hooks yet, so those remain freeform design notes exported to Orbs/README.md (see compiler.js:buildOrbsReadme) alongside the real .cs file.",
@@ -485,7 +495,9 @@
               "cardFrame",
               "selectSfx",
               "deathSfx",
-              "epochPortrait"
+              "epochPortrait",
+              "poseSheet",
+              "stanceArt"
             ]
           },
           "dataUrl": {
@@ -501,6 +513,29 @@
     }
   },
   "definitions": {
+    "stanceArtEntry": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Library label only -- never compiled." },
+        "assetRef": { "type": ["string", "null"], "description": "asset id, see assets[] (kind:'stanceArt'). Uploaded as-is, no forced resize." },
+        "fps": { "type": "number", "minimum": 1, "default": 12, "description": "Same meaning as poseSheetEntry.fps." },
+        "frameCount": { "type": "integer", "minimum": 1, "default": 1, "description": "Same meaning as poseSheetEntry.frameCount (1 = static sprite)." },
+        "columns": { "type": "integer", "minimum": 0, "default": 0, "description": "Same meaning as poseSheetEntry.columns (0 = single row)." }
+      }
+    },
+    "stanceArtLink": {
+      "type": "object",
+      "required": ["artRef", "stanceKind", "pose"],
+      "properties": {
+        "artRef": { "type": "string", "description": "A stanceArt[].id." },
+        "stanceKind": { "enum": ["custom", "vanilla"] },
+        "stanceRef": { "type": "string", "description": "A stances[].id (stanceKind:'custom' only)." },
+        "stanceVanillaRef": { "enum": ["Wrath", "Calm", "Divinity"], "description": "(stanceKind:'vanilla' only)." },
+        "pose": { "enum": ["idle", "attack", "heavyAttack", "cast", "hurt", "death", "victory"] }
+      }
+    },
     "poseSheetEntry": {
       "type": "object",
       "description": "One uploaded sprite-sheet animation for character.poseSheets — see that field's own description for the full compile mechanism. No fixed pixel dimensions are enforced on upload (unlike every other character art slot) since a sheet's real size depends entirely on frameCount/columns — forcing a resize would corrupt the frame grid.",

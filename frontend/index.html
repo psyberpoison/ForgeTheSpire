@@ -2835,6 +2835,26 @@
   .pose-sheet-fields label{display:block; font-size:8px; text-transform:uppercase; letter-spacing:.04em; color:var(--parchment-dim); margin-bottom:2px;}
   .pose-sheet-fields input[type=number]{width:100%; box-sizing:border-box; font-size:11px; padding:3px 4px;}
   .pose-sheet-error{display:none; color:var(--danger-bright); font-size:9px; margin-top:4px;}
+  /* [Round 353] Stance art library (lives in #stances-art-body) */
+  #stances-art-body{font-style:normal;}
+  .stance-art-lib{display:flex; flex-wrap:wrap; gap:14px; margin-top:6px;}
+  .stance-art-card{flex:1 1 230px; max-width:280px; min-width:210px; border:1px solid var(--border-soft); border-radius:8px; padding:8px 10px; background:var(--ink);}
+  .stance-art-card input[type=text]{width:100%; box-sizing:border-box; font-size:12px; padding:3px 6px;}
+  .stance-art-used{margin-top:8px; font-size:10.5px; color:var(--parchment-dim);}
+  .stance-art-used .sa-none{font-style:italic;}
+  .stance-art-chip{display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border-soft); border-radius:10px; padding:1px 4px 1px 8px; margin:2px 4px 2px 0; font-size:10.5px; color:var(--parchment);}
+  .stance-art-chip button{background:none; border:none; cursor:pointer; color:var(--parchment-dim); padding:0 3px; font-size:13px; line-height:1;}
+  .stance-art-chip button:hover{color:var(--danger-bright);}
+  .stance-art-addlink{display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;}
+  .stance-art-addlink select{flex:1 1 90px; min-width:0; font-size:11px; padding:2px 4px;}
+  .stance-art-addlink button{font-size:11px; padding:2px 8px;}
+  .stance-art-vanilla{margin-top:14px; border-top:1px solid var(--border-soft); padding-top:10px;}
+  .stance-art-vrow{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:flex-end; margin:6px 0;}
+  .stance-art-vrow .sa-vname{flex:1 1 100%; font-size:11px; color:var(--parchment); text-transform:uppercase; letter-spacing:.05em;}
+  .stance-art-slot{flex:1 1 105px; max-width:140px; min-width:95px;}
+  .stance-art-slot label{display:block; font-size:8.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--parchment-dim); margin-bottom:2px;}
+  .stance-art-slot select{width:100%; box-sizing:border-box; font-size:11px; padding:2px 4px;}
+  .stance-art-editor-slots{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:6px 12px; margin-top:6px;}
   /* [Round 98] Uniform Color/Gender/Target branch/Max HP/Starting Gold/
      Energy per turn/Starting Orb Slots boxes — Tyler: "lets make all of
      these boxes more uniform in both dimensions as well as placement."
@@ -3872,6 +3892,23 @@
         A Stance (like Wrath/Calm/Divinity) a creature can enter and exit
       </div>
       <div class="grid-cards" id="stances-grid"></div>
+      <!-- [Round 353] Stance art -- Tyler: "stances should also allow
+           animation/sprite changes while the character is in that stance.
+           Add an art tab like we have for the card section." Same
+           collapsible-dropdown pattern as the Cards panel's Art dropdown.
+           Uploaded art sits unused in the library until linked to a stance
+           (from the stance's own editor, from the entry's own "Used by"
+           list, or -- for the vanilla Wrath/Calm/Divinity -- from the slot
+           grid below the library). Populated by renderStanceArt(). -->
+      <div class="cards-options-bar">
+        <div class="cards-options-col" id="stances-art-col" style="flex:1 1 100%;">
+          <button type="button" class="cards-options-header" id="stances-art-toggle">
+            <span>Art</span>
+            <span class="cards-options-caret">&#9662;</span>
+          </button>
+          <div class="cards-options-body" id="stances-art-body" style="max-height:520px;"></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -5502,6 +5539,8 @@ function blankState(){
     pets: [],
     orbs: [],
     stances: [],
+    stanceArt: [],
+    stanceArtLinks: [],
     assets: []
   };
 }
@@ -5878,6 +5917,9 @@ function migrateLegacyStatusActions(pkg){
   // a package saved before "Custom stances" existed simply has no `stances`
   // key at all.
   if(!Array.isArray(pkg.stances)) pkg.stances = [];
+  // [Round 353] Stance art library + links -- same additive-only backfill.
+  if(!Array.isArray(pkg.stanceArt)) pkg.stanceArt = [];
+  if(!Array.isArray(pkg.stanceArtLinks)) pkg.stanceArtLinks = [];
 
   // v6 -> v7: character-level ART additions (Tyler's "move on to the art
   // items next" round — items 2/3/4/5/7/9/10/11/16/18 from the list).
@@ -7610,6 +7652,7 @@ function wireCardsOptionsCol(colId, toggleId, bodyId){
 }
 wireCardsOptionsCol('cards-settings-col', 'cards-settings-toggle', 'cards-settings-body');
 wireCardsOptionsCol('cards-art-col', 'cards-art-toggle', 'cards-art-body');
+wireCardsOptionsCol('stances-art-col', 'stances-art-toggle', 'stances-art-body');
 // [Round 137] .cards-options-body is now a floating overlay (position:
 // absolute — see the CSS comment on .cards-options-bar) rather than
 // in-flow content, so it needs its own click-outside-closes behavior,
@@ -21003,6 +21046,235 @@ function openOrbEditor(orbId){
 // enemyBuffPercent) are capped at 100 (reduction only, per Tyler's own
 // uploaded example) -- those two number inputs get `max="100"`; every
 // other percent field is uncapped, same as orbs' own passive/evoke values.
+// [Round 353] Stance art -- see the #stances-art-col markup comment for the
+// design. Data model (schema stanceArt / stanceArtLinks): the library
+// (state.stanceArt) holds uploaded sprites/sheets; state.stanceArtLinks is the
+// single source of truth for which entry is used by which (stance, pose) slot,
+// edited from three places (the stance editor, an entry's own "Used by" list,
+// and the vanilla-stance slot grid) -- all of which go through
+// setStanceArtLink() so they can never disagree. At most one link per slot.
+function stanceArtEnsure(){
+  if(!Array.isArray(state.stanceArt)) state.stanceArt = [];
+  if(!Array.isArray(state.stanceArtLinks)) state.stanceArtLinks = [];
+}
+function stanceArtTarget(kind, ref){
+  return kind==='vanilla' ? {stanceKind:'vanilla', stanceVanillaRef:ref} : {stanceKind:'custom', stanceRef:ref};
+}
+function stanceArtLinkMatches(l, kind, ref, pose){
+  if(pose!==undefined && l.pose!==pose) return false;
+  return kind==='vanilla'
+    ? (l.stanceKind==='vanilla' && l.stanceVanillaRef===ref)
+    : (l.stanceKind!=='vanilla' && l.stanceRef===ref);
+}
+function findStanceArtLink(kind, ref, pose){
+  stanceArtEnsure();
+  return state.stanceArtLinks.find(l=>stanceArtLinkMatches(l, kind, ref, pose)) || null;
+}
+// artId null/'' just clears the slot.
+function setStanceArtLink(kind, ref, pose, artId){
+  stanceArtEnsure();
+  state.stanceArtLinks = state.stanceArtLinks.filter(l=>!stanceArtLinkMatches(l, kind, ref, pose));
+  if(artId) state.stanceArtLinks.push(Object.assign({artRef: artId}, stanceArtTarget(kind, ref), {pose}));
+  save();
+}
+function stanceArtHasImage(art){ return !!findAssetDataUrl(art.assetRef, 'stanceArt'); }
+function stanceArtTargetLabel(kind, ref){
+  if(kind==='vanilla') return ref + ' (vanilla)';
+  const st = state.stances.find(x=>x.id===ref);
+  return st ? (st.name||'Untitled') : '(deleted stance)';
+}
+function stanceArtPoseLabel(pose){
+  const p = POSE_SHEETS.find(x=>x.id===pose);
+  return p ? p.label : pose;
+}
+// "custom:<id>" / "vanilla:<Name>" <-> (kind, ref) for the entry-side stance picker.
+function stanceArtTargetOptions(selected){
+  const custom = state.stances.length
+    ? `<optgroup label="Your stances">${state.stances.map(st=>{ const v='custom:'+st.id; return `<option value="${escapeAttr(v)}" ${v===selected?'selected':''}>${escapeHtml(st.name||'Untitled')}</option>`; }).join('')}</optgroup>` : '';
+  const vanilla = `<optgroup label="Vanilla stances">${BUILTIN_STANCES.map(n=>{ const v='vanilla:'+n; return `<option value="${escapeAttr(v)}" ${v===selected?'selected':''}>${escapeHtml(n)}</option>`; }).join('')}</optgroup>`;
+  return custom + vanilla;
+}
+function stanceArtParseTarget(v){
+  const i = v.indexOf(':');
+  return {kind: v.slice(0,i), ref: v.slice(i+1)};
+}
+// Pose <option>s for the entry-side "add link" row; flags slots another entry
+// already occupies (linking replaces it).
+function stanceArtPoseOptions(targetVal, artId){
+  const t = stanceArtParseTarget(targetVal);
+  return POSE_SHEETS.map(p=>{
+    const cur = findStanceArtLink(t.kind, t.ref, p.id);
+    let note = '';
+    if(cur && cur.artRef===artId) note = ' (already linked)';
+    else if(cur){ const o = state.stanceArt.find(a=>a.id===cur.artRef); note = ` (replaces ${o ? (o.name||'Untitled') : 'another entry'})`; }
+    return `<option value="${p.id}">${escapeHtml(p.label)}${escapeHtml(note)}</option>`;
+  }).join('');
+}
+function stanceArtSlotSelect(kind, ref, pose, cls){
+  const cur = findStanceArtLink(kind, ref, pose);
+  const opts = state.stanceArt.filter(a=>stanceArtHasImage(a) || (cur && cur.artRef===a.id)).map(a=>
+    `<option value="${escapeAttr(a.id)}" ${cur && cur.artRef===a.id ? 'selected':''}>${escapeHtml(a.name||'Untitled')}</option>`).join('');
+  return `<select class="${cls}" data-kind="${kind}" data-ref="${escapeAttr(ref)}" data-pose="${pose}"><option value="">— none —</option>${opts}</select>`;
+}
+function stanceArtAfterLinkChange(){
+  renderStanceArt();
+}
+function renderStanceArt(){
+  const body = document.getElementById('stances-art-body');
+  if(!body) return;
+  stanceArtEnsure();
+  const entries = state.stanceArt;
+  const cards = entries.map(a=>{
+    const links = state.stanceArtLinks.filter(l=>l.artRef===a.id);
+    const hasImg = stanceArtHasImage(a);
+    const chips = links.length ? links.map(l=>{
+      const kind = l.stanceKind==='vanilla' ? 'vanilla' : 'custom';
+      const ref = kind==='vanilla' ? l.stanceVanillaRef : l.stanceRef;
+      return `<span class="stance-art-chip">${escapeHtml(stanceArtTargetLabel(kind, ref))} · ${escapeHtml(stanceArtPoseLabel(l.pose))}<button type="button" class="sa-unlink" data-kind="${kind}" data-ref="${escapeAttr(ref)}" data-pose="${l.pose}" title="Unlink (the art stays in this library)" aria-label="Unlink">&times;</button></span>`;
+    }).join('') : `<span class="sa-none">Not used by any stance yet</span>`;
+    const firstTarget = state.stances.length ? 'custom:'+state.stances[0].id : 'vanilla:'+BUILTIN_STANCES[0];
+    const addRow = hasImg
+      ? `<div class="stance-art-addlink" data-art="${escapeAttr(a.id)}"><select class="sa-add-stance">${stanceArtTargetOptions(firstTarget)}</select><select class="sa-add-pose">${stanceArtPoseOptions(firstTarget, a.id)}</select><button type="button" class="secondary sa-add-btn">Link</button></div>`
+      : `<div class="hint-small">Upload an image to be able to link this entry.</div>`;
+    return `
+    <div class="stance-art-card" data-art="${escapeAttr(a.id)}">
+      <input type="text" class="sa-name" value="${escapeAttr(a.name||'')}" placeholder="Name this art" aria-label="Art name">
+      <div class="art-preview-frame pose-sheet-frame sa-frame" style="margin-top:6px;" title="Click to ${hasImg?'replace':'upload'} the sprite / sheet">
+        ${hasImg ? `<img src="${escapeAttr(findAssetDataUrl(a.assetRef,'stanceArt'))}">` : `<div class="art-placeholder" style="font-size:8px; padding:4px; letter-spacing:.06em;">Click to upload</div>`}
+        <div class="art-click-hint" style="font-size:8px; padding:4px;">Click to change</div>
+      </div>
+      <input type="file" class="sa-upload art-upload-input" accept="image/png,image/jpeg,image/webp">
+      <div class="pose-sheet-fields">
+        <div class="field-col"><label>FPS</label><input type="number" class="sa-fps" min="1" step="1" value="${a.fps ?? 12}"></div>
+        <div class="field-col"><label>Frames</label><input type="number" class="sa-framecount" min="1" step="1" value="${a.frameCount ?? 1}"></div>
+        <div class="field-col"><label title="Frames per row in the sheet. Leave at 0 to treat the whole sheet as a single row.">Cols</label><input type="number" class="sa-columns" min="0" step="1" value="${a.columns ?? 0}"></div>
+      </div>
+      <div class="pose-sheet-error sa-error"></div>
+      <div class="stance-art-used"><div>Used by:</div><div class="sa-chips">${chips}</div>${addRow}</div>
+      <div style="margin-top:8px; text-align:right;"><button type="button" class="danger sa-delete" style="font-size:11px; padding:2px 8px;">Delete art</button></div>
+    </div>`;
+  }).join('');
+  const vanillaRows = BUILTIN_STANCES.map(n=>`
+    <div class="stance-art-vrow">
+      <div class="sa-vname">${escapeHtml(n)}</div>
+      ${POSE_SHEETS.map(p=>`<div class="stance-art-slot"><label>${escapeHtml(p.label)}</label>${stanceArtSlotSelect('vanilla', n, p.id, 'sa-vslot')}</div>`).join('')}
+    </div>`).join('');
+  body.innerHTML = `
+    <div class="hint-small" style="margin-bottom:8px;">Sprites / animation sheets the character shows while in a stance — 7 poses per stance (idle, attack, heavy attack, cast, taking damage, death, victory), each optional; any pose left unlinked falls back to the character's normal art. Upload art here, then link it to a stance from this list or from the stance's own editor. Art stays in this library — unused — if its stance is deleted. Frames 1 = a static sprite.</div>
+    <button type="button" class="ghost" id="sa-add-btn">+ Add art</button>
+    <input type="file" id="sa-add-input" class="art-upload-input" accept="image/png,image/jpeg,image/webp" multiple>
+    <div class="pose-sheet-error" id="sa-add-error"></div>
+    <div class="stance-art-lib" id="sa-lib">${cards || `<div class="hint-small" id="sa-empty">No stance art uploaded yet.</div>`}</div>
+    <div class="stance-art-vanilla">
+      <div class="hint-small">Vanilla stances — give the real Wrath / Calm / Divinity their own art while the character is in them (only takes effect if a card actually enters that stance).</div>
+      ${vanillaRows}
+    </div>`;
+
+  // Clicks inside the body mutate (re-render) the DOM, which would otherwise
+  // make the document-level click-outside listener think the target was
+  // outside the (now detached) element and close the dropdown.
+  body.onclick = e=> e.stopPropagation();
+
+  const entryOf = el => state.stanceArt.find(a=>a.id===el.closest('.stance-art-card').dataset.art);
+  const errOf = el => el.closest('.stance-art-card').querySelector('.sa-error');
+
+  document.getElementById('sa-add-btn').onclick = ()=> document.getElementById('sa-add-input').click();
+  document.getElementById('sa-add-input').onchange = async e=>{
+    const files = Array.from(e.target.files||[]);
+    const errEl = document.getElementById('sa-add-error');
+    errEl.style.display = 'none';
+    for(const f of files){
+      try{
+        const dataUrl = await readFileAsDataUrl(f);
+        const entry = { id: uid('stanceart'), name: (f.name||'Stance art').replace(/\.[^.]+$/,''), assetRef: null, fps:12, frameCount:1, columns:0 };
+        entry.assetRef = commitAsset(dataUrl, null, 'stanceArt', entry.name);
+        state.stanceArt.push(entry);
+      }catch(err){
+        errEl.style.color = 'var(--danger-bright)';
+        errEl.textContent = err.message || "Couldn't read that image file.";
+        errEl.style.display = 'block';
+      }
+    }
+    save(); renderStanceArt();
+  };
+
+  body.querySelectorAll('.sa-name').forEach(inp=> inp.addEventListener('change', ()=>{
+    const a = entryOf(inp); a.name = inp.value; save();
+    // names show up in every slot dropdown / chip -- refresh them
+    renderStanceArt();
+  }));
+  body.querySelectorAll('.sa-frame').forEach(fr=> fr.addEventListener('click', ()=>{
+    fr.parentElement.querySelector('.sa-upload').click();
+  }));
+  body.querySelectorAll('.sa-upload').forEach(inp=> inp.addEventListener('change', e=>{
+    const file = e.target.files[0]; if(!file) return;
+    const a = entryOf(inp), errEl = errOf(inp);
+    errEl.style.display = 'none';
+    readFileAsDataUrl(file).then(dataUrl=>{
+      a.assetRef = commitAsset(dataUrl, a.assetRef, 'stanceArt', a.name);
+      save(); renderStanceArt();
+    }).catch(err=>{
+      errEl.style.color = 'var(--danger-bright)';
+      errEl.textContent = err.message || "Couldn't read that image file.";
+      errEl.style.display = 'block';
+      inp.value = '';
+    });
+  }));
+  body.querySelectorAll('.sa-fps').forEach(inp=> inp.addEventListener('change', ()=>{
+    const a = entryOf(inp); a.fps = Math.max(1, parseFloat(inp.value) || 12); inp.value = a.fps; save();
+  }));
+  body.querySelectorAll('.sa-framecount').forEach(inp=> inp.addEventListener('change', ()=>{
+    const a = entryOf(inp); a.frameCount = Math.max(1, parseInt(inp.value,10) || 1); inp.value = a.frameCount; save();
+  }));
+  body.querySelectorAll('.sa-columns').forEach(inp=> inp.addEventListener('change', ()=>{
+    const a = entryOf(inp); a.columns = Math.max(0, parseInt(inp.value,10) || 0); inp.value = a.columns; save();
+  }));
+  body.querySelectorAll('.sa-unlink').forEach(btn=> btn.addEventListener('click', ()=>{
+    setStanceArtLink(btn.dataset.kind, btn.dataset.ref, btn.dataset.pose, null);
+    stanceArtAfterLinkChange();
+  }));
+  body.querySelectorAll('.stance-art-addlink').forEach(row=>{
+    const artId = row.dataset.art;
+    const stSel = row.querySelector('.sa-add-stance'), poseSel = row.querySelector('.sa-add-pose');
+    stSel.addEventListener('change', ()=>{ poseSel.innerHTML = stanceArtPoseOptions(stSel.value, artId); });
+    row.querySelector('.sa-add-btn').addEventListener('click', ()=>{
+      const t = stanceArtParseTarget(stSel.value);
+      setStanceArtLink(t.kind, t.ref, poseSel.value, artId);
+      stanceArtAfterLinkChange();
+    });
+  });
+  body.querySelectorAll('.sa-delete').forEach(btn=> btn.addEventListener('click', ()=>{
+    const a = entryOf(btn);
+    const n = state.stanceArtLinks.filter(l=>l.artRef===a.id).length;
+    if(n && !confirm(`"${a.name||'Untitled'}" is linked to ${n} stance pose${n===1?'':'s'}. Delete it and unlink those poses?`)) return;
+    if(a.assetRef) commitAsset(null, a.assetRef, 'stanceArt');
+    state.stanceArtLinks = state.stanceArtLinks.filter(l=>l.artRef!==a.id);
+    state.stanceArt = state.stanceArt.filter(x=>x.id!==a.id);
+    save(); renderStanceArt();
+  }));
+  body.querySelectorAll('.sa-vslot').forEach(sel=> sel.addEventListener('change', ()=>{
+    setStanceArtLink('vanilla', sel.dataset.ref, sel.dataset.pose, sel.value || null);
+    stanceArtAfterLinkChange();
+  }));
+}
+// Stance-editor side of the same links (a "Stance art" row per pose).
+function wireStanceEditorArt(stanceId){
+  const host = document.getElementById('st-art-slots');
+  if(!host) return;
+  stanceArtEnsure();
+  const draw = ()=>{
+    if(!state.stanceArt.length){
+      host.innerHTML = `<div class="hint-small" style="grid-column:1/-1;">No stance art uploaded yet — add some in the Stances panel's Art dropdown, then link it here.</div>`;
+      return;
+    }
+    host.innerHTML = POSE_SHEETS.map(p=>`<div class="stance-art-slot" style="max-width:none;"><label>${escapeHtml(p.label)}</label>${stanceArtSlotSelect('custom', stanceId, p.id, 'sa-eslot')}</div>`).join('');
+    host.querySelectorAll('.sa-eslot').forEach(sel=> sel.addEventListener('change', ()=>{
+      setStanceArtLink('custom', stanceId, sel.dataset.pose, sel.value || null);
+      renderStanceArt();
+    }));
+  };
+  draw();
+}
 const stanceGrid = document.getElementById('stances-grid');
 function renderStances(){
   stanceGrid.innerHTML = '';
@@ -21024,6 +21296,7 @@ function renderStances(){
   };
   stanceGrid.appendChild(addTile);
   document.getElementById('stance-count').textContent = `${state.stances.length} stance${state.stances.length===1?'':'s'}`;
+  renderStanceArt();
 }
 function openStanceEditor(stanceId){
   const s = state.stances.find(x=>x.id===stanceId);
@@ -21055,13 +21328,24 @@ function openStanceEditor(stanceId){
       <div class="row">
         <div><label title="When checked, this stance automatically exits at the start of your turn — mirrors the real Divinity stance.">Exit automatically at start of turn</label><select id="st-exit-turn-start">${optList(['true','false'], String(s.exitAtTurnStart===true))}</select></div>
       </div>
+      <label style="margin-top:12px;" title="Optional sprites/animations the character shows while in this stance. Pick from the Art library in the Stances panel (upload there first). Any pose left empty falls back to the character's normal art.">Stance art</label>
+      <div class="stance-art-editor-slots" id="st-art-slots"></div>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-stance">Delete</button>
       <button id="save-stance">Done</button>
     </div>
   `);
-  document.getElementById('delete-stance').onclick = ()=>{ state.stances = state.stances.filter(x=>x.id!==stanceId); save(); renderStances(); closeModal(); };
+  // [Round 353] Deleting a stance only UNLINKS its art (Tyler: "dont delete
+  // the custom sprite/animation if the user deletes the stance, just unlink
+  // it, allow it to sit in the art tab unused") -- the art entries and their
+  // uploaded assets are untouched.
+  document.getElementById('delete-stance').onclick = ()=>{
+    state.stances = state.stances.filter(x=>x.id!==stanceId);
+    state.stanceArtLinks = (state.stanceArtLinks||[]).filter(l=>!(l.stanceKind==='custom' && l.stanceRef===stanceId));
+    save(); renderStances(); closeModal();
+  };
+  wireStanceEditorArt(stanceId);
   // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
   // — see that variable's own header comment.
   const doSaveStance = ()=>{
@@ -21230,7 +21514,7 @@ document.getElementById('resetBtn').onclick = ()=>{
   localStorage.removeItem(STORAGE_KEY);
   state = blankState();
   hydrateCharacterForm();
-  renderCards(); renderRelics(); renderMechanics(); renderEnchantments(); renderAfflictions(); renderPets(); renderOrbs();
+  renderCards(); renderRelics(); renderMechanics(); renderEnchantments(); renderAfflictions(); renderPets(); renderOrbs(); renderStances();
 };
 
 /* ---------- import project ----------

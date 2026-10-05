@@ -3061,6 +3061,53 @@ function validateCharacterPackage(pkg) {
     }
   });
 
+  // [Round 351] Stance art library + links. See schema's stanceArt/
+  // stanceArtLinks descriptions. An unlinked library entry is never
+  // checked beyond its own shape (it compiles into nothing); a LINKED one
+  // must actually have an upload, since otherwise the link could not
+  // compile into a real animation.
+  const STANCE_ART_POSES = ['idle', 'attack', 'heavyAttack', 'cast', 'hurt', 'death', 'victory'];
+  if (pkg.stanceArt !== undefined && !Array.isArray(pkg.stanceArt)) errors.push('"stanceArt" must be an array.');
+  if (pkg.stanceArtLinks !== undefined && !Array.isArray(pkg.stanceArtLinks)) errors.push('"stanceArtLinks" must be an array.');
+  const stanceArtList = Array.isArray(pkg.stanceArt) ? pkg.stanceArt : [];
+  const stanceArtById = new Map();
+  stanceArtList.forEach((art, i) => {
+    const p = `stanceArt[${i}]${art && art.name ? ` "${art.name}"` : ''}`;
+    if (!art || typeof art !== 'object') { errors.push(`${p} must be an object.`); return; }
+    if (!isNonEmptyString(art.id)) errors.push(`${p}.id is required and must be a non-empty string.`);
+    else stanceArtById.set(art.id, art);
+    if (art.name !== undefined && typeof art.name !== 'string') errors.push(`${p}.name must be a string.`);
+    if (art.fps !== undefined && !(typeof art.fps === 'number' && art.fps >= 1)) errors.push(`${p}.fps must be a number >= 1.`);
+    if (art.frameCount !== undefined && !(Number.isInteger(art.frameCount) && art.frameCount >= 1)) errors.push(`${p}.frameCount must be an integer >= 1.`);
+    if (art.columns !== undefined && !(Number.isInteger(art.columns) && art.columns >= 0)) errors.push(`${p}.columns must be an integer >= 0 (0 = single row).`);
+  });
+  const stanceArtSeenSlots = new Set();
+  (Array.isArray(pkg.stanceArtLinks) ? pkg.stanceArtLinks : []).forEach((link, i) => {
+    const p = `stanceArtLinks[${i}]`;
+    if (!link || typeof link !== 'object') { errors.push(`${p} must be an object.`); return; }
+    const art = stanceArtById.get(link.artRef);
+    if (!isNonEmptyString(link.artRef) || !art) errors.push(`${p}.artRef "${link.artRef}" isn't defined in stanceArt[].`);
+    else if (!art.assetRef) errors.push(`${p}: stanceArt "${art.name || art.id}" has no sprite/sheet uploaded yet, so it can't be linked to a stance.`);
+    if (!STANCE_ART_POSES.includes(link.pose)) errors.push(`${p}.pose must be one of: ${STANCE_ART_POSES.join(', ')} (got ${JSON.stringify(link.pose)}).`);
+    let slotKey = null;
+    if (link.stanceKind === 'custom') {
+      if (!isNonEmptyString(link.stanceRef) || !stanceIds.has(link.stanceRef)) errors.push(`${p}.stanceRef "${link.stanceRef}" isn't defined in stances[].`);
+      else slotKey = `custom:${link.stanceRef}:${link.pose}`;
+      if (link.stanceVanillaRef !== undefined) errors.push(`${p}.stanceVanillaRef is only meaningful when stanceKind is "vanilla".`);
+    } else if (link.stanceKind === 'vanilla') {
+      if (!BUILTIN_STANCES.includes(link.stanceVanillaRef)) errors.push(`${p}.stanceVanillaRef must be one of: ${BUILTIN_STANCES.join(', ')} (got ${JSON.stringify(link.stanceVanillaRef)}).`);
+      else slotKey = `vanilla:${link.stanceVanillaRef}:${link.pose}`;
+      if (link.stanceRef !== undefined) errors.push(`${p}.stanceRef is only meaningful when stanceKind is "custom".`);
+    } else {
+      errors.push(`${p}.stanceKind must be "custom" or "vanilla" (got ${JSON.stringify(link.stanceKind)}).`);
+    }
+    if (slotKey) {
+      if (stanceArtSeenSlots.has(slotKey)) errors.push(`${p}: this stance already has a different art entry linked for the "${link.pose}" pose — only one per stance+pose.`);
+      stanceArtSeenSlots.add(slotKey);
+    }
+  });
+
+
   return { valid: errors.length === 0, errors };
 }
 
