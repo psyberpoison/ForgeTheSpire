@@ -896,6 +896,7 @@
           "description": "Automatic potions only: hook-trigger blocks (conditions only; actions are ignored). When the trigger fires and the conditions hold, the potion is used (consumed) and onUse runs.",
           "items": { "$ref": "#/definitions/hookEffectBlock" }
         },
+        "shopPrice": { "type": "integer", "minimum": 1, "maximum": 9999, "description": "Optional shop BUY price in gold. Vanilla potions are priced by rarity only (Common 50 / Uncommon 75 / Rare 100, +-5% shop variance); when set, Forge rescales that to this base via a Harmony postfix on MerchantPotionEntry.CalcCost (variance and relic discounts still apply). Omit to use the rarity price. The game has no potion-selling mechanic, so there is no sell price." },
         "preventsDeath": { "type": "boolean", "description": "Automatic potions only: when true the potion prevents its owner's death (ShouldDie -> false) and is consumed when it does (Fairy-in-a-Bottle pattern, verified via IL)." }
       }
     },

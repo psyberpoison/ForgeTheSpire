@@ -2819,6 +2819,9 @@ function validateCharacterPackage(pkg) {
     if (potion.effects !== undefined && !Array.isArray(potion.effects)) errors.push(`${p}.effects must be an array.`);
     const autoEffects = Array.isArray(potion.effects) ? potion.effects : [];
     if (!isAuto && autoEffects.length) errors.push(`${p}.effects (auto-triggers) are only valid on an Automatic potion — this potion's usage is "${potion.usage}".`);
+    if (potion.shopPrice !== undefined && potion.shopPrice !== null && potion.shopPrice !== '') {
+      if (!Number.isInteger(potion.shopPrice) || potion.shopPrice < 1 || potion.shopPrice > 9999) errors.push(`${p}.shopPrice must be a whole number of gold from 1 to 9999 (leave it unset to use the rarity price).`);
+    }
     if (potion.preventsDeath !== undefined && typeof potion.preventsDeath !== 'boolean') errors.push(`${p}.preventsDeath must be a boolean.`);
     if (potion.preventsDeath === true && !isAuto) errors.push(`${p}.preventsDeath is only valid on an Automatic potion — this potion's usage is "${potion.usage}".`);
     if (isAuto) {

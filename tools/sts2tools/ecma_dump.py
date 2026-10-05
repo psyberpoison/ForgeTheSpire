@@ -241,7 +241,7 @@ class MetadataReader:
                 raise ValueError(f"no column layout for table {tname} ({tid:#x}) — extend COLUMNS")
             widths = [col_width(ctype) for _, ctype in cols]
             rowsize = sum(widths)
-            want = tname in ('TypeDef','MethodDef','Param','TypeRef','TypeSpec')
+            want = tname in ('TypeDef','MethodDef','Param','TypeRef','TypeSpec','Field','Constant')
             rows = []
             for r in range(cnt):
                 if want:

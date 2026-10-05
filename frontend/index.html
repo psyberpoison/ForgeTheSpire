@@ -9444,6 +9444,10 @@ const EPOCH_UNLOCK_REQUIREMENT_OPTIONS = [
 ];
 const EPOCH_PORTRAIT_WIDTH = 810, EPOCH_PORTRAIT_HEIGHT = 500;
 const RELIC_ICON_WIDTH = 256, RELIC_ICON_HEIGHT = 256;
+// [Round 358] Potion art is 256x256 too (Tyler) -- resized on upload like the relic icon.
+const POTION_ICON_WIDTH = 256, POTION_ICON_HEIGHT = 256;
+// Vanilla shop buy price per potion rarity (MerchantPotionEntry.GetCost, verified via IL).
+const POTION_VANILLA_PRICE = { Common: 50, Uncommon: 75, Rare: 100 };
 // [Round 229] Mechanic/status icon — same 256x256 as relic icons; see
 // schema/character.schema.json's mechanic.iconAssetRef description and
 // backend/compiler.js's generateMechanicSource/writeMechanicIcon for the
@@ -18736,6 +18740,7 @@ function openPotionEditor(potionId){
           <div style="display:flex; gap:12px;">
             <div style="flex:1; min-width:0;"><label>Name</label><input type="text" id="m-name" value="${escapeAttr(potion.name)}"></div>
             <div style="flex:0 0 140px;"><label>Rarity</label><select id="m-rarity">${optList(POTION_RARITIES, potion.rarity)}</select></div>
+            <div style="flex:0 0 120px;"><label title="Gold cost in the shop. Leave blank to use the game's rarity price (Common 50 / Uncommon 75 / Rare 100). The game still applies its usual ±5% shop variance and any discount relics. The game has no potion-selling mechanic, so there is no sell price.">Shop price</label><input type="number" id="pt-price" min="1" max="9999" step="1" value="${potion.shopPrice ? escapeAttr(String(potion.shopPrice)) : ''}"></div>
           </div>
           <div style="display:flex; gap:12px; margin-top:14px;">
             <div style="flex:1; min-width:0;"><label title="When the potion can be used. Automatic potions (like Fairy in a Bottle) are consumed by the game itself when one of the triggers below fires.">Usage</label><select id="pt-usage"></select></div>
@@ -18754,7 +18759,7 @@ function openPotionEditor(potionId){
           <div class="hint-small" id="m-desc-auto-hint" style="margin-top:4px"></div>
         </div>
         <div style="flex:0 0 160px;">
-          <label>Potion art <span class="dim-hint">(optional)</span></label>
+          <label>Potion art <span class="dim-hint">(optional, ${POTION_ICON_WIDTH}&times;${POTION_ICON_HEIGHT}px)</span></label>
           <div class="art-preview-frame" id="pt-icon-frame" style="aspect-ratio:1/1; max-width:160px; cursor:pointer;">
             <img id="pt-icon-img" style="display:none">
             <div class="art-placeholder" id="pt-icon-placeholder">Click to upload (optional)</div>
@@ -18856,8 +18861,8 @@ function openPotionEditor(potionId){
   new MutationObserver(refreshDescHint).observe(onUseWrap, obsOpts);
   new MutationObserver(refreshDescHint).observe(document.getElementById('potion-auto-list'), obsOpts);
 
-  // Art upload/preview -- same flow as the relic editor's icon field (no
-  // fixed dimensions: the game scales whatever image it's handed).
+  // Art upload/preview -- same flow as the relic editor's icon field
+  // (resized to exactly 256x256 on upload, [Round 358]).
   const iconFrame = document.getElementById('pt-icon-frame');
   const iconImg = document.getElementById('pt-icon-img');
   const iconPh = document.getElementById('pt-icon-placeholder');
@@ -18870,13 +18875,27 @@ function openPotionEditor(potionId){
     if(url){ iconImg.src = url; iconImg.style.display = ''; iconPh.style.display = 'none'; iconClear.style.display = ''; noArtNote.style.display = 'none'; }
     else { iconImg.style.display = 'none'; iconImg.removeAttribute('src'); iconPh.style.display = ''; iconClear.style.display = 'none'; noArtNote.style.display = ''; }
   };
+  { const rarSel = document.getElementById('m-rarity'), prEl = document.getElementById('pt-price');
+    const refreshPh = ()=>{ prEl.placeholder = String(POTION_VANILLA_PRICE[rarSel.value] || 50); };
+    rarSel.addEventListener('change', refreshPh); refreshPh(); }
   refreshIconPreview();
   iconFrame.addEventListener('click', ()=> iconUpload.click());
   iconUpload.addEventListener('change', ev=>{
     const file = ev.target.files[0];
     if(!file) return;
     iconError.style.display = 'none';
-    readFileAsDataUrl(file).then(dataUrl=>{ pendingPotionIconDataUrl = dataUrl; refreshIconPreview(); }).catch(err=>{
+    readFileAsDataUrl(file).then(dataUrl=> resizeDataUrlToExact(dataUrl, POTION_ICON_WIDTH, POTION_ICON_HEIGHT)).then(result=>{
+      if(result.resized){
+        iconError.textContent = `Resized from ${result.fromWidth}×${result.fromHeight}px to ${POTION_ICON_WIDTH}×${POTION_ICON_HEIGHT}px.`;
+        iconError.classList.add('art-field-note');
+        iconError.style.display = 'block';
+      } else {
+        iconError.classList.remove('art-field-note');
+      }
+      pendingPotionIconDataUrl = result.dataUrl;
+      refreshIconPreview();
+    }).catch(err=>{
+      iconError.classList.remove('art-field-note');
       iconError.textContent = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
       iconError.style.display = 'block';
       iconUpload.value = '';
@@ -18892,6 +18911,8 @@ function openPotionEditor(potionId){
   const doSavePotion = ()=>{
     potion.name = document.getElementById('m-name').value;
     potion.rarity = document.getElementById('m-rarity').value;
+    { const pr = parseInt(document.getElementById('pt-price').value, 10);
+      potion.shopPrice = (Number.isFinite(pr) && pr >= 1) ? Math.min(9999, pr) : undefined; }
     potion.usage = usage;
     potion.target = target;
     potion.preventsDeath = usage === 'Automatic' && document.getElementById('pt-prevents-death').checked;
