@@ -6354,6 +6354,142 @@ window.addEventListener('unhandledrejection', e=>{
   alert('Something went wrong:\n\n' + detail + '\n\nPlease copy this and send it back — it will help track down the bug.');
 });
 
+/* ---------- project persistence ----------
+   [Round 355] Tyler uploaded a 2000x1000 stance sprite sheet and got
+   "QuotaExceededError ... setItem ... sts2-forge-character-v1": the whole
+   project -- every uploaded image as a base64 data URL -- was being written
+   as ONE localStorage string, and localStorage caps a whole origin at ~5 MB,
+   so any big sheet (stance art, pose sheets, ...) could never be saved.
+   Fix: uploaded image data lives in IndexedDB (hundreds of MB), keyed by
+   asset id; localStorage keeps only the small project JSON, with each
+   asset's dataUrl stripped. In memory `state.assets[i].dataUrl` is
+   unchanged, so every other part of the app (previews, compile, export) is
+   untouched. Old projects saved with inline images migrate on first load:
+   they stay inline in localStorage until IndexedDB has confirmed them, then
+   are stripped. If IndexedDB itself is unavailable we fall back to the old
+   all-in-localStorage behavior, and a failure there is reported loudly
+   (once) instead of crashing the upload. */
+const ASSET_DB_NAME = 'sts2-forge-assets-v1';
+const ASSET_STORE = 'assets';
+const assetPersist = {
+  written: new Map(),   // id -> dataUrl confirmed stored in IndexedDB
+  inflight: new Map(),  // id -> dataUrl being written right now
+  legacy: new Map(),    // id -> dataUrl that came out of localStorage inline
+  idbFailed: false,
+  warned: false,
+};
+let assetDbPromise = null;
+function assetDb(){
+  if(assetDbPromise) return assetDbPromise;
+  assetDbPromise = new Promise((resolve, reject)=>{
+    if(!('indexedDB' in window) || !window.indexedDB) return reject(new Error('IndexedDB is unavailable in this browser'));
+    let req;
+    try{ req = indexedDB.open(ASSET_DB_NAME, 1); }catch(e){ return reject(e); }
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(ASSET_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error || new Error('IndexedDB open failed'));
+    req.onblocked = ()=> reject(new Error('IndexedDB open blocked'));
+  });
+  return assetDbPromise;
+}
+function idbRun(mode, fn){
+  return assetDb().then(db=> new Promise((resolve, reject)=>{
+    let tx, result;
+    try{
+      tx = db.transaction(ASSET_STORE, mode);
+      result = fn(tx.objectStore(ASSET_STORE));
+    }catch(e){ reject(e); return; }
+    tx.oncomplete = ()=> resolve(result);
+    tx.onerror = ()=> reject(tx.error || new Error('IndexedDB transaction failed'));
+    tx.onabort = ()=> reject(tx.error || new Error('IndexedDB transaction aborted'));
+  }));
+}
+function idbGetAllAssets(){
+  return idbRun('readonly', s=>({ keys: s.getAllKeys(), vals: s.getAll() })).then(r=>{
+    const m = new Map();
+    r.keys.result.forEach((k, i)=> m.set(k, r.vals.result[i]));
+    return m;
+  });
+}
+function reportStorageFailure(err){
+  console.error('[storage]', err);
+  if(assetPersist.warned) return;
+  assetPersist.warned = true;
+  alert("Forge couldn't save your project in this browser:\n\n" + (err && err.message ? err.message : String(err)) +
+    "\n\nWhat's on screen is fine for now, but it will NOT survive a reload. Free up browser storage for this site (or use a normal, non-private window), or export with Compile Mod to keep your work.");
+}
+function storedProjectJson(pkg){
+  const a = assetPersist;
+  const assets = Array.isArray(pkg.assets) ? pkg.assets : [];
+  if(a.idbFailed) return JSON.stringify(pkg);
+  return JSON.stringify(Object.assign({}, pkg, { assets: assets.map(x=>{
+    if(!x.dataUrl) return x;
+    // Unchanged legacy-inline image that IndexedDB hasn't confirmed yet:
+    // keep it inline so a crash can't lose it. Everything else is stripped.
+    if(a.written.get(x.id) !== x.dataUrl && a.legacy.get(x.id) === x.dataUrl) return x;
+    const { dataUrl, ...rest } = x;
+    return rest;
+  }) }));
+}
+function persistAssetAsync(x){
+  const a = assetPersist, id = x.id, data = x.dataUrl;
+  a.inflight.set(id, data);
+  idbRun('readwrite', s=>{ s.put(data, id); }).then(()=>{
+    a.inflight.delete(id); a.written.set(id, data); save();
+  }).catch(err=>{
+    a.inflight.delete(id); a.idbFailed = true; reportStorageFailure(err); save();
+  });
+}
+function save(){
+  const a = assetPersist;
+  const assets = Array.isArray(state.assets) ? state.assets : [];
+  if(!a.idbFailed){
+    assets.forEach(x=>{
+      if(x.dataUrl && a.written.get(x.id) !== x.dataUrl && a.inflight.get(x.id) !== x.dataUrl) persistAssetAsync(x);
+    });
+    // Assets deleted from the project: drop their stored image data too.
+    const live = new Set(assets.map(x=>x.id));
+    Array.from(a.written.keys()).forEach(id=>{
+      if(!live.has(id)){ a.written.delete(id); a.legacy.delete(id); idbRun('readwrite', s=>{ s.delete(id); }).catch(()=>{}); }
+    });
+  }
+  try{ localStorage.setItem(STORAGE_KEY, storedProjectJson(state)); }
+  catch(e){ reportStorageFailure(e); }
+}
+// Fills dataUrl back in for assets the stored project JSON carries only by id.
+function hydrateAssetsFromIdb(){
+  const a = assetPersist;
+  (state.assets || []).forEach(x=>{ if(x.dataUrl) a.legacy.set(x.id, x.dataUrl); });
+  if(!(state.assets || []).some(x=>!x.dataUrl)) return Promise.resolve(false);
+  return idbGetAllAssets().then(map=>{
+    let filled = 0;
+    state.assets.forEach(x=>{
+      if(!x.dataUrl && map.has(x.id)){ x.dataUrl = map.get(x.id); a.written.set(x.id, x.dataUrl); filled++; }
+    });
+    return filled > 0;
+  }).catch(err=>{
+    a.idbFailed = true; reportStorageFailure(err); return false;
+  });
+}
+// Import: write the imported project's images to IndexedDB first, then the
+// small JSON to localStorage, so a big imported project doesn't hit the quota.
+function persistImportedProject(pkg){
+  const assets = Array.isArray(pkg.assets) ? pkg.assets : [];
+  return idbRun('readwrite', s=>{ s.clear(); assets.forEach(x=>{ if(x.dataUrl) s.put(x.dataUrl, x.id); }); })
+    .then(()=>{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.assign({}, pkg, { assets: assets.map(x=>{ const { dataUrl, ...rest } = x; return rest; }) })));
+    })
+    .catch(err=>{
+      // IndexedDB unusable: old behavior (throws, and the caller reports, if that is too big as well).
+      console.error('[storage] IndexedDB import path failed, falling back to localStorage', err);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pkg));
+    });
+}
+function clearStoredAssets(){
+  assetPersist.written.clear(); assetPersist.inflight.clear(); assetPersist.legacy.clear();
+  return idbRun('readwrite', s=>{ s.clear(); }).catch(()=>{});
+}
+
 let state = load();
 
 function load(){
@@ -6372,9 +6508,6 @@ function load(){
     }
     return pkg;
   }catch(e){ return blankState(); }
-}
-function save(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
 
@@ -21496,6 +21629,7 @@ document.getElementById('exportBtn').onclick = async ()=>{
 document.getElementById('resetBtn').onclick = ()=>{
   if(!confirm('This clears everything in this browser. There is no server copy to recover it from. Continue?')) return;
   localStorage.removeItem(STORAGE_KEY);
+  clearStoredAssets();
   state = blankState();
   hydrateCharacterForm();
   renderCards(); renderRelics(); renderMechanics(); renderEnchantments(); renderAfflictions(); renderPets(); renderOrbs(); renderStances();
@@ -21540,8 +21674,9 @@ document.getElementById('import-project-input').addEventListener('change', (e)=>
       return;
     }
     if(state.character && state.character.name && !confirm(`Import "${parsed.character.name || 'this character'}"? This replaces everything currently in Forge (your current character isn't saved anywhere else unless you already exported it).`)) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrateLegacyStatusActions(parsed)));
-    location.reload();
+    persistImportedProject(migrateLegacyStatusActions(parsed)).then(()=>{ location.reload(); }).catch(err=>{
+      alert("Couldn't store the imported project in this browser:\n\n" + (err && err.message ? err.message : String(err)) + "\n\nYour current project was left as it was.");
+    });
   };
   reader.readAsText(file);
 });
@@ -22513,26 +22648,37 @@ function renderSideNav(){
 }
 
 /* ---------- init ---------- */
+function renderAllFromState(){
+  hydrateCharacterForm();
+  renderCards();
+  renderRelics();
+  renderMechanics();
+  renderEnchantments();
+  renderAfflictions();
+  renderPets();
+  renderOrbs();
+  renderStances();
+  document.getElementById('orb-mode').value = state.character.orb.mode;
+  document.getElementById('show-stars').checked = !!state.character.showEnergyStars;
+  renderEnergyPreview(); // also handles energy-preview-wrap / star-upload-row show/hide
+  renderHandArtGrid();
+  renderCardFrameGrid();
+  renderVanillaCardAccess();
+  renderCardKeywordDefs();
+  renderPoseSheetGrid();
+  renderChronicles();
+}
 renderSideNav();
-hydrateCharacterForm();
-renderCards();
-renderRelics();
-renderMechanics();
-renderEnchantments();
-renderAfflictions();
-renderPets();
-renderOrbs();
-renderStances();
-document.getElementById('orb-mode').value = state.character.orb.mode;
-document.getElementById('show-stars').checked = !!state.character.showEnergyStars;
-renderEnergyPreview(); // also handles energy-preview-wrap / star-upload-row show/hide
-renderHandArtGrid();
-renderCardFrameGrid();
-renderVanillaCardAccess();
-renderCardKeywordDefs();
-renderPoseSheetGrid();
-renderChronicles();
+renderAllFromState();
 refreshGameStatus();
+// [Round 355] Uploaded images are stored in IndexedDB (see "project
+// persistence" above) and arrive a moment after the first render, so
+// re-render once they're back. This also kicks off the one-time migration
+// of any images an older version saved inline in localStorage.
+hydrateAssetsFromIdb().then(changed=>{
+  if(changed) renderAllFromState();
+  save();
+});
 
 // Round 202 -- show once, right after everything else has finished its
 // own initial render, if load() found something checkImportCompatibility
