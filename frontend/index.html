@@ -2848,9 +2848,6 @@
   .stance-art-addlink{display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;}
   .stance-art-addlink select{flex:1 1 90px; min-width:0; font-size:11px; padding:2px 4px;}
   .stance-art-addlink button{font-size:11px; padding:2px 8px;}
-  .stance-art-vanilla{margin-top:14px; border-top:1px solid var(--border-soft); padding-top:10px;}
-  .stance-art-vrow{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:flex-end; margin:6px 0;}
-  .stance-art-vrow .sa-vname{flex:1 1 100%; font-size:11px; color:var(--parchment); text-transform:uppercase; letter-spacing:.05em;}
   .stance-art-slot{flex:1 1 105px; max-width:140px; min-width:95px;}
   .stance-art-slot label{display:block; font-size:8.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--parchment-dim); margin-bottom:2px;}
   .stance-art-slot select{width:100%; box-sizing:border-box; font-size:11px; padding:2px 4px;}
@@ -21154,21 +21151,12 @@ function renderStanceArt(){
       <div style="margin-top:8px; text-align:right;"><button type="button" class="danger sa-delete" style="font-size:11px; padding:2px 8px;">Delete art</button></div>
     </div>`;
   }).join('');
-  const vanillaRows = BUILTIN_STANCES.map(n=>`
-    <div class="stance-art-vrow">
-      <div class="sa-vname">${escapeHtml(n)}</div>
-      ${POSE_SHEETS.map(p=>`<div class="stance-art-slot"><label>${escapeHtml(p.label)}</label>${stanceArtSlotSelect('vanilla', n, p.id, 'sa-vslot')}</div>`).join('')}
-    </div>`).join('');
   body.innerHTML = `
-    <div class="hint-small" style="margin-bottom:8px;">Sprites / animation sheets the character shows while in a stance — 7 poses per stance (idle, attack, heavy attack, cast, taking damage, death, victory), each optional; any pose left unlinked falls back to the character's normal art. Upload art here, then link it to a stance from this list or from the stance's own editor. Art stays in this library — unused — if its stance is deleted. Frames 1 = a static sprite.</div>
+    <div class="hint-small" style="margin-bottom:8px;">Sprites / animation sheets the character shows while in a stance — 7 poses per stance (idle, attack, heavy attack, cast, taking damage, death, victory), each optional; any pose left unlinked falls back to the character's normal art. Upload art here, then link it to a stance (yours or the vanilla Wrath / Calm / Divinity — vanilla only takes effect if a card actually enters that stance) from the entry's own Link row or from your stance's editor. Art stays in this library — unused — if its stance is deleted. Frames 1 = a static sprite.</div>
     <button type="button" class="ghost" id="sa-add-btn">+ Add art</button>
     <input type="file" id="sa-add-input" class="art-upload-input" accept="image/png,image/jpeg,image/webp" multiple>
     <div class="pose-sheet-error" id="sa-add-error"></div>
-    <div class="stance-art-lib" id="sa-lib">${cards || `<div class="hint-small" id="sa-empty">No stance art uploaded yet.</div>`}</div>
-    <div class="stance-art-vanilla">
-      <div class="hint-small">Vanilla stances — give the real Wrath / Calm / Divinity their own art while the character is in them (only takes effect if a card actually enters that stance).</div>
-      ${vanillaRows}
-    </div>`;
+    <div class="stance-art-lib" id="sa-lib">${cards || `<div class="hint-small" id="sa-empty">No stance art uploaded yet.</div>`}</div>`;
 
   // Clicks inside the body mutate (re-render) the DOM, which would otherwise
   // make the document-level click-outside listener think the target was
@@ -21251,10 +21239,6 @@ function renderStanceArt(){
     state.stanceArtLinks = state.stanceArtLinks.filter(l=>l.artRef!==a.id);
     state.stanceArt = state.stanceArt.filter(x=>x.id!==a.id);
     save(); renderStanceArt();
-  }));
-  body.querySelectorAll('.sa-vslot').forEach(sel=> sel.addEventListener('change', ()=>{
-    setStanceArtLink('vanilla', sel.dataset.ref, sel.dataset.pose, sel.value || null);
-    stanceArtAfterLinkChange();
   }));
 }
 // Stance-editor side of the same links (a "Stance art" row per pose).
