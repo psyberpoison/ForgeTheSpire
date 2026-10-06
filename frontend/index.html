@@ -7376,6 +7376,13 @@ function trimTransparentPadding(dataUrl){
    caller can re-invoke it (or hook into onChange) when something ELSE
    needs to react to this field changing — e.g. the in-game scene
    preview reacting to a new Body sprite. */
+// [Round 361] Every wireArtField()/wireSoundField() field's own render()
+// is registered here so renderAllFromState() can redraw them. Uploaded
+// images are restored from IndexedDB a moment AFTER the first render
+// (round 355), and these fields only ever rendered once at wire time --
+// so after a reload the stored sprite/icon/select art/sounds were in
+// state but invisible (and their delete buttons hidden).
+const artFieldRenderers = [];
 function wireArtField(opts){
   const uploadEl = document.getElementById(opts.uploadId);
   const imgEl = document.getElementById(opts.imgId);
@@ -7420,9 +7427,11 @@ function wireArtField(opts){
           errorEl.classList.add('art-field-note');
           errorEl.style.display = 'block';
         }
+        const hadSprite = opts.resetsCombatScale ? combatSpriteBefore() : null;
         state.character[opts.fieldKey] = commitAsset(result.dataUrl, state.character[opts.fieldKey], opts.kind);
         save();
         render();
+        if(opts.resetsCombatScale) resetCombatScaleIfSourceToggled(hadSprite);
       }).catch(err=>{
         const msg = err.message || "Couldn't read that image file — try a different PNG/JPEG/WebP.";
         if(errorEl){ errorEl.classList.remove('art-field-note'); errorEl.textContent = msg; errorEl.style.display = 'block'; } else { alert(msg); }
@@ -7438,13 +7447,16 @@ function wireArtField(opts){
     // and pop the upload file picker right after clearing.
     clearEl.onclick = (e)=>{
       if(e) e.stopPropagation();
+      const hadSprite = opts.resetsCombatScale ? combatSpriteBefore() : null;
       state.character[opts.fieldKey] = commitAsset(null, state.character[opts.fieldKey], opts.kind);
       uploadEl.value = '';
       save();
       render();
+      if(opts.resetsCombatScale) resetCombatScaleIfSourceToggled(hadSprite);
     };
   }
   render();
+  artFieldRenderers.push(render);
   return render;
 }
 
@@ -7530,6 +7542,7 @@ function wireSoundField(opts){
     };
   }
   render();
+  artFieldRenderers.push(render);
   return render;
 }
 
@@ -7606,6 +7619,27 @@ function combatPreviewActiveSource(){
     if(url) return { kind:'pose', pose, dataUrl:url, frameCount:entry.frameCount, columns:entry.columns };
   }
   return null;
+}
+
+// [Round 361, Tyler: "if you change the slider to any position other than
+// 100% and upload a sprite, it seems to set that position as the new
+// default" -> chose "reset on delete and on first upload"] The Combat
+// sprite size slider goes back to 100% whenever the character's active
+// combat sprite appears from nothing (first upload) or disappears
+// entirely (last one deleted), so a fresh sprite always starts at the true
+// default size. Only called from real USER upload/clear actions -- never
+// from render passes (reload/hydration also change what's drawn, and must
+// not touch the saved scale). `hadSourceBefore` is combatSpriteBefore()
+// sampled just before the action.
+function combatSpriteBefore(){ return !!combatPreviewActiveSource(); }
+function resetCombatScaleIfSourceToggled(hadSourceBefore){
+  if(hadSourceBefore === combatSpriteBefore()) return;
+  if(state.character.combatSpriteScale === 1 && parseFloat(cCombatScale.value) === 1) return;
+  state.character.combatSpriteScale = 1;
+  cCombatScale.value = 1;
+  cCombatScaleValue.textContent = '100%';
+  save();
+  updateCombatPreviewSize();
 }
 
 // Canvas-based frame-0 extraction -- a direct JS port of MakeAtlasFrame's
@@ -7786,7 +7820,7 @@ wireArtField({ fieldKey:'selectScreenBackgroundAssetRef', kind:'selectScreenBack
 /* ---- body sprite (512x512) — the real in-game model, shown as-is (transparency and all), no scene compositing ---- */
 wireArtField({ fieldKey:'bodySpriteAssetRef', kind:'bodySprite', width:BODY_SPRITE_WIDTH, height:BODY_SPRITE_HEIGHT,
   uploadId:'body-sprite-upload', imgId:'body-sprite-img', phId:'body-sprite-placeholder', clearId:'body-sprite-clear', errorId:'body-sprite-error',
-  frameId:'body-sprite-frame', onChange: renderCombatSizePreview });
+  frameId:'body-sprite-frame', onChange: renderCombatSizePreview, resetsCombatScale: true });
 
 /* ---- HUD icon (88x88) ---- */
 wireArtField({ fieldKey:'hudIconAssetRef', kind:'hudIcon', width:HUD_ICON_WIDTH, height:HUD_ICON_HEIGHT,
@@ -9303,10 +9337,12 @@ function renderPoseSheetGrid(){
       errEl.style.display = 'none';
       readFileAsDataUrl(file).then(dataUrl=>{
         const entry = poseSheetEntry(pose);
+        const hadSprite = combatSpriteBefore();
         entry.assetRef = commitAsset(dataUrl, entry.assetRef, 'poseSheet');
         save();
         renderPoseSheetPreview(pose);
         renderCombatSizePreview();
+        resetCombatScaleIfSourceToggled(hadSprite);
       }).catch(err=>{
         errEl.style.color = 'var(--danger-bright)';
         errEl.textContent = err.message || "Couldn't read that image file.";
@@ -9324,12 +9360,14 @@ function renderPoseSheetGrid(){
       e.stopPropagation();
       const pose = btn.dataset.pose;
       const entry = poseSheetEntry(pose);
+      const hadSprite = combatSpriteBefore();
       entry.assetRef = commitAsset(null, entry.assetRef, 'poseSheet');
       const upload = grid.querySelector(`.ps-upload[data-pose="${pose}"]`);
       if(upload) upload.value = '';
       save();
       renderPoseSheetPreview(pose);
       renderCombatSizePreview();
+      resetCombatScaleIfSourceToggled(hadSprite);
     };
   });
 
@@ -23262,6 +23300,8 @@ function renderAllFromState(){
   renderVanillaCardAccess();
   renderCardKeywordDefs();
   renderPoseSheetGrid();
+  artFieldRenderers.forEach(r=> r());
+  renderCombatSizePreview();
   renderChronicles();
 }
 renderSideNav();
