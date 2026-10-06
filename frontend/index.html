@@ -7757,6 +7757,13 @@ function renderCombatSizePreview(){
   if(!img || !ph) return;
   const source = combatPreviewActiveSource();
   const myToken = ++combatPreviewToken;
+  const sceneClear = document.getElementById('body-sprite-clear');
+  if(sceneClear){
+    sceneClear.style.display = source ? '' : 'none';
+    const lbl = sceneSpriteLabel(source);
+    sceneClear.title = lbl ? `Remove ${lbl}` : 'Remove sprite';
+    sceneClear.setAttribute('aria-label', sceneClear.title);
+  }
   if(!source){
     img.style.display = 'none';
     img.removeAttribute('src');
@@ -7818,9 +7825,49 @@ wireArtField({ fieldKey:'selectScreenBackgroundAssetRef', kind:'selectScreenBack
   frameId:'select-bg-frame' });
 
 /* ---- body sprite (512x512) — the real in-game model, shown as-is (transparency and all), no scene compositing ---- */
-wireArtField({ fieldKey:'bodySpriteAssetRef', kind:'bodySprite', width:BODY_SPRITE_WIDTH, height:BODY_SPRITE_HEIGHT,
+const renderBodySpriteField = wireArtField({ fieldKey:'bodySpriteAssetRef', kind:'bodySprite', width:BODY_SPRITE_WIDTH, height:BODY_SPRITE_HEIGHT,
   uploadId:'body-sprite-upload', imgId:'body-sprite-img', phId:'body-sprite-placeholder', clearId:'body-sprite-clear', errorId:'body-sprite-error',
   frameId:'body-sprite-frame', onChange: renderCombatSizePreview, resetsCombatScale: true });
+
+// [Round 362, Tyler: "the image is still there after removing it"] The
+// trash button in the combat scene used to only ever clear the Body
+// sprite, but the scene shows whichever source the compiler would use
+// (Idle sheet -> Body sprite -> first other pose sheet, see
+// combatPreviewActiveSource). With an Idle (or other) pose sheet uploaded,
+// deleting the Body sprite changed nothing visible -- and when ONLY a pose
+// sheet was showing, there was no trash button at all. Now the button is
+// shown whenever the scene is showing something, and removes exactly what
+// is shown (its tooltip says which); click again to remove the next one
+// that takes over.
+function poseSheetFileInput(pose){ return document.querySelector(`.ps-upload[data-pose="${pose}"]`); }
+function sceneSpriteLabel(src){
+  if(!src) return '';
+  if(src.kind === 'body') return 'Body sprite';
+  return `${COMBAT_PREVIEW_POSE_LABELS[src.pose] || src.pose} sprite sheet`;
+}
+(function wireSceneClearButton(){
+  const btn = document.getElementById('body-sprite-clear');
+  if(!btn) return;
+  btn.onclick = (e)=>{
+    if(e) e.stopPropagation();
+    const src = combatPreviewActiveSource();
+    if(!src) return;
+    const hadSprite = true;
+    if(src.kind === 'body'){
+      state.character.bodySpriteAssetRef = commitAsset(null, state.character.bodySpriteAssetRef, 'bodySprite');
+      const up = document.getElementById('body-sprite-upload'); if(up) up.value = '';
+    } else {
+      const entry = poseSheetEntry(src.pose);
+      entry.assetRef = commitAsset(null, entry.assetRef, 'poseSheet');
+      const up = poseSheetFileInput(src.pose); if(up) up.value = '';
+      renderPoseSheetPreview(src.pose);
+    }
+    save();
+    renderBodySpriteField();   // also re-runs renderCombatSizePreview via onChange
+    renderCombatSizePreview();
+    resetCombatScaleIfSourceToggled(hadSprite);
+  };
+})();
 
 /* ---- HUD icon (88x88) ---- */
 wireArtField({ fieldKey:'hudIconAssetRef', kind:'hudIcon', width:HUD_ICON_WIDTH, height:HUD_ICON_HEIGHT,
