@@ -2666,6 +2666,10 @@
   .combat-scale-row label{margin:0; text-align:center; max-width:100%;}
   .combat-scale-control{display:flex; align-items:center; gap:10px; width:100%; max-width:316px;}
   .combat-scale-control input[type=range]{flex:1; min-width:0;}
+  .combat-anim-buttons{display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:6px; margin-top:2px;}
+  .combat-anim-buttons .combat-anim-label{font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--parchment-dim);}
+  .combat-anim-buttons button{font-size:11px; padding:3px 9px;}
+  .combat-anim-buttons button.playing{background:var(--accent); color:#0a121e; border-color:var(--accent);}
   .combat-scale-value{flex:0 0 auto; font-size:11.5px; color:var(--parchment-dim); min-width:38px; text-align:right;}
   /* [Round 125] Live combat-size preview box — rebuilt around a real
      screenshot of an actual STS2 battle (embedded as
@@ -3353,6 +3357,8 @@
                     <input type="range" id="c-combat-scale" min="0.5" max="2" step="0.05" value="1">
                     <span class="mono combat-scale-value" id="c-combat-scale-value">100%</span>
                   </div>
+                  <!-- [Round 363, Tyler: "if i have a sprite sheet uploaded for idle, it should play it here as well. also give me buttons to preview other animations next to the slider if i have them uploaded."] One button per UPLOADED non-idle pose sheet; filled in by renderCombatAnimButtons(). -->
+                  <div class="combat-anim-buttons" id="combat-anim-buttons" style="display:none"></div>
                 </div>
                 </div>
               </div>
@@ -7642,6 +7648,107 @@ function resetCombatScaleIfSourceToggled(hadSourceBefore){
   updateCombatPreviewSize();
 }
 
+// [Round 363] Live animation in the combat-scene preview. Idle plays as a
+// loop (the game's Idle uses LoopMode.Linear); every other uploaded pose
+// plays ONCE when its button is pressed (LoopMode.None), then the scene
+// returns to the resting look -- Death/Victory hold their last frame
+// first, like POSE_SHEET_HOLD_LAST_FRAME in compiler.js. All frames are
+// shown at the same on-screen height (the game normalizes each pose's frame
+// height to the same target), so the slider keeps working during playback.
+let combatAnimToken = 0;
+const combatFramesCache = new Map();
+const COMBAT_HOLD_LAST_FRAME_POSES = new Set(['death', 'victory']);
+function stopCombatAnim(){ combatAnimToken++; }
+function cropPoseSheetAllFrames(dataUrl, frameCount, columns){
+  const key = `${dataUrl.length}:${dataUrl.slice(-48)}:${frameCount}:${columns}`;
+  if(combatFramesCache.has(key)) return combatFramesCache.get(key);
+  const pr = new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const frames = Math.max(1, frameCount);
+        const cols = columns > 0 ? columns : frames;
+        const rows = Math.ceil(frames / cols);
+        const fw = img.naturalWidth / cols, fh = img.naturalHeight / rows;
+        const out = [];
+        for(let i = 0; i < frames; i++){
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(fw)); c.height = Math.max(1, Math.round(fh));
+          c.getContext('2d').drawImage(img, (i % cols) * fw, Math.floor(i / cols) * fh, fw, fh, 0, 0, c.width, c.height);
+          out.push(c.toDataURL('image/png'));
+        }
+        resolve(out);
+      }catch(err){ reject(err); }
+    };
+    img.onerror = ()=> reject(new Error("Couldn't read that image for the preview."));
+    img.src = dataUrl;
+  });
+  pr.catch(()=> combatFramesCache.delete(key));
+  if(combatFramesCache.size > 24) combatFramesCache.delete(combatFramesCache.keys().next().value);
+  combatFramesCache.set(key, pr);
+  return pr;
+}
+function runCombatFrames(frames, fps, loop, token, onDone){
+  const img = document.getElementById('combat-preview-img');
+  if(!img) return;
+  const rate = Math.max(1, fps || 12);
+  const start = performance.now();
+  let last = -1;
+  const step = (now)=>{
+    if(token !== combatAnimToken) return;
+    const i = Math.floor((now - start) / 1000 * rate);
+    if(!loop && i >= frames.length){ if(onDone) onDone(); return; }
+    const idx = loop ? i % frames.length : i;
+    if(idx !== last){ img.src = frames[idx]; last = idx; }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+// Starts the resting loop when the active source is an Idle sheet with >1 frame.
+function startCombatIdleLoop(source){
+  stopCombatAnim();
+  if(!source || source.kind !== 'pose' || source.pose !== 'idle' || !(source.frameCount > 1)) return;
+  const token = combatAnimToken;
+  cropPoseSheetAllFrames(source.dataUrl, source.frameCount, source.columns || 0).then(frames=>{
+    if(token !== combatAnimToken) return;
+    const fps = (poseSheetEntry('idle').fps) || 12;
+    runCombatFrames(frames, fps, true, token);
+  }).catch(()=>{ /* static frame 0 stays */ });
+}
+function playCombatPose(pose){
+  const entry = poseSheetEntry(pose);
+  const url = findAssetDataUrl(entry.assetRef, 'poseSheet');
+  if(!url) return;
+  stopCombatAnim();
+  const token = combatAnimToken;
+  const img = document.getElementById('combat-preview-img');
+  const ph = document.getElementById('combat-preview-placeholder');
+  document.querySelectorAll('#combat-anim-buttons button[data-pose]').forEach(b=> b.classList.toggle('playing', b.dataset.pose === pose));
+  const finish = ()=>{
+    if(token !== combatAnimToken) return;
+    const back = ()=>{ if(token === combatAnimToken) renderCombatSizePreview(); };
+    if(COMBAT_HOLD_LAST_FRAME_POSES.has(pose)) setTimeout(back, 900); else back();
+  };
+  cropPoseSheetAllFrames(url, Math.max(1, entry.frameCount || 1), entry.columns || 0).then(frames=>{
+    if(token !== combatAnimToken) return;
+    if(img){ img.src = frames[0]; img.style.display = ''; }
+    if(ph) ph.style.display = 'none';
+    updateCombatPreviewSize();
+    if(frames.length === 1){ setTimeout(finish, 600); return; }
+    runCombatFrames(frames, entry.fps || 12, false, token, finish);
+  }).catch(()=> finish());
+}
+function renderCombatAnimButtons(){
+  const box = document.getElementById('combat-anim-buttons');
+  if(!box) return;
+  const poses = COMBAT_PREVIEW_POSE_ORDER.filter(p => p !== 'idle' && findAssetDataUrl(poseSheetEntry(p).assetRef, 'poseSheet'));
+  if(!poses.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = `<span class="combat-anim-label">Preview</span>` + poses.map(p =>
+    `<button type="button" class="secondary" data-pose="${p}" title="Play the ${escapeAttr(COMBAT_PREVIEW_POSE_LABELS[p] || p)} animation once">&#9654; ${escapeHtml(COMBAT_PREVIEW_POSE_LABELS[p] || p)}</button>`).join('');
+  box.querySelectorAll('button[data-pose]').forEach(b=>{ b.onclick = (e)=>{ e.stopPropagation(); playCombatPose(b.dataset.pose); }; });
+}
+
 // Canvas-based frame-0 extraction -- a direct JS port of MakeAtlasFrame's
 // own cols/rows/frameW/frameH math (backend/compiler.js), so the cropped
 // region shown here is proportioned identically to the frame the game
@@ -7757,6 +7864,8 @@ function renderCombatSizePreview(){
   if(!img || !ph) return;
   const source = combatPreviewActiveSource();
   const myToken = ++combatPreviewToken;
+  stopCombatAnim();           // [Round 363] cancels any running idle loop / one-shot
+  renderCombatAnimButtons();
   const sceneClear = document.getElementById('body-sprite-clear');
   if(sceneClear){
     sceneClear.style.display = source ? '' : 'none';
@@ -7779,6 +7888,7 @@ function renderCombatSizePreview(){
     img.style.display = '';
     ph.style.display = 'none';
     updateCombatPreviewSize();
+    startCombatIdleLoop(source); // [Round 363] Idle sheet with >1 frame loops here
     updateHudIconConnector(); // [Round 127] frame layout is stable across sources, but cheap to keep in sync here too
     if(caption){
       if(source.kind === 'body') caption.textContent = 'Showing: Body sprite';
@@ -9438,6 +9548,7 @@ function renderPoseSheetGrid(){
       entry.fps = Math.max(1, parseFloat(inp.value) || 12);
       inp.value = entry.fps;
       save();
+      renderCombatSizePreview(); // [Round 363] a running Idle loop picks up the new FPS
     });
   });
   grid.querySelectorAll('.ps-framecount').forEach(inp=>{
