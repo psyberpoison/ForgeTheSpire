@@ -1572,7 +1572,17 @@
      uses. */
   .a-formula-builder{display:flex; flex-direction:column; gap:8px; margin-top:4px; padding:8px 10px; border:1px solid var(--border); border-radius:4px;}
   .a-formula-terms{display:flex; flex-direction:column; gap:6px;}
-  .a-formula-term{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  /* [Round 364, Tyler: "the formula box also is very awkward to use. I want it to be clearer"] Result line on top, then aligned columns (Operation | Value | x | Based on | remove) so every part lines up like a small table instead of a ragged sentence. */
+  .a-formula-result{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding:6px 10px; border-radius:4px; background:rgba(255,255,255,.04); border:1px solid var(--border-soft);}
+  .a-formula-result-label{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--parchment-dim);}
+  .a-formula-result-text{font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--parchment); word-break:break-word;}
+  .a-formula-cols, .a-formula-term{display:grid; grid-template-columns:104px 72px 14px minmax(0,1fr) 30px; column-gap:8px; align-items:center;}
+  .a-formula-cols{font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--parchment-dim); margin-bottom:-2px;}
+  .a-formula-from{display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0;}
+  .a-formula-times{text-align:center;}
+  .a-formula-term .a-formula-sign{width:100%; min-width:0; flex:none; field-sizing:fixed;}
+  .a-formula-term input.a-formula-value{width:100%;}
+  .a-formula-add-term{align-self:flex-start;}
   .a-formula-term select, .a-formula-term input{font-size:12.5px;}
   /* width:auto is the fix that actually matters here — same root cause as
      .condition-row's own matching comment above: the app's global
@@ -1598,10 +1608,10 @@
      which wins outright rather than relying on source-order (the fix
      .a-formula-term select above relies on a tie broken by appearing
      later in the sheet; this one just wins cleanly). */
-  .a-formula-term input{width:66px; flex:none;}
-  .a-formula-remove-term{margin-left:auto; flex:none;}
+  .a-formula-term input{width:100%; min-width:0; flex:none;}
+  .a-formula-remove-term{margin-left:0; flex:none; justify-self:end;}
   .a-formula-clamp{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;}
-  .a-formula-clamp input[type=number]{width:66px;}
+  .a-formula-clamp input[type=number]{width:84px;}
   .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
   /* Enchantment/Affliction "Valid targets" merged base+custom tag picker
@@ -4650,7 +4660,7 @@ const PET_POSITION_MODE_LABELS = {
 // dropdown option, never something the author types.
 const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
 const AMOUNT_FORMULA_SOURCE_LABELS = {
-  Literal: 'a flat number',
+  Literal: 'just this number',
   CurrentHp: 'current HP',
   MaxHp: 'max HP',
   Gold: 'Gold',
@@ -15904,6 +15914,46 @@ function renderStatusPicker(act){
 // .a-amount-useformula there) specifically because THAT toggle needs the
 // full-row re-render (it hides amountHtml/the X checkboxes/per-stack
 // scaling elsewhere in the same row).
+// [Round 364] Live one-line readout shown at the top of the formula box
+// ("Amount = 12 + 2 x your current HP, never below 0"). Plain math reading
+// of exactly what compiler.js will add up -- NOT the card-text description
+// (describeAmountFormula, which is Forge's approximation of tooltip copy).
+function formulaResultText(act){
+  const terms = Array.isArray(act.amountFormula) ? act.amountFormula : [];
+  if(!terms.length) return '0';
+  const termText = (t)=>{
+    const v = (t.value === undefined || t.value === null) ? 0 : t.value;
+    const who = t.subject === 'Target' ? "the target's" : 'your';
+    let name;
+    switch(t.source){
+      case 'CurrentHp': name = `${who} current HP`; break;
+      case 'MaxHp': name = `${who} max HP`; break;
+      case 'Gold': name = 'your Gold'; break;
+      case 'PendingDamage': name = 'the pending damage'; break;
+      case 'EnergyRemaining': name = 'your Energy remaining'; break;
+      case 'StarsRemaining': name = 'your Stars remaining'; break;
+      case 'OrbSlotCount': name = 'your orb slot count'; break;
+      case 'CustomStatusStacks': name = `${who} ${(state.mechanics.find(m=>m.id===t.statusRef) || {}).name || '(pick a status)'} stacks`; break;
+      case 'VanillaStatusStacks': name = `${who} ${t.builtinStatusRef || '(pick a status)'} stacks`; break;
+      default: return String(v);
+    }
+    return v === 1 ? name : `${v} \u00d7 ${name}`;
+  };
+  let out = '';
+  terms.forEach((t, i)=>{
+    const neg = t.sign === '-';
+    if(i === 0) out += (neg ? '\u2212 ' : '') + termText(t);
+    else out += ` ${neg ? '\u2212' : '+'} ${termText(t)}`;
+  });
+  const c = act.amountFormulaClamp;
+  if(c){
+    const hasMin = typeof c.min === 'number', hasMax = typeof c.max === 'number';
+    if(hasMin && hasMax) out += `  (kept between ${c.min} and ${c.max})`;
+    else if(hasMin) out += `  (never below ${c.min})`;
+    else if(hasMax) out += `  (never above ${c.max})`;
+  }
+  return out;
+}
 function amountFormulaSourceOptList(selected, trigger){
   return AMOUNT_FORMULA_SOURCES.filter(s => {
     if(!AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(s)) return true;
@@ -15974,19 +16024,26 @@ function renderAmountFormulaBuilder(act, trigger){
   function render(){
     const overCap = terms.length >= MAX_AMOUNT_FORMULA_TERMS;
     wrap.innerHTML = `
-      <div class="hint-small">Every line below reads as its own instruction, combined together to make this amount — pick pieces, no typing required.</div>
+      <div class="a-formula-result" title="What this amount works out to, in plain math. Updates as you edit the parts below.">
+        <span class="a-formula-result-label">Amount =</span>
+        <span class="a-formula-result-text"></span>
+      </div>
+      <div class="a-formula-cols" aria-hidden="true"><span>Operation</span><span>Value</span><span></span><span>Based on</span><span></span></div>
       <div class="a-formula-terms"></div>
-      <button type="button" class="ghost a-formula-add-term" ${overCap?'disabled':''}>${overCap ? `Max ${MAX_AMOUNT_FORMULA_TERMS} terms` : '+ Add term'}</button>
+      <button type="button" class="ghost a-formula-add-term" ${overCap?'disabled':''}>${overCap ? `Max ${MAX_AMOUNT_FORMULA_TERMS} parts` : '+ Add another part'}</button>
       <div class="a-formula-clamp">
-        <label class="a-check-label" title="Optionally clamp the final combined result to a min and/or max value."><input type="checkbox" class="a-formula-clamp-toggle" ${act.amountFormulaClamp?'checked':''}> Clamp result</label>
+        <label class="a-check-label" title="Optionally stop the final result from going below a minimum and/or above a maximum. Leave one box empty for no limit on that side."><input type="checkbox" class="a-formula-clamp-toggle" ${act.amountFormulaClamp?'checked':''}> Limit the result</label>
         ${act.amountFormulaClamp ? `
-          <span class="cond-word">between</span>
-          <input type="number" class="a-formula-clamp-min" placeholder="min" value="${act.amountFormulaClamp.min ?? ''}">
-          <span class="cond-word">and</span>
-          <input type="number" class="a-formula-clamp-max" placeholder="max" value="${act.amountFormulaClamp.max ?? ''}">
+          <span class="cond-word">never below</span>
+          <input type="number" class="a-formula-clamp-min" placeholder="no limit" value="${act.amountFormulaClamp.min ?? ''}">
+          <span class="cond-word">and never above</span>
+          <input type="number" class="a-formula-clamp-max" placeholder="no limit" value="${act.amountFormulaClamp.max ?? ''}">
         ` : ''}
       </div>
     `;
+    const resultEl = wrap.querySelector('.a-formula-result-text');
+    const updateResult = ()=>{ resultEl.textContent = formulaResultText(act); };
+    updateResult();
     const termsEl = wrap.querySelector('.a-formula-terms');
     // [2026-09-30 follow-up #7] Tyler: "the 'use a formula' section looks
     // awful. lets see what we can do to make that more sentence
@@ -16024,20 +16081,22 @@ function renderAmountFormulaBuilder(act, trigger){
           <option value="+" ${(term.sign||'+')==='+'?'selected':''}>Add</option>
           <option value="-" ${term.sign==='-'?'selected':''}>Subtract</option>
         </select>
-        <input type="number" class="a-formula-value" value="${term.value ?? 0}" title="${isLiteral ? 'This flat number.' : 'Multiplier on the chosen value.'}">
-        ${isLiteral ? '' : `<span class="cond-word">×</span>`}
-        <select class="a-formula-source" title="What this term's value comes from.">${amountFormulaSourceOptList(term.source, trigger)}</select>
-        ${needsStatusRef ? statusRefOptList(term) : ''}
-        ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(term.subject)}</select>` : ''}
-        <button type="button" class="ghost a-formula-remove-term" title="Remove this term." ${terms.length<=1?'disabled':''}>✕</button>
+        <input type="number" class="a-formula-value" value="${term.value ?? 0}" title="${isLiteral ? 'The number itself.' : 'How many times the chosen value counts (e.g. 2 = double it).'}">
+        ${isLiteral ? '<span class="a-formula-times-gap"></span>' : `<span class="cond-word a-formula-times">×</span>`}
+        <div class="a-formula-from">
+          <select class="a-formula-source" title="What this part's value is based on.">${amountFormulaSourceOptList(term.source, trigger)}</select>
+          ${needsStatusRef ? statusRefOptList(term) : ''}
+          ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(term.subject)}</select>` : ''}
+        </div>
+        <button type="button" class="ghost a-formula-remove-term" title="Remove this part." ${terms.length<=1?'disabled':''}>✕</button>
       </div>`;
     }).join('');
 
     termsEl.querySelectorAll('.a-formula-term').forEach(row=>{
       const idx = parseInt(row.dataset.idx, 10);
       const term = terms[idx];
-      row.querySelector('.a-formula-sign').onchange = e=>{ term.sign = e.target.value; };
-      row.querySelector('.a-formula-value').oninput = e=>{ term.value = parseFloat(e.target.value) || 0; };
+      row.querySelector('.a-formula-sign').onchange = e=>{ term.sign = e.target.value; updateResult(); };
+      row.querySelector('.a-formula-value').oninput = e=>{ term.value = parseFloat(e.target.value) || 0; updateResult(); };
       row.querySelector('.a-formula-source').onchange = e=>{
         term.source = e.target.value;
         // Switching source can change which extra fields this term needs
@@ -16049,11 +16108,12 @@ function renderAmountFormulaBuilder(act, trigger){
         render();
       };
       const subjectSelect = row.querySelector('.a-formula-subject');
-      if(subjectSelect) subjectSelect.onchange = e=>{ term.subject = e.target.value; };
+      if(subjectSelect) subjectSelect.onchange = e=>{ term.subject = e.target.value; updateResult(); };
       const statusRefSelect = row.querySelector('.a-formula-status-ref');
       if(statusRefSelect) statusRefSelect.onchange = e=>{
         if(term.source === 'VanillaStatusStacks') term.builtinStatusRef = e.target.value;
         else term.statusRef = e.target.value;
+        updateResult();
       };
       const removeBtn = row.querySelector('.a-formula-remove-term');
       if(removeBtn) removeBtn.onclick = ()=>{
@@ -16078,12 +16138,14 @@ function renderAmountFormulaBuilder(act, trigger){
       const v = e.target.value;
       if(v === '') delete act.amountFormulaClamp.min;
       else act.amountFormulaClamp.min = parseFloat(v) || 0;
+      updateResult();
     };
     const clampMax = wrap.querySelector('.a-formula-clamp-max');
     if(clampMax) clampMax.oninput = e=>{
       const v = e.target.value;
       if(v === '') delete act.amountFormulaClamp.max;
       else act.amountFormulaClamp.max = parseFloat(v) || 0;
+      updateResult();
     };
   }
 
@@ -16632,7 +16694,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   const useXLabelSuffix = showUseStarXCheckbox ? ' (Energy)' : '';
   const useXAmountHtml = (showUseXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usex" ${isX?'checked':''}> Use X${useXLabelSuffix}</label>` : '')
     + (showUseStarXCheckbox ? `<label class="a-usex-label" title="${isModifyStatusAdd ? 'Use this card\'s own resolved star-X value for EVERY selected status/mechanic in this action, overriding their individual amounts below.' : 'Use this card\'s own resolved star-X value instead of the amount above.'}"><input type="checkbox" class="a-amount-usestarx" ${isStarX?'checked':''}> Use X (Star)</label>` : '')
-    + formulaToggleHtml;
+    ;   // [Round 364] formulaToggleHtml no longer rides inside the sentence -- see formulaToggleRowHtml below
   // [Round 75/76] DealDamage-only relabeled/outside-the-sentence versions
   // — same checkboxes (same classes), rendered in their own row below the
   // sentence instead of inline within it (see row.innerHTML's new
@@ -16835,9 +16897,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // leaving any "Use X"/"Use X (Star)" checkboxes inline right where
   // every other action type still shows them. Computed once here (not
   // per-case) since both inputs are already fixed before the switch.
-  const useXAmountHtmlNoFormula = formulaToggleHtml
-    ? useXAmountHtml.slice(0, useXAmountHtml.length - formulaToggleHtml.length)
-    : useXAmountHtml;
+  // [Round 364] useXAmountHtml no longer contains the formula checkbox at
+  // all (it's rendered in its own row under every sentence), so this is
+  // now just an alias kept for the Afflict/Enchant cases that name it.
+  const useXAmountHtmlNoFormula = useXAmountHtml;
+  // [Round 364, Tyler: "I dont want 'use formula' to be in the middle of
+  // the sentence for any option."] The checkbox sits in its own row right
+  // under the sentence for EVERY formula-eligible action type, not just
+  // Afflict/Enchant. DealDamage already shows it in its own below-sentence
+  // row (dealDamageAmountUseXHtml), so it's skipped here to avoid a duplicate.
+  const formulaToggleRowHtml = (formulaToggleHtml && !isDealDamage) ? `<div class="action-row-usex">${formulaToggleHtml}</div>` : '';
   switch(act.type){
     // Kept as its own hand-built sentence (not amountForTargetSentence) —
     // the only type with BOTH an amount and a hit-count. Tyler's original
@@ -17411,6 +17480,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       <button class="ghost a-remove">✕</button>
     </div>
     <div class="action-row-sentence">${sentenceHtml}</div>
+    ${formulaToggleRowHtml}
     ${(isDealDamage && dealDamageUseXHtml) ? `<div class="action-row-usex">${dealDamageUseXHtml}</div>` : ''}
     ${dealDamageScaleRowHtml ? `<div class="action-row-usex">${dealDamageScaleRowHtml}</div>` : ''}
     ${playerTargetHtml ? `<div class="action-row-usex">${playerTargetHtml}</div>` : ''}
