@@ -1750,7 +1750,8 @@
     position:relative; flex:1 1 auto; height:14px; min-width:40px; border-radius:3px;
     background:rgba(0,0,0,.35); border:1px solid var(--border-soft); overflow:hidden;
   }
-  .rb-preview-bar-track-sm{flex:0 0 30px; height:11px;}
+  /* [Round 370, Tyler: "if you have a dual bar set, the preview is really small"] The two halves of a dual bar were fixed 30px x 11px chips; they now share the row evenly and match a single bar's 14px height. */
+  .rb-preview-bar-track-sm{flex:1 1 0; min-width:30px; height:14px;}
   .rb-preview-bar-fill{position:absolute; top:0; left:0; height:100%;}
   /* [Round 233] The real compiled widget (ForgeResourceBarSupport.cs.
      template's UpdateDiamondGroups) anchors the LEFT bar's fill to the
@@ -1766,9 +1767,9 @@
      statuses are integer stacks, so a bar's real fill always lands
      exactly on one of these lines, never in between. */
   .rb-preview-bar-tick{position:absolute; top:0; bottom:0; width:1px; background:rgba(0,0,0,.45); pointer-events:none;}
-  .rb-preview-diamond-widget{display:flex; align-items:center; gap:4px; flex:1 1 auto;}
+  .rb-preview-diamond-widget{display:flex; align-items:center; gap:9px; flex:1 1 auto;}
   .rb-preview-diamond-shape{
-    flex:0 0 auto; width:11px; height:11px; transform:rotate(45deg);
+    flex:0 0 auto; width:15px; height:15px; transform:rotate(45deg);
     border:1px solid var(--border-soft); box-shadow:0 0 0 1px rgba(0,0,0,.2) inset;
   }
   .rb-preview-chip-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
