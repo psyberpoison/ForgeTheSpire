@@ -1586,6 +1586,10 @@
   .a-formula-term input.a-formula-value{width:100%;}
   .a-formula-add-term{align-self:flex-start;}
   /* [Round 367, Tyler: "adjust the number box's height to be a bit shorter to match the other boxes"] The number inputs (31-32px) rendered taller than the selects (28.5px) beside them. Every box in the formula builder now shares one explicit height. */
+  /* [Round 369] Searchable status picker inside the formula box -- sized like the neighbouring selects. */
+  .a-formula-builder .c-status-picker{width:auto; min-width:120px; flex:0 0 auto;}
+  .a-formula-builder .c-status-picker .picker-filter{height:29px; box-sizing:border-box; padding:0 9px; font-size:12.5px; field-sizing:content; min-width:120px; width:auto;}
+  .a-formula-builder .c-status-picker .picker-list{min-width:200px;}
   .a-formula-builder select, .a-formula-builder input[type=number]{height:29px; box-sizing:border-box; padding-top:0; padding-bottom:0; line-height:1.2;}
   .a-formula-term select, .a-formula-term input{font-size:12.5px;}
   /* width:auto is the fix that actually matters here — same root cause as
@@ -15948,7 +15952,8 @@ function formulaResultText(act){
       case 'VanillaStatusStacks': name = `${who} ${t.builtinStatusRef || '(pick a status)'} stacks`; break;
       default: return String(v);
     }
-    return v === 1 ? name : `${v} \u00d7 ${name}`;
+    // [Round 369, Tyler: "if you are doing a calculation like 4 x strength then in the amount box, wrap that calculation in parenthesis"] A multiplied part reads as one unit.
+    return v === 1 ? name : `(${v} \u00d7 ${name})`;
   };
   let out = '';
   terms.forEach((t, i)=>{
@@ -15963,26 +15968,65 @@ function formulaResultText(act){
     // a formula part: "your Strength stacks", "2 x your current HP").
     const lo = c.minFrom ? termText(c.minFrom) : (typeof c.min === 'number' ? String(c.min) : null);
     const hi = c.maxFrom ? termText(c.maxFrom) : (typeof c.max === 'number' ? String(c.max) : null);
-    if(lo !== null && hi !== null) out += `  (kept between ${lo} and ${hi})`;
-    else if(lo !== null) out += `  (at least ${lo})`;
-    else if(hi !== null) out += `  (at most ${hi})`;
+    if(lo !== null && hi !== null) out += `, kept between ${lo} and ${hi}`;
+    else if(lo !== null) out += `, at least ${lo}`;
+    else if(hi !== null) out += `, at most ${hi}`;
   }
   return out;
 }
+// [Round 369] The two status sources (custom mechanic / vanilla status) are ONE
+// choice in the UI -- "stacks of a status" -- followed by the shared searchable
+// vanilla+custom status picker; the stored `source` is still the specific
+// CustomStatusStacks/VanillaStatusStacks (picking a status sets it), so saved
+// packages and the compiler are untouched. 'StatusStacks' is a UI-only value.
+const FORMULA_STATUS_UI_SOURCE = 'StatusStacks';
 function amountFormulaSourceOptList(selected, trigger, excludeLiteral){
-  return AMOUNT_FORMULA_SOURCES.filter(s => {
+  if(AMOUNT_FORMULA_STATUS_SOURCES.includes(selected)) selected = FORMULA_STATUS_UI_SOURCE;
+  const uiSources = [];
+  AMOUNT_FORMULA_SOURCES.forEach(s=>{
+    if(s === 'VanillaStatusStacks') return;
+    uiSources.push(s === 'CustomStatusStacks' ? FORMULA_STATUS_UI_SOURCE : s);
+  });
+  return uiSources.filter(s => {
     if(excludeLiteral && s === 'Literal') return false;
     if(!AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(s)) return true;
     // Only offer PendingDamage on the 2 real triggers whose hook body
     // actually declares that `amount` local (see backend/validate.js's
     // matching server-side rejection this filter pre-empts). An
     // already-saved term whose source is PendingDamage still renders as
-    // itself even outside those triggers — same "an already-saved value
-    // still shows" rule every other optList in this file follows — so
-    // switching triggers doesn't silently swap out what the author
-    // already picked underneath them.
+    // itself even outside those triggers -- same "an already-saved value
+    // still shows" rule every other optList in this file follows.
     return s === selected || AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(trigger);
-  }).map(s=>`<option value="${s}" ${s===selected?'selected':''}>${escapeHtml(AMOUNT_FORMULA_SOURCE_LABELS[s]||s)}</option>`).join('');
+  }).map(s=>`<option value="${s}" ${s===selected?'selected':''}>${escapeHtml(s===FORMULA_STATUS_UI_SOURCE ? 'stacks of a status' : (AMOUNT_FORMULA_SOURCE_LABELS[s]||s))}</option>`).join('');
+}
+// Applies a source <select>'s value to a term (formula part or limit): the
+// UI-only 'StatusStacks' keeps an already-chosen status kind, otherwise
+// starts on the first vanilla status; every other source drops the stale
+// status/subject fields it doesn't use.
+function applyFormulaSourceChoice(term, value){
+  if(value === FORMULA_STATUS_UI_SOURCE){
+    if(!AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)){
+      const opts = statusOptionsData();
+      term.source = 'VanillaStatusStacks';
+      if(opts.length) term.builtinStatusRef = opts[0].value;
+    }
+  } else {
+    term.source = value;
+  }
+  if(!AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) delete term.subject;
+  else if(!term.subject) term.subject = 'Self';
+  if(term.source !== 'VanillaStatusStacks') delete term.builtinStatusRef;
+  if(term.source !== 'CustomStatusStacks') delete term.statusRef;
+}
+// Proxy view of a term for the shared mergedStatusPickerHtml/
+// wireMergedStatusPicker widget: its "kind" field maps onto term.source.
+const FORMULA_STATUS_FIELDS = { kind:'__kind', builtin:'builtinStatusRef', ref:'statusRef' };
+function formulaStatusCarrier(t){
+  return new Proxy(t, {
+    get(o, k){ return k === '__kind' ? (o.source === 'VanillaStatusStacks' ? 'vanilla' : 'custom') : o[k]; },
+    set(o, k, v){ if(k === '__kind') o.source = (v === 'vanilla' ? 'VanillaStatusStacks' : 'CustomStatusStacks'); else o[k] = v; return true; },
+    deleteProperty(o, k){ if(k !== '__kind') delete o[k]; return true; },
+  });
 }
 function renderAmountFormulaBuilder(act, trigger){
   if(!Array.isArray(act.amountFormula) || !act.amountFormula.length){
@@ -16004,34 +16048,27 @@ function renderAmountFormulaBuilder(act, trigger){
     return ['Self','Target'].filter(v => v === sel || !(hideTargetSubject && v === 'Target'))
       .map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v==='Self'?'yourself':"this action's target"}</option>`).join('');
   }
-  // Deliberately a plain <select>, not the mergedStatusPickerHtml combined
-  // vanilla+custom widget the "per stack" scaling picker uses — that
-  // widget lets the author freely pick EITHER kind from one combined list,
-  // which would let a CustomStatusStacks term's picker silently select a
-  // vanilla status (or vice versa), disagreeing with this term's OWN
-  // `source` (compiler.js reads term.source to decide which of
-  // statusRef/builtinStatusRef to use, not a kind field on the picker).
-  // Splitting "Custom Status Stacks"/"Vanilla Status Stacks" into two
-  // separate `source` options up front already disambiguates this, so
-  // each term only ever needs ONE single-kind list — and a plain <select>
-  // already has the browser's own native type-ahead search, the concern
-  // that made the "per stack" picker need a custom filter box in the
-  // first place (that one is a multi-select checklist, which native
-  // <select> can't do; this is a single choice, which it can).
+  // [Round 369, Tyler: "if you are doing a formula with statuses, have the
+  // statuses be searchable"] The shared searchable vanilla+custom status
+  // combobox (same widget conditions and per-stack scaling use). It sets
+  // term.source to match whichever kind is picked, via formulaStatusCarrier,
+  // so a status term can never disagree with its own source.
   function statusRefOptList(term){
-    if(term.source === 'VanillaStatusStacks'){
-      const opts = statusOptionsData();
-      if(!opts.length) return '';
-      if(!term.builtinStatusRef || !opts.find(o=>o.value===term.builtinStatusRef)) term.builtinStatusRef = opts[0].value;
-      return `<select class="a-formula-status-ref" title="Which vanilla status's stacks to read.">${opts.map(o=>`<option value="${escapeAttr(o.value)}" ${o.value===term.builtinStatusRef?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+    if(!statusOptionsData().length && !mechanicOptionsData().length) return '';
+    // A saved custom term whose mechanic was deleted falls back to a valid
+    // pick rather than rendering a blank box with stale data behind it.
+    if(term.source === 'CustomStatusStacks' && !mechanicOptionsData().find(o=>o.value===term.statusRef)){
+      const vo = statusOptionsData();
+      term.source = 'VanillaStatusStacks'; delete term.statusRef;
+      if(vo.length) term.builtinStatusRef = vo[0].value;
     }
-    if(term.source === 'CustomStatusStacks'){
-      const opts = mechanicOptionsData();
-      if(!opts.length) return `<span class="cond-word hint-small">(create a mechanic first)</span>`;
-      if(!term.statusRef || !opts.find(o=>o.value===term.statusRef)) term.statusRef = opts[0].value;
-      return `<select class="a-formula-status-ref" title="Which of your mechanics' stacks to read.">${opts.map(o=>`<option value="${escapeAttr(o.value)}" ${o.value===term.statusRef?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+    if(term.source === 'VanillaStatusStacks' && !statusOptionsData().find(o=>o.value===term.builtinStatusRef)){
+      const vo = statusOptionsData(); if(vo.length) term.builtinStatusRef = vo[0].value;
     }
-    return '';
+    return mergedStatusPickerHtml(formulaStatusCarrier(term), FORMULA_STATUS_FIELDS, 'a-formula-status-picker');
+  }
+  function wireStatusPicker(rootEl, term, onChange){
+    wireMergedStatusPicker(rootEl.querySelector('.c-status-picker'), formulaStatusCarrier(term), FORMULA_STATUS_FIELDS, ()=>onChange());
   }
 
   // [Round 368, Tyler: change "never below"/"never above" to "lower limit"/
@@ -16158,23 +16195,16 @@ function renderAmountFormulaBuilder(act, trigger){
       row.querySelector('.a-formula-sign').onchange = e=>{ term.sign = e.target.value; updateResult(); };
       row.querySelector('.a-formula-value').oninput = e=>{ term.value = parseFloat(e.target.value) || 0; updateResult(); };
       row.querySelector('.a-formula-source').onchange = e=>{
-        term.source = e.target.value;
         // Switching source can change which extra fields this term needs
-        // (subject/status ref) — stale ones from the PREVIOUS source are
-        // dropped so a term never silently carries, say, a statusRef left
-        // over from when it used to be CustomStatusStacks.
-        if(!AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) delete term.subject;
-        if(!AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)){ delete term.statusRef; delete term.builtinStatusRef; }
+        // (subject/status) -- applyFormulaSourceChoice drops stale ones so a
+        // term never silently carries, say, a statusRef left over from when
+        // it used to be a status term.
+        applyFormulaSourceChoice(term, e.target.value);
         render();
       };
+      wireStatusPicker(row, term, updateResult);
       const subjectSelect = row.querySelector('.a-formula-subject');
       if(subjectSelect) subjectSelect.onchange = e=>{ term.subject = e.target.value; updateResult(); };
-      const statusRefSelect = row.querySelector('.a-formula-status-ref');
-      if(statusRefSelect) statusRefSelect.onchange = e=>{
-        if(term.source === 'VanillaStatusStacks') term.builtinStatusRef = e.target.value;
-        else term.statusRef = e.target.value;
-        updateResult();
-      };
       const removeBtn = row.querySelector('.a-formula-remove-term');
       if(removeBtn) removeBtn.onclick = ()=>{
         if(terms.length <= 1) return;
@@ -16210,20 +16240,12 @@ function renderAmountFormulaBuilder(act, trigger){
       if(!from) return;
       row.querySelector('.a-formula-bound-mult').oninput = e=>{ from.value = parseFloat(e.target.value) || 0; updateResult(); };
       row.querySelector('.a-formula-bound-source').onchange = e=>{
-        from.source = e.target.value;
-        if(!AMOUNT_FORMULA_SUBJECT_SOURCES.includes(from.source)) delete from.subject;
-        else if(!from.subject) from.subject = 'Self';
-        if(!AMOUNT_FORMULA_STATUS_SOURCES.includes(from.source)){ delete from.statusRef; delete from.builtinStatusRef; }
+        applyFormulaSourceChoice(from, e.target.value);
         render();
       };
+      wireStatusPicker(row, from, updateResult);
       const subj = row.querySelector('.a-formula-subject');
       if(subj) subj.onchange = e=>{ from.subject = e.target.value; updateResult(); };
-      const ref = row.querySelector('.a-formula-status-ref');
-      if(ref) ref.onchange = e=>{
-        if(from.source === 'VanillaStatusStacks') from.builtinStatusRef = e.target.value;
-        else from.statusRef = e.target.value;
-        updateResult();
-      };
     });
   }
 
