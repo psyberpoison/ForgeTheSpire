@@ -20287,12 +20287,19 @@ function openMechEditor(mechId){
       // status moves it to "above the energy counter" afterward, with its
       // own cap check.
       if(!mechResourceBar(m)){
-        if(countResourceBarWidgetsForAnchor(state.character.resourceBars, 'HealthBar') >= 1){
-          alert('The "below health bar" anchor supports only 1 bar/diamond group total. Move or remove the existing one first (open its own status editor to move a custom status above the energy counter, or remove a built-in-status bar from the list above the mechanics grid).');
+        // [Round 372, Tyler: got the "below health bar supports only 1" alert
+        // just from ticking "Represent as a bar" on a custom status] A new bar
+        // still starts below the health bar when that slot is free, but if
+        // it's taken it now falls back to above the energy counter (same rule
+        // "+ Add a built-in-status bar" has used since round 257), and only
+        // refuses when BOTH anchors are full.
+        const newBarAnchor = vanillaBarCreateAnchor();
+        if(newBarAnchor === null){
+          alert(`Both bar areas are full (1 below the health bar, ${MAX_RESOURCE_BARS_UI} above the energy counter). Remove a bar from the preview first (the \u00d7 on it), then try again.`);
           e.target.checked = false;
           return;
         }
-        state.character.resourceBars.push({ enabled:true, statusKind:'custom', status:m.id, max:5, color:'#3399ff', label:m.name||'', layout:'standalone', anchor:'HealthBar' });
+        state.character.resourceBars.push({ enabled:true, statusKind:'custom', status:m.id, max:5, color:'#3399ff', label:m.name||'', layout:'standalone', anchor:newBarAnchor });
       }
     } else {
       // [Round 249] Tyler: "i unchecked the bar box... now i cant recheck
