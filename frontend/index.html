@@ -1783,6 +1783,13 @@
     cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; border-radius:4px;
   }
   .rb-preview-chip-remove:hover{ color:var(--parchment); background:rgba(255,255,255,.08); }
+  /* [Round 371, Tyler: "add a pencil button to edit the bars in the preview"] Same look as the X beside it. Hidden inside a modal -- the preview there is a read-along for the bar already being edited, and opening another editor would replace it. */
+  .rb-preview-chip-edit{
+    flex:0 0 auto; border:none; background:transparent; color:var(--parchment-dim);
+    cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; border-radius:4px;
+  }
+  .rb-preview-chip-edit:hover{ color:var(--parchment); background:rgba(255,255,255,.08); }
+  #modal .rb-preview-chip-edit{display:none;}
 
   /* Selected-value "chip" bubbles, shown above the filter box so the
      current selection is visible at a glance without opening the list. */
@@ -3834,7 +3841,7 @@
            openMechEditor's own bar fields now share) so Layout/Anchor/
            Max/Color/pairing are all set from there instead. -->
       <div style="margin-top:18px; padding:12px 14px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--stone-2)">
-        <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. A bar's Layout (Single/Dual) and Anchor are set from its own editor — click a mechanic's 'Represent as a bar' box below for a custom status, or Edit on a row below for a built-in one.">Resource bars</label>
+        <label style="margin-top:0" title="Up to 3 standalone bars above the energy counter, or 1 bar (or 1 diamond group) below the health bar. A bar's Layout (Single/Dual) and Anchor are set from its own editor — click a mechanic's 'Represent as a bar' box below for a custom status, or the pencil on a bar in the preview to edit any existing bar.">Resource bars</label>
         <div class="rb-preview-mount"></div>
         <!-- [Round 258/259] Tyler: "lets not have the user pick the
              status until the add button is clicked" — the status picker
@@ -3846,7 +3853,6 @@
         <div class="row" style="margin-top:12px; align-items:flex-end; gap:8px; flex-wrap:wrap;">
           <button type="button" id="add-vanilla-bar-btn" class="secondary">+ Add a built-in-status bar</button>
         </div>
-        <div id="vanilla-bars-list" style="margin-top:8px"></div>
       </div>
     </div>
   </section>
@@ -6945,6 +6951,7 @@ function resourceBarWidgetChipHtml(widget, anchorName, slot){
     return `<div class="rb-preview-chip${orphaned ? ' rb-preview-chip-orphaned' : ''}" title="${escapeAttr(label)} (max ${max})">
       <div class="rb-preview-chip-top">
         <div class="rb-preview-bar-track"><div class="rb-preview-bar-fill" data-rb-max="${max}" data-rb-own="${isOwnBar ? '1' : '0'}" style="width:${barPct}%; background:${escapeAttr(b.color||'#3399ff')}"></div>${barTickMarksHtml(max)}</div>
+        ${orphaned ? '' : `<button type="button" class="rb-preview-chip-edit" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="Edit this bar">&#9998;</button>`}
         <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="${escapeAttr(removeTitle)}">&times;</button>
       </div>
       <span class="rb-preview-chip-label">${escapeHtml(label)}${orphaned ? ' <em>(deleted status)</em>' : ''}</span>
@@ -6986,6 +6993,7 @@ function resourceBarWidgetChipHtml(widget, anchorName, slot){
   return `<div class="rb-preview-chip rb-preview-chip-diamond" title="${escapeAttr(names)} (diamond group)">
     <div class="rb-preview-chip-top">
       <div class="rb-preview-diamond-widget">${leftBar}${diamond}${rightBar}</div>
+      <button type="button" class="rb-preview-chip-edit" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="Edit this dual bar (opens ${escapeAttr(resourceBarWidgetLabel(left || right || center) || 'its')} editor, which also sets the paired and center statuses)">&#9998;</button>
       <button type="button" class="rb-preview-chip-remove" data-rb-anchor="${escapeAttr(anchorName)}" data-rb-slot="${slot}" title="Remove this diamond group">&times;</button>
     </div>
     <span class="rb-preview-chip-label">${escapeHtml(names)}</span>
@@ -7070,8 +7078,7 @@ function removeOrUnpairVanillaBar(builtinStatus){
 }
 function renderVanillaBars(){
   const addBtn = document.getElementById('add-vanilla-bar-btn');
-  const listEl = document.getElementById('vanilla-bars-list');
-  if(!addBtn || !listEl) return; // not mounted (e.g. section not yet rendered)
+  if(!addBtn) return; // not mounted (e.g. section not yet rendered)
   // [Round 257] A brand-new vanilla bar no longer has to land on HealthBar
   // specifically — see vanillaBarCreateAnchor below, which now falls back
   // to EnergyCounter when HealthBar's already full. Only block Add
@@ -7079,33 +7086,7 @@ function renderVanillaBars(){
   const noRoomAnywhere = vanillaBarCreateAnchor() === null;
   if(addBtn) addBtn.disabled = noRoomAnywhere;
   if(addBtn) addBtn.title = noRoomAnywhere ? 'Both anchors are full — remove or move an existing bar first.' : '';
-  const bars = vanillaResourceBars();
-  // [Round 227] A vanilla status's own bar can now also be picked as the
-  // "Paired status"/"Center status" of a custom mechanic's Dual bar (see
-  // renderBarFieldsCore) — previously vanilla bars could only ever be
-  // standalone, so this row never had to say anything about layout/anchor
-  // beyond the fixed "Below the health bar" text. Now it reflects the
-  // real anchor (a paired vanilla status inherits its group's anchor,
-  // which can be above the energy counter) and its role.
-  const ROLE_LABELS = { left:'Dual bar — left', right:'Dual bar — right', center:'Dual bar — center (diamond)' };
-  listEl.innerHTML = bars.map((bar) => {
-    const isDiamond = bar.layout === 'diamond';
-    const anchorLabel = resolveBarAnchor(bar) === 'EnergyCounter' ? 'Above the energy counter' : 'Below the health bar';
-    const roleLabel = isDiamond ? (ROLE_LABELS[bar.diamondRole] || 'Dual bar') : 'Single bar';
-    return `
-    <div class="row vb-row" data-id="${escapeAttr(bar.builtinStatus)}" style="align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-      <div class="hint-small" style="flex:0 0 160px; font-weight:600">${escapeHtml(bar.builtinStatus)}</div>
-      <div class="hint-small" style="flex:1 1 auto">${escapeHtml(anchorLabel)} · ${escapeHtml(roleLabel)}</div>
-      <button type="button" class="vb-edit secondary">Edit</button>
-      <button type="button" class="vb-remove" title="${isDiamond ? 'Unpair (reverts this back to its own single bar)' : 'Remove this bar'}">✕</button>
-    </div>
-  `;
-  }).join('') || `<div class="hint-small">No built-in-status bars yet.</div>`;
-  listEl.querySelectorAll('.vb-row').forEach(rowEl=>{
-    const id = rowEl.dataset.id;
-    rowEl.querySelector('.vb-edit').addEventListener('click', ()=> openVanillaBarEditor(id));
-    rowEl.querySelector('.vb-remove').addEventListener('click', ()=> removeOrUnpairVanillaBar(id));
-  });
+  // [Round 371] The per-bar Edit/X list that used to render here is gone (Tyler: "remove this section. we already have an X next to the bars being previewed") -- each preview chip now carries its own pencil + X, so this only keeps the Add button's enabled state current.
 }
 document.addEventListener('click', (e)=>{
   if(e.target && e.target.id === 'add-vanilla-bar-btn'){
@@ -7139,6 +7120,23 @@ document.addEventListener('click', (e)=>{
   // by object identity — works identically for a normal bar and for an
   // orphaned one left behind by a deleted status (no mechanic lookup
   // needed to remove it, just the bar entry itself).
+  // [Round 371] Pencil on a preview chip: opens the editor for that bar. A
+  // vanilla bar opens the Resource Bar editor; a custom status's bar opens
+  // its mechanic editor (where "Represent as a bar" lives). A dual bar opens
+  // its left bar's editor -- that editor also holds the paired (right) and
+  // center statuses' own Max/Color, so the whole group is editable from it.
+  const editBtn = e.target.closest && e.target.closest('.rb-preview-chip-edit');
+  if(editBtn){
+    const widget = resourceBarWidgetsForAnchor(editBtn.dataset.rbAnchor)[parseInt(editBtn.dataset.rbSlot, 10)];
+    if(!widget) return;
+    const bar = widget.type === 'standalone'
+      ? widget.bar
+      : (widget.entries.find(x=>x.diamondRole==='left') || widget.entries.find(x=>x.diamondRole==='right') || widget.entries[0]);
+    if(!bar) return;
+    if(bar.statusKind === 'vanilla') openVanillaBarEditor(bar.builtinStatus);
+    else if(state.mechanics.some(m => m.id === bar.status)) openMechEditor(bar.status);
+    return;
+  }
   const removeBtn = e.target.closest && e.target.closest('.rb-preview-chip-remove');
   if(removeBtn){
     const anchorName = removeBtn.dataset.rbAnchor;
