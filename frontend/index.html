@@ -1585,6 +1585,8 @@
   .a-formula-term .a-formula-sign{width:100%; min-width:0; flex:none; field-sizing:fixed;}
   .a-formula-term input.a-formula-value{width:100%;}
   .a-formula-add-term{align-self:flex-start;}
+  /* [Round 367, Tyler: "adjust the number box's height to be a bit shorter to match the other boxes"] The number inputs (31-32px) rendered taller than the selects (28.5px) beside them. Every box in the formula builder now shares one explicit height. */
+  .a-formula-builder select, .a-formula-builder input[type=number]{height:29px; box-sizing:border-box; padding-top:0; padding-bottom:0; line-height:1.2;}
   .a-formula-term select, .a-formula-term input{font-size:12.5px;}
   /* width:auto is the fix that actually matters here — same root cause as
      .condition-row's own matching comment above: the app's global
