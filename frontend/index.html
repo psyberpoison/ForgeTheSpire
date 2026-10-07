@@ -520,6 +520,8 @@
      wrap-on-narrow flex pattern .editor-grid already uses elsewhere
      (not a plain 2-col grid, so a narrow window still stacks instead of
      squeezing tiles unreadably thin). */
+  /* [Round 366, Tyler: "make the tiles a bit wider so we dont have it so squished and tall"] Potion tiles carry a 56px art thumbnail on the right, which at the default 150px min width left ~60px for the name/meta text. Wider minimum for the potions grid only. */
+  #potions-grid{grid-template-columns:repeat(auto-fill, minmax(250px,1fr));}
   .ench-afflict-columns{display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;}
   .ench-afflict-col{flex:1 1 280px; min-width:0;}
   .tile{
