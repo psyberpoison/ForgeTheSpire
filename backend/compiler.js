@@ -1489,12 +1489,28 @@ function resolveAmountFormulaExpr(action, ctx) {
   const terms = action.amountFormula.map(t => resolveAmountFormulaTermExpr({ ...t, __actionTarget: action.target }, ctx));
   let expr = `(${terms.join(' ')})`;
   const clamp = action.amountFormulaClamp;
-  if (clamp && Number.isFinite(clamp.min) && Number.isFinite(clamp.max)) {
-    expr = `Math.Max(${clamp.min}m, Math.Min(${clamp.max}m, ${expr}))`;
-  } else if (clamp && Number.isFinite(clamp.min)) {
-    expr = `Math.Max(${clamp.min}m, ${expr})`;
-  } else if (clamp && Number.isFinite(clamp.max)) {
-    expr = `Math.Min(${clamp.max}m, ${expr})`;
+  // [Round 368] Each limit is either a fixed number (min/max) or DYNAMIC
+  // (minFrom/maxFrom: one unsigned term — "never above 1 x your Strength").
+  // A dynamic bound reuses resolveAmountFormulaTermExpr so it reads the exact
+  // same IL-verified accessors a formula term does. validate.js forbids
+  // setting both forms for one side. When both sides are present and the
+  // lower limit ends up above the upper one at runtime, Math.Max is applied
+  // last so the LOWER limit wins.
+  const boundExpr = (fixed, from) => {
+    if (from && typeof from === 'object') {
+      const e = resolveAmountFormulaTermExpr({ ...from, sign: '+', __actionTarget: action.target }, ctx);
+      return e.replace(/^\+/, '');
+    }
+    return Number.isFinite(fixed) ? `${fixed}m` : null;
+  };
+  const lo = clamp ? boundExpr(clamp.min, clamp.minFrom) : null;
+  const hi = clamp ? boundExpr(clamp.max, clamp.maxFrom) : null;
+  if (lo && hi) {
+    expr = `Math.Max(${lo}, Math.Min(${hi}, ${expr}))`;
+  } else if (lo) {
+    expr = `Math.Max(${lo}, ${expr})`;
+  } else if (hi) {
+    expr = `Math.Min(${hi}, ${expr})`;
   }
   return expr;
 }

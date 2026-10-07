@@ -1528,6 +1528,55 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // validation matches what the UI can actually produce" discipline
     // every other type-restricted field in this file already follows
     // (e.g. hpKind/ReturnToHand just above).
+    // [Round 368] Shared by amountFormula terms AND the dynamic clamp bounds
+    // (amountFormulaClamp.minFrom/maxFrom) — a bound is just one unsigned term,
+    // so it follows the exact same source/subject/status/hook-trigger rules.
+    const checkFormulaTerm = (term, tp) => {
+      if (!term || typeof term !== 'object') { errors.push(`${tp} must be an object.`); return; }
+      if (!AMOUNT_FORMULA_SOURCES.includes(term.source)) {
+        errors.push(`${tp}.source "${term.source}" is not one of: ${AMOUNT_FORMULA_SOURCES.join(', ')}.`);
+        return;
+      }
+      if (typeof term.value !== 'number' || Number.isNaN(term.value)) {
+        errors.push(`${tp}.value must be a number.`);
+      }
+      if (term.sign !== undefined && !['+', '-'].includes(term.sign)) {
+        errors.push(`${tp}.sign "${term.sign}" is not one of: +, -.`);
+      }
+      // PendingDamage reads the real hook-local `amount` param
+      // BeforeMyDamageReceived/BeforeEnemyDamageReceived's own real
+      // signatures declare (see compiler.js:TRIGGER_HOOKS) — that local
+      // plainly doesn't exist on any other trigger, so referencing it
+      // there would be an undefined-variable C# compile failure
+      // (CS0103), same "reject clearly" convention as every other
+      // trigger-scoped check in this file.
+      if (AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(term.source) && !(xContext.trigger !== undefined && AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(xContext.trigger))) {
+        errors.push(`${tp}.source "${term.source}" only makes sense on trigger ${AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.join(' or ')} (got "${xContext.trigger}") — no other trigger's hook body has this real value in scope.`);
+      }
+      if (AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) {
+        if (term.subject !== undefined && !['Self', 'Target'].includes(term.subject)) {
+          errors.push(`${tp}.subject "${term.subject}" is not one of: Self, Target.`);
+        } else if (term.subject === 'Target' && xContext.trigger !== undefined && TARGETLESS_BOUND_HOOK_TRIGGERS.has(xContext.trigger)) {
+          // Same CS0103 risk amountScalesWithSubject's own "Target" check
+          // above guards against — "Target" here resolves through
+          // resolveTargetExpr(action.target), which this trigger's hook
+          // body never has a real fgTarget bound for.
+          errors.push(`${tp}.subject is "Target" but trigger "${xContext.trigger}" only exposes one real Creature (bound as fgPlayer), no second party — use "Self" instead.`);
+        }
+      } else if (term.subject !== undefined) {
+        errors.push(`${tp}.subject is only meaningful on ${AMOUNT_FORMULA_SUBJECT_SOURCES.join('/')} sources — this term's source is "${term.source}".`);
+      }
+      if (AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)) {
+        const scaleKind = term.source === 'VanillaStatusStacks' ? 'vanilla' : 'custom';
+        if (scaleKind === 'vanilla') {
+          if (!isNonEmptyString(term.builtinStatusRef)) errors.push(`${tp}.source is "VanillaStatusStacks" but builtinStatusRef is missing.`);
+          else if (!BUILTIN_STATUSES.includes(term.builtinStatusRef)) errors.push(`${tp}.builtinStatusRef "${term.builtinStatusRef}" is not one of the known built-in statuses.`);
+        } else {
+          if (!isNonEmptyString(term.statusRef)) errors.push(`${tp}.source is "CustomStatusStacks" but statusRef is missing.`);
+          else if (!mechanicIds.has(term.statusRef)) errors.push(`${tp}.statusRef "${term.statusRef}" doesn't match any defined mechanic id.`);
+        }
+      }
+    };
     if (act.amountFormula !== undefined && (act.type === 'AfflictCard' || act.type === 'EnchantCard')) {
       errors.push(`${p}: amountFormula is not available on "${act.type}" — the "Use a formula" option was removed from Afflict/Enchant a Card.`);
     } else if (act.amountFormula !== undefined) {
@@ -1537,53 +1586,7 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         if (act.amountIsX === true || act.amountIsStarX === true || act.amountScalesWithStatus || act.amountScalesWithBuiltinStatus || act.amountScalesWithStatusKind) {
           errors.push(`${p}.amountFormula can't be combined with amountIsX/amountIsStarX/amountScalesWith* — alternate sources for the same amount, not stackable.`);
         }
-        act.amountFormula.forEach((term, ti) => {
-          const tp = `${p}.amountFormula[${ti}]`;
-          if (!term || typeof term !== 'object') { errors.push(`${tp} must be an object.`); return; }
-          if (!AMOUNT_FORMULA_SOURCES.includes(term.source)) {
-            errors.push(`${tp}.source "${term.source}" is not one of: ${AMOUNT_FORMULA_SOURCES.join(', ')}.`);
-            return;
-          }
-          if (typeof term.value !== 'number' || Number.isNaN(term.value)) {
-            errors.push(`${tp}.value must be a number.`);
-          }
-          if (term.sign !== undefined && !['+', '-'].includes(term.sign)) {
-            errors.push(`${tp}.sign "${term.sign}" is not one of: +, -.`);
-          }
-          // PendingDamage reads the real hook-local `amount` param
-          // BeforeMyDamageReceived/BeforeEnemyDamageReceived's own real
-          // signatures declare (see compiler.js:TRIGGER_HOOKS) — that local
-          // plainly doesn't exist on any other trigger, so referencing it
-          // there would be an undefined-variable C# compile failure
-          // (CS0103), same "reject clearly" convention as every other
-          // trigger-scoped check in this file.
-          if (AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(term.source) && !(xContext.trigger !== undefined && AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(xContext.trigger))) {
-            errors.push(`${tp}.source "${term.source}" only makes sense on trigger ${AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.join(' or ')} (got "${xContext.trigger}") — no other trigger's hook body has this real value in scope.`);
-          }
-          if (AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) {
-            if (term.subject !== undefined && !['Self', 'Target'].includes(term.subject)) {
-              errors.push(`${tp}.subject "${term.subject}" is not one of: Self, Target.`);
-            } else if (term.subject === 'Target' && xContext.trigger !== undefined && TARGETLESS_BOUND_HOOK_TRIGGERS.has(xContext.trigger)) {
-              // Same CS0103 risk amountScalesWithSubject's own "Target" check
-              // above guards against — "Target" here resolves through
-              // resolveTargetExpr(action.target), which this trigger's hook
-              // body never has a real fgTarget bound for.
-              errors.push(`${tp}.subject is "Target" but trigger "${xContext.trigger}" only exposes one real Creature (bound as fgPlayer), no second party — use "Self" instead.`);
-            }
-          } else if (term.subject !== undefined) {
-            errors.push(`${tp}.subject is only meaningful on ${AMOUNT_FORMULA_SUBJECT_SOURCES.join('/')} sources — this term's source is "${term.source}".`);
-          }
-          if (AMOUNT_FORMULA_STATUS_SOURCES.includes(term.source)) {
-            const scaleKind = term.source === 'VanillaStatusStacks' ? 'vanilla' : 'custom';
-            if (scaleKind === 'vanilla') {
-              if (!isNonEmptyString(term.builtinStatusRef)) errors.push(`${tp}.source is "VanillaStatusStacks" but builtinStatusRef is missing.`);
-              else if (!BUILTIN_STATUSES.includes(term.builtinStatusRef)) errors.push(`${tp}.builtinStatusRef "${term.builtinStatusRef}" is not one of the known built-in statuses.`);
-            } else {
-              if (!isNonEmptyString(term.statusRef)) errors.push(`${tp}.source is "CustomStatusStacks" but statusRef is missing.`);
-              else if (!mechanicIds.has(term.statusRef)) errors.push(`${tp}.statusRef "${term.statusRef}" doesn't match any defined mechanic id.`);
-            }
-          }
-        });
+        act.amountFormula.forEach((term, ti) => checkFormulaTerm(term, `${p}.amountFormula[${ti}]`));
       }
     }
     if (act.amountFormulaClamp !== undefined && (act.type === 'AfflictCard' || act.type === 'EnchantCard')) {
@@ -1592,12 +1595,25 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (!act.amountFormulaClamp || typeof act.amountFormulaClamp !== 'object') {
         errors.push(`${p}.amountFormulaClamp must be an object if present.`);
       } else {
-        const { min, max } = act.amountFormulaClamp;
+        const { min, max, minFrom, maxFrom } = act.amountFormulaClamp;
         if (min !== undefined && typeof min !== 'number') errors.push(`${p}.amountFormulaClamp.min must be a number if present.`);
         if (max !== undefined && typeof max !== 'number') errors.push(`${p}.amountFormulaClamp.max must be a number if present.`);
         if (typeof min === 'number' && typeof max === 'number' && min > max) {
           errors.push(`${p}.amountFormulaClamp.min (${min}) is greater than .max (${max}).`);
         }
+        // [Round 368] Dynamic bounds — "never above the amount of Strength you
+        // have". A bound is one unsigned, non-Literal term (a fixed number
+        // already has its own min/max field). One value per side: a number
+        // OR a dynamic term, never both.
+        [['min', minFrom, min], ['max', maxFrom, max]].forEach(([side, from, fixed]) => {
+          if (from === undefined) return;
+          const fp = `${p}.amountFormulaClamp.${side}From`;
+          if (fixed !== undefined) errors.push(`${fp}: ${side} and ${side}From are alternate ways to set the same limit — use one or the other.`);
+          if (!from || typeof from !== 'object') { errors.push(`${fp} must be an object.`); return; }
+          if (from.source === 'Literal') { errors.push(`${fp}.source can't be "Literal" — use the plain ${side} number for a fixed limit.`); return; }
+          if (from.sign !== undefined && from.sign !== '+') errors.push(`${fp}.sign isn't supported on a limit — use a negative value instead.`);
+          checkFormulaTerm(from, fp);
+        });
       }
     }
     if (act.amountScalesWithStatus || act.amountScalesWithBuiltinStatus || act.amountScalesWithStatusKind) {

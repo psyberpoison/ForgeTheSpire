@@ -1614,8 +1614,13 @@
      later in the sheet; this one just wins cleanly). */
   .a-formula-term input{width:100%; min-width:0; flex:none;}
   .a-formula-remove-term{margin-left:0; flex:none; justify-self:end;}
-  .a-formula-clamp{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;}
+  .a-formula-clamp{display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin-top:2px;}
   .a-formula-clamp input[type=number]{width:84px;}
+  /* [Round 368] One row per limit: "Lower limit [mode] ..." */
+  .a-formula-bound{display:flex; align-items:flex-start; gap:6px;}
+  .a-formula-bound-label{width:78px; flex:none; line-height:29px;}
+  .a-formula-bound-body{display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; flex:1;}
+  .a-formula-bound select{width:auto; min-width:0; flex:0 0 auto; field-sizing:content;}
   .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
   /* Enchantment/Affliction "Valid targets" merged base+custom tag picker
@@ -12102,10 +12107,12 @@ function describeAmountFormula(act){
   const body = act.amountFormula.map(describeAmountFormulaTerm).join(' ').replace(/^\+/, '');
   const clamp = act.amountFormulaClamp;
   let clampSuffix = '';
-  if(clamp && (typeof clamp.min === 'number' || typeof clamp.max === 'number')){
-    if(typeof clamp.min === 'number' && typeof clamp.max === 'number') clampSuffix = `, clamped ${clamp.min}-${clamp.max}`;
-    else if(typeof clamp.min === 'number') clampSuffix = `, min ${clamp.min}`;
-    else clampSuffix = `, max ${clamp.max}`;
+  if(clamp){
+    const lo = clamp.minFrom ? describeAmountFormulaTerm({ ...clamp.minFrom, sign: '+' }).replace(/^\+/, '') : (typeof clamp.min === 'number' ? String(clamp.min) : null);
+    const hi = clamp.maxFrom ? describeAmountFormulaTerm({ ...clamp.maxFrom, sign: '+' }).replace(/^\+/, '') : (typeof clamp.max === 'number' ? String(clamp.max) : null);
+    if(lo !== null && hi !== null) clampSuffix = `, clamped ${lo} to ${hi}`;
+    else if(lo !== null) clampSuffix = `, min ${lo}`;
+    else if(hi !== null) clampSuffix = `, max ${hi}`;
   }
   return ` (${body}${clampSuffix})`;
 }
@@ -15951,15 +15958,20 @@ function formulaResultText(act){
   });
   const c = act.amountFormulaClamp;
   if(c){
-    const hasMin = typeof c.min === 'number', hasMax = typeof c.max === 'number';
-    if(hasMin && hasMax) out += `  (kept between ${c.min} and ${c.max})`;
-    else if(hasMin) out += `  (never below ${c.min})`;
-    else if(hasMax) out += `  (never above ${c.max})`;
+    // [Round 368] A limit is a fixed number OR a dynamic value (minFrom/
+    // maxFrom -- one unsigned term, reusing termText so it reads exactly like
+    // a formula part: "your Strength stacks", "2 x your current HP").
+    const lo = c.minFrom ? termText(c.minFrom) : (typeof c.min === 'number' ? String(c.min) : null);
+    const hi = c.maxFrom ? termText(c.maxFrom) : (typeof c.max === 'number' ? String(c.max) : null);
+    if(lo !== null && hi !== null) out += `  (kept between ${lo} and ${hi})`;
+    else if(lo !== null) out += `  (at least ${lo})`;
+    else if(hi !== null) out += `  (at most ${hi})`;
   }
   return out;
 }
-function amountFormulaSourceOptList(selected, trigger){
+function amountFormulaSourceOptList(selected, trigger, excludeLiteral){
   return AMOUNT_FORMULA_SOURCES.filter(s => {
+    if(excludeLiteral && s === 'Literal') return false;
     if(!AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(s)) return true;
     // Only offer PendingDamage on the 2 real triggers whose hook body
     // actually declares that `amount` local (see backend/validate.js's
@@ -16022,6 +16034,55 @@ function renderAmountFormulaBuilder(act, trigger){
     return '';
   }
 
+  // [Round 368, Tyler: change "never below"/"never above" to "lower limit"/
+  // "upper limit", and "give the creator the ability to bound those limits
+  // dynamically equal to another status. like never above the amount of
+  // strength you have"] Each limit has a mode: no limit / a fixed number
+  // (stored as clamp.min / clamp.max, unchanged) / based on a value (stored as
+  // clamp.minFrom / clamp.maxFrom -- ONE unsigned term in the same shape as a
+  // formula term, so it can read any non-literal source: a status's stacks,
+  // HP, Gold, Energy...). The dynamic row reuses the term row's own pickers.
+  function boundMode(side){
+    const c = act.amountFormulaClamp || {};
+    if(c[side + 'From']) return 'dynamic';
+    return typeof c[side] === 'number' ? 'number' : 'none';
+  }
+  function boundHtml(side, label){
+    const c = act.amountFormulaClamp;
+    const mode = boundMode(side);
+    const from = c[side + 'From'];
+    let rest = '';
+    if(mode === 'number'){
+      rest = `<input type="number" class="a-formula-bound-num" value="${c[side] ?? 0}" title="${label}: the result won't go ${side==='min'?'below':'above'} this number.">`;
+    } else if(mode === 'dynamic'){
+      const needsSubject = AMOUNT_FORMULA_SUBJECT_SOURCES.includes(from.source);
+      const needsStatusRef = AMOUNT_FORMULA_STATUS_SOURCES.includes(from.source);
+      rest = `
+        <input type="number" class="a-formula-bound-mult" value="${from.value ?? 1}" title="How many times the chosen value counts (1 = exactly it, 2 = double it).">
+        <span class="cond-word a-formula-times">\u00d7</span>
+        <div class="a-formula-from">
+          <select class="a-formula-bound-source" title="What this limit follows.">${amountFormulaSourceOptList(from.source, trigger, true)}</select>
+          ${needsStatusRef ? statusRefOptList(from) : ''}
+          ${needsSubject ? `<span class="cond-word">of</span><select class="a-formula-subject">${subjectOptList(from.subject)}</select>` : ''}
+        </div>`;
+    }
+    return `<div class="a-formula-bound" data-side="${side}">
+      <span class="cond-word a-formula-bound-label">${label}</span>
+      <div class="a-formula-bound-body"><select class="a-formula-bound-mode" title="${label}: none, a fixed number, or based on another value.">
+        <option value="none" ${mode==='none'?'selected':''}>No limit</option>
+        <option value="number" ${mode==='number'?'selected':''}>A fixed number</option>
+        <option value="dynamic" ${mode==='dynamic'?'selected':''}>Based on a value</option>
+      </select>
+      ${rest}</div>
+    </div>`;
+  }
+  function defaultBoundTerm(){
+    const opts = statusOptionsData();
+    return opts.length
+      ? { source: 'VanillaStatusStacks', builtinStatusRef: opts[0].value, value: 1, subject: 'Self' }
+      : { source: 'CurrentHp', value: 1, subject: 'Self' };
+  }
+
   const wrap = document.createElement('div');
   wrap.className = 'a-formula-builder';
 
@@ -16036,13 +16097,8 @@ function renderAmountFormulaBuilder(act, trigger){
       <div class="a-formula-terms"></div>
       <button type="button" class="ghost a-formula-add-term" ${overCap?'disabled':''}>${overCap ? `Max ${MAX_AMOUNT_FORMULA_TERMS} parts` : '+ Add another part'}</button>
       <div class="a-formula-clamp">
-        <label class="a-check-label" title="Optionally stop the final result from going below a minimum and/or above a maximum. Leave one box empty for no limit on that side."><input type="checkbox" class="a-formula-clamp-toggle" ${act.amountFormulaClamp?'checked':''}> Limit the result</label>
-        ${act.amountFormulaClamp ? `
-          <span class="cond-word">never below</span>
-          <input type="number" class="a-formula-clamp-min" placeholder="no limit" value="${act.amountFormulaClamp.min ?? ''}">
-          <span class="cond-word">and never above</span>
-          <input type="number" class="a-formula-clamp-max" placeholder="no limit" value="${act.amountFormulaClamp.max ?? ''}">
-        ` : ''}
+        <label class="a-check-label" title="Optionally stop the final result from going below a lower limit and/or above an upper limit. Each limit can be a fixed number or follow another value, like how many Strength you have."><input type="checkbox" class="a-formula-clamp-toggle" ${act.amountFormulaClamp?'checked':''}> Limit the result</label>
+        ${act.amountFormulaClamp ? boundHtml('min', 'Lower limit') + boundHtml('max', 'Upper limit') : ''}
       </div>
     `;
     const resultEl = wrap.querySelector('.a-formula-result-text');
@@ -16137,20 +16193,38 @@ function renderAmountFormulaBuilder(act, trigger){
       else delete act.amountFormulaClamp;
       render();
     };
-    const clampMin = wrap.querySelector('.a-formula-clamp-min');
-    if(clampMin) clampMin.oninput = e=>{
-      const v = e.target.value;
-      if(v === '') delete act.amountFormulaClamp.min;
-      else act.amountFormulaClamp.min = parseFloat(v) || 0;
-      updateResult();
-    };
-    const clampMax = wrap.querySelector('.a-formula-clamp-max');
-    if(clampMax) clampMax.oninput = e=>{
-      const v = e.target.value;
-      if(v === '') delete act.amountFormulaClamp.max;
-      else act.amountFormulaClamp.max = parseFloat(v) || 0;
-      updateResult();
-    };
+    wrap.querySelectorAll('.a-formula-bound').forEach(row=>{
+      const side = row.dataset.side;
+      const c = act.amountFormulaClamp;
+      const from = c[side + 'From'];
+      row.querySelector('.a-formula-bound-mode').onchange = e=>{
+        const m = e.target.value;
+        const oldNum = c[side];
+        delete c[side]; delete c[side + 'From'];
+        if(m === 'number') c[side] = typeof oldNum === 'number' ? oldNum : 0;
+        else if(m === 'dynamic') c[side + 'From'] = defaultBoundTerm();
+        render();
+      };
+      const num = row.querySelector('.a-formula-bound-num');
+      if(num) num.oninput = e=>{ c[side] = parseFloat(e.target.value) || 0; updateResult(); };
+      if(!from) return;
+      row.querySelector('.a-formula-bound-mult').oninput = e=>{ from.value = parseFloat(e.target.value) || 0; updateResult(); };
+      row.querySelector('.a-formula-bound-source').onchange = e=>{
+        from.source = e.target.value;
+        if(!AMOUNT_FORMULA_SUBJECT_SOURCES.includes(from.source)) delete from.subject;
+        else if(!from.subject) from.subject = 'Self';
+        if(!AMOUNT_FORMULA_STATUS_SOURCES.includes(from.source)){ delete from.statusRef; delete from.builtinStatusRef; }
+        render();
+      };
+      const subj = row.querySelector('.a-formula-subject');
+      if(subj) subj.onchange = e=>{ from.subject = e.target.value; updateResult(); };
+      const ref = row.querySelector('.a-formula-status-ref');
+      if(ref) ref.onchange = e=>{
+        if(from.source === 'VanillaStatusStacks') from.builtinStatusRef = e.target.value;
+        else from.statusRef = e.target.value;
+        updateResult();
+      };
+    });
   }
 
   render();

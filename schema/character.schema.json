@@ -1927,6 +1927,30 @@
               },
               "max": {
                 "type": "number"
+              },
+              "minFrom": {
+                "type": "object",
+                "properties": {
+                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
+                  "value": { "type": "number" },
+                  "subject": { "enum": ["Self", "Target"] },
+                  "statusRef": { "type": "string" },
+                  "builtinStatusRef": { "type": "string" }
+                },
+                "required": ["source", "value"],
+                "description": "[Round 368] Dynamic lower limit: the result never goes below (value x this source). Same source/subject/status fields as an amountFormula term, minus Literal and sign. Alternate to `min` for the same side - backend/validate.js rejects setting both."
+              },
+              "maxFrom": {
+                "type": "object",
+                "properties": {
+                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
+                  "value": { "type": "number" },
+                  "subject": { "enum": ["Self", "Target"] },
+                  "statusRef": { "type": "string" },
+                  "builtinStatusRef": { "type": "string" }
+                },
+                "required": ["source", "value"],
+                "description": "[Round 368] Dynamic upper limit, e.g. 'never above the amount of Strength you have' = {source:'VanillaStatusStacks', builtinStatusRef:'Strength', value:1}. Alternate to `max` for the same side. If both limits are set and the lower ends up above the upper at runtime, the lower limit wins."
               }
             },
             "description": "[Round 329] Only meaningful alongside amountFormula above \u2014 optional Math.Max/Math.Min clamp applied to the SUMMED formula result, both bounds independently optional. This is the structured builder's own answer to the free-text tool's max(0, ...) pattern \u2014 Tyler's own \"missing HP\" example (max(0, selfMaxHp - selfCurrentHp)) is just a MaxHp/CurrentHp term pair with min:0 set here, no max() to type. Ignored when amountFormula is absent/empty. [Round 339] Same AfflictCard/EnchantCard exclusion as amountFormula above \u2014 moot on those two types now that amountFormula itself is unavailable there, but backend/validate.js rejects it explicitly too rather than silently ignoring a leftover value."
