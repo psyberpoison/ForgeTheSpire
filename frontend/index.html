@@ -173,7 +173,8 @@
     --side-nav-badge-padding:8px;
     --side-nav-tab-height:54px;
     --side-nav-tab-width:20px;
-    --side-nav-tab-overhang:12px;
+    /* [Round 373, Tyler: "move the pull out tab ... a little farther away from the wall. lets attach it to the right side of the small menu"] The tab used to overlap the menu's own right edge by 8px (12px overhang of a 20px tab); it now sits entirely outside, flush against the menu's right side -- overhang = the tab's full width. */
+    --side-nav-tab-overhang:20px;
   }
   body{
     margin:0;
@@ -289,7 +290,7 @@
      (side-nav-toggle) so the existing click-handler wiring in
      renderSideNav() didn't need to change, only its class/look. */
   .side-nav-tab{
-    position:absolute; top:50%; right:calc(-1 * var(--side-nav-tab-overhang));
+    position:absolute; top:50%; right:calc(-1 * var(--side-nav-tab-overhang) - 1px); /* the extra 1px clears the menu's own 1px border so the tab starts exactly at the menu's outer edge */
     transform:translateY(-50%);
     width:var(--side-nav-tab-width);
     height:var(--side-nav-tab-height);
@@ -299,7 +300,8 @@
     font-size:14px;
     background-image:linear-gradient(180deg, var(--stone) 0%, var(--stone-2) 100%);
     border:1px solid var(--border);
-    border-radius:4px 8px 8px 4px;
+    border-left:none; /* shares the menu's own right border */
+    border-radius:0 8px 8px 0;
     box-shadow:2px 2px 8px rgba(0,0,0,.4);
     user-select:none;
     transition:background-image .15s, color .15s;
