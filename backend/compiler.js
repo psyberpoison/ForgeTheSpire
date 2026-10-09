@@ -702,6 +702,8 @@ const PLAYER_ONLY_ACTIONS = [
   'MillCards', 'RemoveFromCombat', 'ShufflePiles',
   // [Round 381] BringCardsToHand -- moves cards between the acting player's own piles.
   'BringCardsToHand',
+  // [Round 382] AddReplay -- acts on card(s), no Creature-target concept.
+  'AddReplay',
   // [Round 378] ChannelOrb / EvokeOrb -- orb-queue operations on the acting
   // Player, no Creature-target concept.
   'ChannelOrb', 'EvokeOrb',
@@ -3409,6 +3411,53 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
             await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgMillC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Bottom, null, false); // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case
             await ForgeActions.DispatchCardMilled(choiceContext, ${mcPlayerExpr}.Creature.CombatState, fgMillC); // [Round 377] fires the "when a card is milled" trigger
         }`;
+    }
+    // [Round 382, gap-analysis "Card Replay"] "Add Replay to a card" -- the
+    // game's own Hidden Gem / Transfigure do exactly this.
+    // [VERIFIED via direct sts2.dll IL read] Replay is a per-card count:
+    //  * CardModel.BaseReplayCount is a real public int property with a
+    //    setter (and a ReplayCountChanged event); Hidden Gem's and
+    //    Transfigure's OnPlay (and SoldiersStew / SwordSagePower) all do
+    //    `card.BaseReplayCount = card.BaseReplayCount + n`.
+    //  * CardModel.GetEnchantedReplayCount() = enchantment.EnchantPlayCount(
+    //    BaseReplayCount) (or BaseReplayCount with no enchantment) -- the
+    //    value the "without Replay" check reads. Vanilla Spiral is the
+    //    enchantment that adds Replay.
+    // Hidden Gem's own random pick: Draw pile cards that are NOT Unplayable
+    // (CardKeyword value 4) and NOT Curse/Quest type and have Replay < 1,
+    // chosen with RunState.Rng.CombatCardSelection.NextItem, then shown with
+    // CardCmd.Preview(card, 1.2f, CardPreviewStyle.HorizontalLayout).
+    // Forge generalizes it: this card, or N DISTINCT random cards from any
+    // of Hand/Draw/Discard/Exhaust, optionally only ones without Replay. The
+    // Unplayable / Curse / Quest guard is always applied to the random pick.
+    case 'AddReplay': {
+      const arAmount = `(int)(${resolveAmountExpr(action, ctx)})`;
+      if (action.replayTargetKind === 'RandomFromPile') {
+        const arPlayer = resolvePlayerExpr(ctx);
+        const CE = 'MegaCrit.Sts2.Core.Entities.Cards';
+        const arCount = Number.isInteger(action.replayRandomCount) && action.replayRandomCount >= 1 ? action.replayRandomCount : 1;
+        const arWithout = action.replayOnlyWithout ? ' && fgReplayC.GetEnchantedReplayCount() < 1' : '';
+        return [
+          `        {`,
+          `            var fgReplayPlayer = ${arPlayer};`,
+          `            var fgReplayPool = ${CE}.PileTypeExtensions.GetPile(${pileTypeExpr(action.pile || 'Draw')}, fgReplayPlayer).Cards.Where(fgReplayC => !fgReplayC.Keywords.Contains(${CE}.CardKeyword.Unplayable) && fgReplayC.Type != ${CE}.CardType.Curse && fgReplayC.Type != ${CE}.CardType.Quest${arWithout}).ToList(); // [VERIFIED] Hidden Gem's own eligibility guard`,
+          `            var fgReplayPicked = new List<CardModel>();`,
+          `            for (int fgReplayI = 0; fgReplayI < ${arCount} && fgReplayPool.Count > 0; fgReplayI++)`,
+          `            {`,
+          `                var fgReplayPick = fgReplayPlayer.RunState.Rng.CombatCardSelection.NextItem(fgReplayPool);`,
+          `                fgReplayPool.Remove(fgReplayPick);`,
+          `                fgReplayPick.BaseReplayCount = System.Math.Max(0, fgReplayPick.BaseReplayCount + ${arAmount}); // [VERIFIED] same write Hidden Gem makes`,
+          `                fgReplayPicked.Add(fgReplayPick);`,
+          `            }`,
+          `            if (fgReplayPicked.Count > 0) MegaCrit.Sts2.Core.Commands.CardCmd.Preview(fgReplayPicked, 1.2f, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.HorizontalLayout); // [VERIFIED] the IReadOnlyList<CardModel> overload; Hidden Gem previews its pick the same way`,
+          `        }`,
+        ].join('\n');
+      }
+      const arCard = resolveActedCardExpr(ctx);
+      if (!arCard) {
+        return `        ForgeActions.Todo("AddReplay (this card) -- no card in scope at this hook; use \\"random card(s) in a pile\\" instead"); // [UNVERIFIED] see compiler.js's own comment on this case`;
+      }
+      return `        ${arCard}.BaseReplayCount = System.Math.Max(0, ${arCard}.BaseReplayCount + ${arAmount}); // [VERIFIED] same write Hidden Gem/Transfigure make -- see compiler.js's own comment on this case`;
     }
     // [Round 381, gap-analysis] "Bring Matching Combat Cards to Hand" -- move
     // cards from ONE of the Draw / Discard / Exhaust piles into the hand.

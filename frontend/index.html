@@ -4718,7 +4718,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4884,6 +4884,8 @@ const ACTION_TYPE_LABELS = {
   EvokeOrb: 'Evoke Orb',
   // [Round 381]
   BringCardsToHand: 'Bring Cards to Hand',
+  // [Round 382]
+  AddReplay: 'Add Replay to Card',
 };
 // [Round 376] Hover text for action types that need a clarifying note.
 // Shown as the <option>'s native title and again on the action's own
@@ -4896,6 +4898,7 @@ const ACTION_TYPE_TOOLTIPS = {
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
+  AddReplay: "Gives a card Replay: it is played that many extra times each time you play it, for the rest of this combat. Add it to this card, or to random cards in one of your piles (like the game's Hidden Gem, which gives Replay to a random card in the Draw pile). Random picks skip Unplayable cards, Curses and Quests, and can be limited to cards that don't already have Replay. Stacks on top of any Replay the card already has.",
   GainTempHp: 'Gives you Temporary HP: shown as "+N" next to your health (e.g. 95/100 +5). It soaks up HP loss that gets past your Block, one for one, then is used up. Stacks across gains and lasts until the end of combat. Does not stop HP lost directly (e.g. by a Lose HP effect).',
   RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
 };
@@ -4959,7 +4962,7 @@ const ACTION_TYPE_GROUPS = [
   // it's still fundamentally card-play-time manipulation, same category
   // that color always meant here.
   { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat', 'BringCardsToHand'] },
-  { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards'] },
+  { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards', 'AddReplay'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
   // below). [Round 293] "PetAttack" joins it -- same pet-focused concept,
@@ -5018,6 +5021,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ShufflePiles: 'shuffle hand discard draw pile',
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
+  AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
   BringCardsToHand: 'bring cards to hand from discard draw exhaust pile retrieve return recover fetch search tutor',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
@@ -5329,7 +5333,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12503,6 +12507,14 @@ function describeAction(act){
       return `Channel ${n} ${orbName} orb${n===1?'':'s'}`;
     }
     case 'EvokeOrb': return `Evoke your ${act.evokeWhich === 'Last' ? 'last' : 'first'} orb ${n} time${n===1?'':'s'}${act.keepOrb ? ' (keeps it)' : ''}`;
+    case 'AddReplay': {
+      const rPile = ({Hand:'Hand',Draw:'Draw pile',Discard:'Discard pile',Exhaust:'Exhaust pile'})[act.pile] || 'Draw pile';
+      if(act.replayTargetKind === 'RandomFromPile'){
+        const rc = act.replayRandomCount || 1;
+        return `Give ${rc} random card${rc===1?'':'s'} in your ${rPile}${act.replayOnlyWithout ? ' (only ones without Replay)' : ''} Replay ${n}`;
+      }
+      return `Give this card Replay ${n}`;
+    }
     case 'BringCardsToHand': {
       const bPile = ({Draw:'Draw pile',Discard:'Discard pile',Exhaust:'Exhaust pile'})[act.pile] || 'Discard pile';
       const bMode = act.bringMode === 'Random' ? 'Randomly put' : act.bringMode === 'All' ? 'Put all' : 'Choose up to';
@@ -15639,7 +15651,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand', 'AddReplay'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16600,6 +16612,18 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef;
   }
+  // [Round 382] AddReplay: ThisCard (default) or RandomFromPile + count + "only without Replay".
+  if(act.type === 'AddReplay'){
+    if(act.replayTargetKind !== 'RandomFromPile') act.replayTargetKind = 'ThisCard';
+    if(act.replayTargetKind === 'RandomFromPile'){
+      if(!Number.isInteger(act.replayRandomCount) || act.replayRandomCount < 1) act.replayRandomCount = 1;
+      if(!act.replayOnlyWithout) delete act.replayOnlyWithout;
+    } else {
+      delete act.replayRandomCount; delete act.replayOnlyWithout;
+    }
+  } else {
+    delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout;
+  }
   // [Round 381] BringCardsToHand's mode + AND-ed filters. Self-heals filters that point at
   // something that no longer exists (a deleted custom keyword / tag), like the cap's self-heal.
   if(act.type === 'BringCardsToHand'){
@@ -16790,6 +16814,9 @@ function ensureActionRefDefaults(act){
   // "RandomFromPile" -- same shared field, not a duplicate.
   if(act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')){
     if(!PILE_TYPES.includes(act.pile)) act.pile = 'Hand';
+  } else if(act.type === 'AddReplay' && act.replayTargetKind === 'RandomFromPile'){
+    // [Round 382] random picks default to the Draw pile (Hidden Gem's pile).
+    if(!PILE_TYPES.includes(act.pile)) act.pile = 'Draw';
   } else if(act.type === 'BringCardsToHand'){
     // [Round 381] source pile: Draw / Discard / Exhaust only (Hand is the destination).
     if(!BRING_SOURCE_PILES.includes(act.pile)) act.pile = 'Discard';
@@ -17550,6 +17577,17 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Evoke your</span> ${eoSel} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.EvokeOrb)}">orb</span>${amountHtml}${useXAmountHtml}<span class="cond-word">time(s).</span>`;
       break;
     }
+    // [Round 382] Add Replay: "Give [this card | N random card(s) in your pile] Replay [amount]."
+    // The "only cards without Replay" checkbox sits below the sentence (random mode only).
+    case 'AddReplay': {
+      const arRandom = act.replayTargetKind === 'RandomFromPile';
+      const arCountHtml = arRandom ? `<input type="number" class="a-replay-count" min="1" step="1" value="${act.replayRandomCount ?? 1}" style="width:56px; flex:none;">` : '';
+      const arKindSel = `<select class="a-replay-kind"><option value="ThisCard" ${arRandom?'':'selected'}>this card</option><option value="RandomFromPile" ${arRandom?'selected':''}>random card(s)</option></select>`;
+      const arPileHtml = arRandom ? `<span class="cond-word">in your</span><select class="a-pile">${pileOptList(act.pile)}</select>` : '';
+      if(arRandom) afflictOptionsBlockHtml = `<div class="action-row-usex"><label class="a-check-label" title="Only cards that don't already have Replay can be picked (like Hidden Gem)."><input type="checkbox" class="a-replay-onlywithout" ${act.replayOnlyWithout?'checked':''}> only cards without Replay</label></div>`;
+      sentenceHtml = `<span class="cond-word">Give</span> ${arCountHtml} ${arKindSel} ${arPileHtml} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.AddReplay)}">Replay</span>${amountHtml}${useXAmountHtml}<span class="cond-word">.</span>`;
+      break;
+    }
     // [Round 381] Bring Cards to Hand -- mode / [N] / type / source pile in the sentence, the
     // keyword / tag / cost filters in a row below it (Tyler's below-the-sentence convention).
     case 'BringCardsToHand': {
@@ -17951,6 +17989,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.removeAll; delete act.shuffleSource;
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
     delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
+    delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -18116,6 +18155,19 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  // [Round 382] AddReplay. The target-kind select swaps which siblings show, so it re-renders.
+  const replayKindSel = row.querySelector('.a-replay-kind');
+  if(replayKindSel) replayKindSel.onchange = e=>{ act.replayTargetKind = e.target.value; bringRerender(); };
+  const replayCountInput = row.querySelector('.a-replay-count');
+  if(replayCountInput) replayCountInput.onchange = e=>{
+    const v = parseInt(e.target.value, 10);
+    act.replayRandomCount = Number.isFinite(v) && v >= 1 ? v : 1;
+    e.target.value = act.replayRandomCount;
+  };
+  const replayOnlyWithoutCheck = row.querySelector('.a-replay-onlywithout');
+  if(replayOnlyWithoutCheck) replayOnlyWithoutCheck.onchange = e=>{
+    if(e.target.checked) act.replayOnlyWithout = true; else delete act.replayOnlyWithout;
   };
   const bringModeSel = row.querySelector('.a-bring-mode');
   if(bringModeSel) bringModeSel.onchange = e=>{ act.bringMode = e.target.value; bringRerender(); };

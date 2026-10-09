@@ -304,6 +304,8 @@ const ACTION_TYPES = [
   'ChannelOrb', 'EvokeOrb',
   // [Round 381] BringCardsToHand -- see compiler.js's actionToCSharp case.
   'BringCardsToHand',
+  // [Round 382] AddReplay -- see compiler.js's actionToCSharp case.
+  'AddReplay',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -1329,6 +1331,21 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else {
       BRING_FIELDS.forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "BringCardsToHand" — action type is "${act.type}".`); });
     }
+    // [Round 382] AddReplay: replayTargetKind / replayRandomCount / replayOnlyWithout.
+    if (act.type === 'AddReplay') {
+      if (act.replayTargetKind !== undefined && !['ThisCard', 'RandomFromPile'].includes(act.replayTargetKind)) errors.push(`${p}.replayTargetKind "${act.replayTargetKind}" is not one of: ThisCard, RandomFromPile.`);
+      const replayRandom = act.replayTargetKind === 'RandomFromPile';
+      if (act.replayRandomCount !== undefined) {
+        if (!Number.isInteger(act.replayRandomCount) || act.replayRandomCount < 1) errors.push(`${p}.replayRandomCount must be a whole number >= 1.`);
+        if (!replayRandom) errors.push(`${p}: replayRandomCount is only meaningful when replayTargetKind is "RandomFromPile".`);
+      }
+      if (act.replayOnlyWithout !== undefined) {
+        if (typeof act.replayOnlyWithout !== 'boolean') errors.push(`${p}.replayOnlyWithout must be a boolean.`);
+        if (!replayRandom) errors.push(`${p}: replayOnlyWithout is only meaningful when replayTargetKind is "RandomFromPile".`);
+      }
+    } else {
+      ['replayTargetKind', 'replayRandomCount', 'replayOnlyWithout'].forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "AddReplay" — action type is "${act.type}".`); });
+    }
     // [Round 378] ChannelOrb: orbKind/orbRef/orbVanillaRef -- same
     // custom/vanilla dual-field shape as stanceKind/stanceRef/
     // stanceVanillaRef below. EvokeOrb: evokeWhich/keepOrb.
@@ -1539,12 +1556,12 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (act.pile !== undefined && !['Draw', 'Discard', 'Exhaust'].includes(act.pile)) {
         errors.push(`${p}.pile is "${act.pile}" — "BringCardsToHand" must take cards from one of: Draw, Discard, Exhaust (or omitted, which defaults to "Discard").`);
       }
-    } else if (act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')) {
+    } else if (act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile') || (act.type === 'AddReplay' && act.replayTargetKind === 'RandomFromPile')) {
       if (act.pile !== undefined && !PILE_TYPES.includes(act.pile)) {
         errors.push(`${p}.pile is "${act.pile}" — must be one of: ${PILE_TYPES.join(', ')} (or omitted, which defaults to "Hand").`);
       }
     } else if (act.pile !== undefined) {
-      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile"/"AfflictCard" (RandomFromPile mode)/"BringCardsToHand" — action type is "${act.type}".`);
+      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile"/"AfflictCard" (RandomFromPile mode)/"AddReplay" (RandomFromPile mode)/"BringCardsToHand" — action type is "${act.type}".`);
     }
     if (act.type === 'EnchantCard') {
       if (act.enchantmentRef === '' || act.enchantmentRef === undefined) {
