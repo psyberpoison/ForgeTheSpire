@@ -193,6 +193,8 @@ const CONDITION_KINDS = [
   // the condition is evaluated, so it is rejected inside Glow/Playability
   // (see GENERALIZED_PLAYER_ONLY_CONDITION_KINDS).
   'MaxHp', 'Chance',
+  // [Round 383] CardMadeFree -- see compiler.js:conditionToCSharpRaw's case.
+  'CardMadeFree',
 ];
 // cardPlayBound-only condition kinds — down to just EnemyIntent as of
 // round 63. HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
@@ -581,6 +583,18 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
         errors.push(`${p}.mode "${cond.mode}" is not one of: Any, All.`);
       }
       if (!CARD_TYPES.includes(cond.cardType)) errors.push(`${p}.cardType "${cond.cardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
+      return;
+    }
+    // [Round 383] CardMadeFree: freeKind + trigger gate. Reads cardPlay (Resources / IsAutoPlay),
+    // so it needs a real `cardPlay` local: a card's own OnPlay or OnAnyCardPlayed only.
+    if (cond.freeKind !== undefined && cond.kind !== 'CardMadeFree') {
+      errors.push(`${p}: freeKind is only meaningful on kind "CardMadeFree" — kind is "${cond.kind}".`);
+    }
+    if (cond.kind === 'CardMadeFree') {
+      if (!['ReducedToZero', 'CostsZero', 'PlayedFree'].includes(cond.freeKind)) errors.push(`${p}.freeKind "${cond.freeKind}" is not one of: ReducedToZero, CostsZero, PlayedFree.`);
+      if (trigger === undefined || !['OnPlay', 'OnAnyCardPlayed'].includes(trigger)) {
+        errors.push(`${p} has kind "CardMadeFree" but this effect block's trigger is "${trigger}" — this condition reads the card play itself (what it cost / whether it was auto-played), which only exists on "OnPlay" and "OnAnyCardPlayed".`);
+      }
       return;
     }
     if (cond.kind === 'EnemyIntent') {

@@ -4713,6 +4713,34 @@ function conditionToCSharpRaw(cond, ctx = {}) {
         return `${resolvePlayerExpr(ctx)}.BaseOrbSlotCount ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Player.BaseOrbSlotCount] */`;
       }
       return `ForgeActions.TodoCondition("OrbSlotCount(no player in scope on this hook)")`;
+    // [Round 383, gap-analysis "made free"] "This card was made free by an effect".
+    // [VERIFIED via direct sts2.dll IL read] there is no single "made free"
+    // flag in the game; each play is recorded on the CardPlay itself:
+    //  * CardPlay.Resources (ResourceInfo): EnergyValue = the cost resolved
+    //    for this play, EnergySpent = what was actually charged.
+    //    PlayCardAction.ExecuteAction sets both to the amount paid;
+    //    CardCmd.AutoPlay sets EnergySpent = 0 and EnergyValue =
+    //    CardEnergyCost.GetAmountToSpend() (the cost it would have been).
+    //    CardModel.OnPlayWrapper stores them on the CardPlay before OnPlay /
+    //    Hook.AfterCardPlayed run, so reading them here is safe.
+    //  * CardPlay.IsAutoPlay (set by OnPlayWrapper's isAutoPlay argument).
+    //  * CardEnergyCost.Canonical = the card's printed cost (ignores
+    //    temporary modifiers); CostsX marks X-cost cards.
+    // Reading the PLAY (not the card's live cost) matters: "until played"
+    // costs reset as the card is played, so a live cost check would already
+    // be wrong by the time any play hook runs.
+    //  ReducedToZero: EnergyValue == 0, not X-cost, Canonical > 0.
+    //  CostsZero:     EnergyValue == 0, not X-cost.
+    //  PlayedFree:    IsAutoPlay.
+    // Needs a real `cardPlay` local, so only OnPlay / OnAnyCardPlayed
+    // (validate.js rejects it elsewhere, including Glow/Playability).
+    case 'CardMadeFree': {
+      if (!ctx.cardPlayBound) return `ForgeActions.TodoCondition("CardMadeFree(no cardPlay in scope on this hook)")`;
+      if (cond.freeKind === 'PlayedFree') return `cardPlay.IsAutoPlay /* [VERIFIED via sts2.dll -- CardPlay.IsAutoPlay, set by CardModel.OnPlayWrapper] */`;
+      const cmfZero = `(cardPlay.Resources.EnergyValue == 0 && !cardPlay.Card.EnergyCost.CostsX)`;
+      if (cond.freeKind === 'CostsZero') return `${cmfZero} /* [VERIFIED via sts2.dll -- CardPlay.Resources.EnergyValue] */`;
+      return `(${cmfZero} && cardPlay.Card.EnergyCost.Canonical > 0) /* [VERIFIED via sts2.dll -- Resources.EnergyValue + CardEnergyCost.Canonical] */`;
+    }
     case 'EnemyIntent': {
       // [VERIFIED via sts2.dll's real MonsterMoves.Intents type hierarchy,
       // cross-confirmed via a real usage pattern already found in Tyler's

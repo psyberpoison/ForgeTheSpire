@@ -10954,6 +10954,9 @@ const CONDITION_KINDS = [
     hint:'Checks your current orb slot count. Valid on any relic/mechanic/card effect-block trigger, but unavailable inside Glow/Playability and Group B modifiers.' },
   { id:'EnemyIntent', label:"Enemy's intent is", real:true, requiresTrigger:'cardPlayBound',
     hint:'Checks the card\'s target\'s next move for an Attack or Defend intent (the only two intent types currently offered here). Needs a target in scope — valid on "OnPlay" and "OnAnyCardPlayed" only.' },
+  // [Round 383] "made free" -- reads the card play itself (what it cost / whether it was auto-played).
+  { id:'CardMadeFree', label:'Played card was', real:true, requiresTrigger:'cardPlayBound',
+    hint:'Checks how the card being played was paid for. "Made free" = it costs 0 now but normally costs more (an effect reduced it). "Costs 0" = its cost was 0 for this play, whatever the reason. "Auto-played" = an effect played it without paying (like Sly). Valid on "OnPlay" and "OnAnyCardPlayed" only.' },
   // [Round 311] Label was 'You have relic' — same baked-in-pronoun issue
   // as EnergyRemaining/StarsRemaining/OrbSlotCount above, just a verb
   // phrase ("You have...") instead of a possessive noun phrase. Now
@@ -11107,7 +11110,7 @@ const CONDITION_KIND_CATEGORIES = [
   { id:'relicsCards', label:'Relics & Cards', color:'var(--bb-purple)', kindIds:['HasSpecificRelic','NoCopiesOfCardInHand'] },
   { id:'cardReference', label:'Card Reference', color:'var(--bb-green)', kindIds:['CardPositionInHand','PlayedCardHasKeyword','PlayedCardHasTag','PlayedCardHasType'] },
   { id:'pet', label:'Pet', color:'var(--teal)', kindIds:['PetIsOut','PetPositionIs'] },
-  { id:'combatEvents', label:'Combat Events', color:'var(--bb-red)', kindIds:['DamageBrokeBlock','EnemyIntent','Chance'] },
+  { id:'combatEvents', label:'Combat Events', color:'var(--bb-red)', kindIds:['DamageBrokeBlock','EnemyIntent','CardMadeFree','Chance'] },
 ];
 function conditionKindCategoryFor(kindId){
   return CONDITION_KIND_CATEGORIES.find(cat => cat.kindIds.includes(kindId))
@@ -12660,6 +12663,7 @@ function describeCondition(cond, trigger){
       return `${subj} ${subj==='you'?'are':'is'} in ${name} stance`;
     }
     case 'EnemyIntent': return `the target's intent is ${cond.intentKind}`;
+    case 'CardMadeFree': return `the played card was ${({ReducedToZero:'made free (cost reduced to 0)',CostsZero:'free (costs 0)',PlayedFree:'auto-played for free'})[cond.freeKind] || 'made free'}`;
     case 'HasSpecificRelic': return `you have ${(state.relics.find(r=>r.id===cond.relicRef) || {}).name || 'the relic'}`;
     case 'NoCopiesOfCardInHand': return `there are no copies of ${(state.cards.find(c=>c.id===cond.cardRef) || {}).name || 'that card'} in your hand`;
     // 2026-09-08 (round 52; round 54 added the trigger-aware subject —
@@ -14993,6 +14997,7 @@ function blankCondition(kind){
   if(kind === 'PetIsOut') return { kind, subject: 'Pet', petRef: PET_ANY_SENTINEL };
   if(kind === 'HandCardTypeCheck') return { kind, mode: 'Any', cardType: CARD_TYPE_ORDER[0] };
   if(kind === 'EnemyIntent') return { kind, intentKind: 'Attack' };
+  if(kind === 'CardMadeFree') return { kind, freeKind: 'ReducedToZero' };
   if(kind === 'HasSpecificRelic') return { kind, relicRef: state.relics[0] ? state.relics[0].id : '' };
   if(kind === 'NoCopiesOfCardInHand') return { kind, cardRef: state.cards[0] ? state.cards[0].id : '' };
   // 2026-09-08 (round 52) — defaults to exactly Earthquake's own real
@@ -15268,7 +15273,7 @@ function renderConditionRowFields(row, cond, eff){
   // are the original 4; PetIsOut/HandCardTypeCheck/EnemyIntent/
   // HasSpecificRelic/NoCopiesOfCardInHand are the 5 added in the 2026-08-27
   // condition-kind expansion round (see blankCondition's own comment).
-  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs', 'InStance', 'Chance'];
+  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'CardMadeFree', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs', 'InStance', 'Chance'];
   const needsComparatorValue = !NO_COMPARATOR_KINDS.includes(cond.kind);
   const needsStatusRef = cond.kind === 'HasStatusStacks';
   const isVanillaStatus = needsStatusRef && cond.statusKind === 'vanilla';
@@ -15290,6 +15295,7 @@ function renderConditionRowFields(row, cond, eff){
   const needsCardType = cond.kind === 'PlayedCardHasType' || cond.kind === 'HandCardTypeCheck';
   const needsMode = cond.kind === 'HandCardTypeCheck';
   const needsIntentKind = cond.kind === 'EnemyIntent';
+  const needsFreeKind = cond.kind === 'CardMadeFree';
   const needsRelicRef = cond.kind === 'HasSpecificRelic';
   const needsCardRef = cond.kind === 'NoCopiesOfCardInHand';
   // [Round 303] PetPositionIs's own petRef+position pair — rendered
@@ -15430,6 +15436,11 @@ function renderConditionRowFields(row, cond, eff){
       ${needsIntentKind ? `<select class="c-intent-kind">
         <option value="Attack" ${cond.intentKind!=='Defend'?'selected':''}>Attack</option>
         <option value="Defend" ${cond.intentKind==='Defend'?'selected':''}>Defend</option>
+      </select>` : ''}
+      ${needsFreeKind ? `<select class="c-free-kind" title="Made free = costs 0 now but normally costs more. Costs 0 = cost was 0 for this play. Auto-played = played by an effect without paying.">
+        <option value="ReducedToZero" ${cond.freeKind==='ReducedToZero'?'selected':''}>made free (cost reduced to 0)</option>
+        <option value="CostsZero" ${cond.freeKind==='CostsZero'?'selected':''}>free (costs 0)</option>
+        <option value="PlayedFree" ${cond.freeKind==='PlayedFree'?'selected':''}>auto-played for free</option>
       </select>` : ''}
       ${needsRelicRef ? (state.relics.length
         ? `<select class="c-relic-ref">${state.relics.map(r=>`<option value="${escapeAttr(r.id)}" ${r.id===cond.relicRef?'selected':''}>${escapeHtml(r.name||'Untitled')}</option>`).join('')}</select>`
@@ -15580,6 +15591,8 @@ function wireConditionRowHandlers(row, cond, eff, container, j, onChange){
   if(modeEl) modeEl.onchange = e=> cond.mode = e.target.value;
   const intentKindEl = row.querySelector('.c-intent-kind');
   if(intentKindEl) intentKindEl.onchange = e=> cond.intentKind = e.target.value;
+  const freeKindEl = row.querySelector('.c-free-kind');
+  if(freeKindEl) freeKindEl.onchange = e=> cond.freeKind = e.target.value;
   const relicRefEl = row.querySelector('.c-relic-ref');
   if(relicRefEl && !relicRefEl.disabled) relicRefEl.onchange = e=> cond.relicRef = e.target.value;
   const cardRefEl = row.querySelector('.c-card-ref');
