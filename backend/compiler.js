@@ -8121,6 +8121,8 @@ ${capAssignments}
 //     many stacks (the "Late" variant runs after Intangible/other reducers, like Buffer).
 // Only direct Damage is covered: Forge's own Lose HP action calls Creature.LoseHpInternal directly (it never
 // runs these hooks) and so bypasses Temp HP, same as it bypasses Block and Buffer.
+// [Round 380b] Display: not a status icon (the power is hidden via IsVisibleInternal) but a "+N" appended to
+// the health bar's "cur/max" text by a Harmony postfix on NHealthBar.RefreshText -- see ForgeTempHpBarPatch.
 // Written only when some action actually uses GainTempHp (packageUsesActionType).
 const TEMP_HP_POWER_CLASS = 'ForgeTempHpPower';
 function generateTempHpPowerFile(characterPackage, namespace) {
@@ -8145,6 +8147,9 @@ public sealed class ${TEMP_HP_POWER_CLASS} : CustomPowerModel
     public override PowerType Type => PowerType.Buff;
     public override PowerStackType StackType => PowerStackType.Counter;
     public override bool ShouldReceiveCombatHooks => true;
+    // Tyler: Temp HP is NOT a status icon -- it shows as "+N" on the health bar (ForgeTempHpBarPatch in
+    // Generated/ForgeTempHpSupport.cs). Same member the "Hide status icon" mechanic option bakes in (round 94).
+    protected override bool IsVisibleInternal => false;
 
     // How much the last HP-loss pass absorbed; consumed by AfterModifyingHpLostAfterOsty, which the game
     // calls right after Hook.ModifyHpLost only when this power changed the amount.
@@ -8173,7 +8178,10 @@ public sealed class ${TEMP_HP_POWER_CLASS} : CustomPowerModel
 }
 function generateTempHpSupportFile(characterPackage, namespace) {
   if (!packageUsesActionType(characterPackage, 'GainTempHp')) return null;
-  return `using MegaCrit.Sts2.Core.Entities.Creatures;
+  return `using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Nodes.Combat;
+using MegaCrit.Sts2.addons.mega_text;
 using ${namespace}.Powers;
 
 namespace ${namespace}.Generated;
@@ -8186,6 +8194,29 @@ internal static class ForgeTempHp
     public static void Apply(Creature target, int amount)
     {
         if (amount > 0) ForgeActions.ApplyStatus<${TEMP_HP_POWER_CLASS}>(target, amount);
+    }
+}
+
+// [Round 380b] Tyler: "it shouldn't be a status, it should be an overlay over the character's health bar ...
+// 95/100 ... and then something like +5". [VERIFIED via IL] NHealthBar.RefreshText() writes the bar's
+// "{CurrentHp}/{MaxHp}" string into its private MegaLabel _hpLabel via SetTextAutoSize, reading _creature; this
+// postfix then appends " +N" when the creature has Temporary HP. The bar already refreshes when stacks change:
+// CombatStateTracker subscribes to Creature.PowerApplied/PowerIncreased/PowerDecreased/PowerRemoved and raises
+// CombatStateChanged, which NCreatureStateDisplay turns into NHealthBar.RefreshValues() -> RefreshText().
+// Skips dead creatures and bars that don't show numbers (label hidden).
+[HarmonyPatch(typeof(NHealthBar), "RefreshText")]
+internal static class ForgeTempHpBarPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix(NHealthBar __instance)
+    {
+        var tr = Traverse.Create(__instance);
+        var creature = tr.Field("_creature").GetValue<Creature>();
+        var label = tr.Field("_hpLabel").GetValue<MegaLabel>();
+        if (creature == null || label == null || creature.CurrentHp <= 0 || !label.Visible) return;
+        int temp = creature.HasPower<${TEMP_HP_POWER_CLASS}>() ? creature.GetPowerAmount<${TEMP_HP_POWER_CLASS}>() : 0;
+        if (temp <= 0) return;
+        label.SetTextAutoSize(creature.CurrentHp + "/" + creature.MaxHp + " +" + temp);
     }
 }
 `;
