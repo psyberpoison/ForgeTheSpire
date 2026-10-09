@@ -4503,7 +4503,7 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(!CARD_PLAY_BOUND_TRIGGERS.has(trigger)){
     for(const t of CARD_PLAY_BOUND_ONLY_ACTION_TYPES) hidden.add(t);
   }
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4700,7 +4700,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4851,6 +4851,22 @@ const ACTION_TYPE_LABELS = {
   // ForgeStanceCmd.Enter<T>/Exit evidence trail.
   EnterStance: 'Enter Stance',
   ExitStance: 'Exit Stance',
+  // [Round 376, gap-analysis #44/#41/#42/#48] -- see backend/compiler.js's
+  // actionToCSharp cases for the sts2.dll IL evidence trail.
+  RemoveBlock: 'Remove Block',
+  MillCards: 'Mill Cards',
+  RemoveFromCombat: 'Remove This Card From Combat',
+  ShufflePiles: 'Shuffle Pile Into Draw',
+};
+// [Round 376] Hover text for action types that need a clarifying note.
+// Shown as the <option>'s native title and again on the action's own
+// sentence. Tyler: "make sure for 42 we mention in the tooltip that it is
+// not exhausted."
+const ACTION_TYPE_TOOLTIPS = {
+  RemoveFromCombat: 'Removes this card from the rest of this combat. The card is NOT exhausted: it does not go to the exhaust pile and "when exhausted" effects do not trigger. It is back in your deck next combat.',
+  MillCards: 'Moves cards from the top of your Draw pile straight to your Discard pile without drawing them. They are not "discarded" (no on-discard effects trigger). Does nothing if the Draw pile is empty.',
+  ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
+  RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
 };
 // [Round 157] Tyler: "this menu looks a little difficult to navigate"
 // (screenshot of the action-TYPE dropdown — a single flat list of 16
@@ -4887,7 +4903,7 @@ const ACTION_TYPE_LABELS = {
 // round 157 already committed to.
 const ACTION_TYPE_GROUPS = [
   { label: 'Damage', color: '#c65a48', types: ['DealDamage', 'StunEnemy'] },
-  { label: 'Defense', color: '#4b93dd', types: ['GainBlock'] },
+  { label: 'Defense', color: '#4b93dd', types: ['GainBlock', 'RemoveBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
@@ -4909,7 +4925,7 @@ const ACTION_TYPE_GROUPS = [
   // Cards" keeps the old group's purple (TRIGGER_CATEGORIES.cardplay) --
   // it's still fundamentally card-play-time manipulation, same category
   // that color always meant here.
-  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard'] },
+  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat'] },
   { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
@@ -4962,6 +4978,10 @@ const ACTION_TYPE_SEARCH_TEXT = {
   DiscoverCard: 'discover choose a card pool colorless free this turn combat specific select tag tagged',
   EnterStance: 'enter stance wrath calm divinity buff',
   ExitStance: 'exit stance leave wrath calm divinity buff',
+  RemoveBlock: 'remove lose strip block break',
+  MillCards: 'mill draw pile discard top cards',
+  RemoveFromCombat: 'remove this card from combat vanish not exhausted',
+  ShufflePiles: 'shuffle hand discard draw pile',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -5272,7 +5292,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12422,6 +12442,10 @@ function describeAction(act){
     // above -- see compiler.js's actionToCSharp SwapDrawDiscard/
     // TransformDeckCards cases for the full evidence trail.
     case 'SwapDrawDiscard': return `Swap your Draw and Discard piles`;
+    case 'RemoveBlock': return `Remove ${act.removeAll ? 'all' : n} Block from ${targetPhrase}`;
+    case 'MillCards': return `Mill ${n} card${n===1?'':'s'} (top of Draw pile to Discard pile)`;
+    case 'RemoveFromCombat': return `Remove this card from combat (not exhausted)`;
+    case 'ShufflePiles': return `Shuffle your ${act.shuffleSource === 'Hand' ? 'Hand' : act.shuffleSource === 'HandAndDiscard' ? 'Hand and Discard pile' : 'Discard pile'} into your Draw pile`;
     case 'TransformDeckCards': {
       const srcName = (state.cards.find(c=>c.id===act.sourceCardRef) || {}).name || 'a card';
       const dstName = (state.cards.find(c=>c.id===act.becomesCardId) || {}).name || 'another card';
@@ -15530,7 +15554,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack'].includes(type);
+  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16343,6 +16367,13 @@ function ensureActionRefDefaults(act){
     delete act.scope;
   }
 
+  if(act.type === 'ShufflePiles'){
+    if(!['Hand','Discard','HandAndDiscard'].includes(act.shuffleSource)) act.shuffleSource = 'Discard';
+  } else {
+    delete act.shuffleSource;
+  }
+  if(act.type !== 'RemoveBlock') delete act.removeAll;
+
   if(actionNeedsStatusPicker(act.type)){
     if(!Array.isArray(act.statusEntries)) act.statusEntries = [];
     if(!act.statusEntries.length){
@@ -16747,7 +16778,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // amount entirely, not just supplements it — a fundamentally different,
   // multiplicative mechanic (see compiler.js's "ModifyEnergy" case).
   const hideAmountForDoubleEnergy = act.type === 'ModifyEnergy' && !!act.doubleEnergy;
-  const needsAmount = actionNeedsAmount(act.type) && !hideAmountForDoubleEnergy;
+  const hideAmountForRemoveAllBlock = act.type === 'RemoveBlock' && !!act.removeAll;
+  const needsAmount = actionNeedsAmount(act.type) && !hideAmountForDoubleEnergy && !hideAmountForRemoveAllBlock;
   // [Round 329] amountFormula — Tyler's structured multi-term scaling
   // builder (see AMOUNT_FORMULA_SOURCES' own comment for the full
   // evidence trail). Eligible everywhere "Use X" already is (needsAmount,
@@ -17350,6 +17382,30 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'SwapDrawDiscard':
       sentenceHtml = `<span class="cond-word">Swap your Draw and Discard piles.</span>`;
       break;
+    // [Round 376] Remove Block: "Remove [n | all] Block from [target]." The
+    // "all Block" checkbox swaps the amount input for the word "all".
+    case 'RemoveBlock': {
+      const rbAllHtml = `<label class="a-check-label" title="Remove ALL of the target's Block instead of a fixed number."><input type="checkbox" class="a-removeall" ${act.removeAll?'checked':''}> All Block</label>`;
+      // Checkbox goes in its own row under the sentence (Tyler's
+      // below-the-sentence convention, see afflictOptionsBlockHtml).
+      afflictOptionsBlockHtml = `<div class="action-row-usex">${rbAllHtml}</div>`;
+      sentenceHtml = act.removeAll
+        ? `<span class="cond-word">Remove all Block from</span>${targetHtml}<span class="cond-word">.</span>`
+        : `<span class="cond-word">Remove</span>${amountHtml}${useXAmountHtml}<span class="cond-word">Block from</span>${targetHtml}<span class="cond-word">.</span>`;
+      break;
+    }
+    case 'MillCards':
+      sentenceHtml = `<span class="cond-word">Mill</span>${amountHtml}${useXAmountHtml}<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.MillCards)}">card(s) from the top of your Draw pile to your Discard pile.</span>`;
+      break;
+    case 'RemoveFromCombat':
+      sentenceHtml = `<span class="cond-word a-tooltip-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.RemoveFromCombat)}" style="cursor:help;border-bottom:1px dotted currentColor">Remove this card from combat.</span> <span class="hint-small" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.RemoveFromCombat)}" style="cursor:help">(not exhausted)</span>`;
+      break;
+    case 'ShufflePiles': {
+      const spOpts = [['Hand','Hand'],['Discard','Discard pile'],['HandAndDiscard','Hand and Discard pile']];
+      const spSel = `<select class="a-shuffle-source">${spOpts.map(([v,l])=>`<option value="${v}" ${(act.shuffleSource||'Discard')===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      sentenceHtml = `<span class="cond-word">Shuffle your</span> ${spSel} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ShufflePiles)}">into your Draw pile.</span>`;
+      break;
+    }
     case 'TransformDeckCards': {
       const tdcSourceOptions = state.cards.length
         ? `<select class="a-source-card-ref">${state.cards.map(c=>`<option value="${escapeAttr(c.id)}" ${act.sourceCardRef===c.id?'selected':''}>${escapeHtml(c.name||'Untitled')}</option>`).join('')}</select>`
@@ -17710,6 +17766,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.tokenRefKind; delete act.tokenRef; delete act.tokenVanillaRef;
     delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
     delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
+    delete act.removeAll; delete act.shuffleSource;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -17761,6 +17818,17 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // [Round 155] ReturnToHand's "Retain the card this turn" checkbox —
   // Tyler's own ask, paired directly with the action. No re-render
   // needed — doesn't change which other fields this row shows.
+  // [Round 376] RemoveBlock's "All Block" checkbox swaps the amount input
+  // for the word "all", so it re-renders the row (same as doubleEnergy).
+  const removeAllCheck = row.querySelector('.a-removeall');
+  if(removeAllCheck) removeAllCheck.onchange = (e)=>{
+    act.removeAll = e.target.checked;
+    if(!act.removeAll) delete act.removeAll;
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  const shuffleSourceSelect = row.querySelector('.a-shuffle-source');
+  if(shuffleSourceSelect) shuffleSourceSelect.onchange = e=> act.shuffleSource = e.target.value;
   const retainThisTurn = row.querySelector('.a-retainthisturn');
   if(retainThisTurn) retainThisTurn.onchange = e=> act.retainThisTurn = e.target.checked;
   // CreateCard's destination select — no re-render needed.
@@ -23171,7 +23239,7 @@ function actionTypeOptList(selected, trigger, returnToHandEligible){
   const hidden = hiddenActionTypesForTrigger(trigger, returnToHandEligible);
   const visible = ACTION_TYPES.filter(v => v === selected || !hidden.has(v));
   const visibleSet = new Set(visible);
-  const optionHtml = v => `<option value="${v}" ${v===selected?'selected':''}>${escapeHtml(ACTION_TYPE_LABELS[v] || v)}</option>`;
+  const optionHtml = v => `<option value="${v}" ${v===selected?'selected':''}${ACTION_TYPE_TOOLTIPS[v] ? ` title="${escapeAttr(ACTION_TYPE_TOOLTIPS[v])}"` : ''}>${escapeHtml(ACTION_TYPE_LABELS[v] || v)}</option>`;
   // [Round 157] Group the same filtered list under <optgroup> headers
   // (ACTION_TYPE_GROUPS above) instead of one flat run of <option>s — see
   // that const's own comment for the full "why optgroups" reasoning. A

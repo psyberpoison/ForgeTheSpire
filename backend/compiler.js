@@ -687,6 +687,11 @@ const PLAYER_ONLY_ACTIONS = [
   // for action.target to pick between, same bucket as SummonPet right
   // above for that same underlying reason.
   'EnterStance', 'ExitStance',
+  // [Round 376] MillCards / RemoveFromCombat / ShufflePiles -- pile/card
+  // moves with no Creature-target concept, same bucket as SwapDrawDiscard/
+  // ExhaustCard above. (RemoveBlock is NOT here: it is a real Creature-
+  // target action, see its own case.)
+  'MillCards', 'RemoveFromCombat', 'ShufflePiles',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -3246,10 +3251,12 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // is independently real.
     case 'SwapDrawDiscard': {
       const sddPlayerExpr = resolvePlayerExpr(ctx);
-      return `        var fgSwapDraw = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${sddPlayerExpr}).Cards.ToList();
+      return `        {
+        var fgSwapDraw = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${sddPlayerExpr}).Cards.ToList();
         var fgSwapDiscard = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, ${sddPlayerExpr}).Cards.ToList();
         foreach (CardModel fgSwapC in fgSwapDraw) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); }
-        foreach (CardModel fgSwapC in fgSwapDiscard) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [BEST EFFORT] see compiler.js's own comment on this case`;
+        foreach (CardModel fgSwapC in fgSwapDiscard) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [BEST EFFORT] see compiler.js's own comment on this case
+        }`;
     }
     // [2026-09-23] Same "Test Relic" reference -- its deckCardsBecome
     // passive modifier transforms deck cards into a different specific
@@ -3280,6 +3287,83 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         {
             await MegaCrit.Sts2.Core.Commands.CardCmd.Transform(fgTransC, new ${tdcTargetCls}(), MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.None);
         }`;
+    }
+    // [Round 376, gap-analysis #44] "Remove Block" -- strip Block from a
+    // creature. [VERIFIED via direct sts2.dll IL read]
+    // MegaCrit.Sts2.Core.Commands.CreatureCmd.LoseBlock(PlayerChoiceContext
+    // choiceContext, Creature target, decimal amount, Creature source) :
+    // Task. Body: no-ops if combat is ending, the target is dead, or
+    // amount <= 0; otherwise subtracts from Creature.Block, plays the
+    // block-break sound and fires AfterBlockBroken when Block hits 0.
+    // "Remove all" reads `(decimal)target.Block` at runtime (Creature.Block
+    // is a real int property -- the same one the Flick-style "broke their
+    // block" checks elsewhere in this file already read). `source` is the
+    // acting player's Creature (fgPlayer, always bound). Needs a real
+    // `choiceContext`, so validate.js gates it off the
+    // NO_CHOICE_CONTEXT_HOOK_TRIGGERS hooks exactly like DealDamage.
+    // AllEnemies/RandomEnemy go through the generic wrapper above, which
+    // recurses with a per-enemy forcedTargetExpr.
+    case 'RemoveBlock': {
+      const rbAmount = action.removeAll ? `(decimal)${targetExpr}.Block` : `(decimal)(${resolveAmountExpr(action, ctx)})`;
+      return `        await MegaCrit.Sts2.Core.Commands.CreatureCmd.LoseBlock(choiceContext, ${targetExpr}, ${rbAmount}, fgPlayer); // [VERIFIED via direct sts2.dll IL read] see compiler.js's own comment on this case`;
+    }
+    // [Round 376, gap-analysis #41] "Mill" -- move the top N cards of the
+    // Draw pile straight to the Discard pile without drawing them.
+    // The game has NO Mill command (confirmed: no CardPileCmd member does
+    // this), so this is composed from two [VERIFIED] pieces:
+    //  * "top of the Draw pile" = Cards[0]: CardPileCmd.Add's position
+    //    switch maps CardPilePosition.Top -> insert index 0 and Bottom ->
+    //    append, and CardPileCmd.DrawInternal takes `Cards.FirstOrDefault()`.
+    //  * the move itself is CardPileCmd.Add(card, PileType.Discard,
+    //    CardPilePosition.Bottom, null, false) -- the same call
+    //    SwapDrawDiscard uses.
+    // Because it is a plain pile move, the cards fire AfterCardChangedPiles
+    // but NOT the "card was discarded" hooks (CardCmd.Discard's path);
+    // that matches Slay the Spire's Mill. It does not reshuffle: milling an
+    // empty Draw pile moves nothing. Taking a snapshot (.ToList()) first
+    // keeps the loop safe while the pile mutates.
+    case 'MillCards': {
+      const mcPlayerExpr = resolvePlayerExpr(ctx);
+      return `        foreach (CardModel fgMillC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${mcPlayerExpr}).Cards.Take((int)(${resolveAmountExpr(action, ctx)})).ToList()) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgMillC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Bottom, null, false); } // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case`;
+    }
+    // [Round 376, gap-analysis #42] "Remove This Card From Combat" -- the
+    // card vanishes for the rest of the combat WITHOUT being exhausted.
+    // [VERIFIED via direct sts2.dll IL read]
+    // CardPileCmd.RemoveFromCombat(CardModel card, bool skipVisuals) :
+    // Task (also an IEnumerable<CardModel> overload). It takes the card out
+    // of its combat pile entirely (the game's own play flow uses this for
+    // Power cards, which end up in PileType.None) and fires
+    // AfterCardChangedPiles -- it does NOT go through CardCmd.Exhaust, so
+    // OnExhaust / "when exhausted" hooks never fire and the card is not in
+    // the Exhaust pile. The card is a permanent part of the run deck again
+    // next combat. Uses resolveActedCardExpr like ModifyCost/AfflictCard.
+    case 'RemoveFromCombat': {
+      const rfcCard = resolveActedCardExpr(ctx);
+      if (!rfcCard) {
+        return `        ForgeActions.Todo("RemoveFromCombat (this card only)"); // [UNVERIFIED] no CardModel in scope at this hook -- see compiler.js's own comment on this case`;
+      }
+      return `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.RemoveFromCombat(${rfcCard}, false); // [VERIFIED via direct sts2.dll IL read] see compiler.js's own comment on this case`;
+    }
+    // [Round 376, gap-analysis #48] "Shuffle <pile> into Draw" -- move every
+    // card in Hand and/or Discard into the Draw pile at random positions.
+    // Each card moves via CardPileCmd.Add(card, PileType.Draw,
+    // CardPilePosition.Random, null, false) [VERIFIED via direct IL read:
+    // Random => Rng.Shuffle.NextInt(drawCount + 1) insert index], i.e. the
+    // moved cards end up interleaved with whatever is already in Draw. The
+    // game's own CardPileCmd.Shuffle is a different thing (it shuffles the
+    // Discard onto the bottom of Draw when Draw runs dry) so it is not
+    // used. Snapshots (.ToList()) first, same as SwapDrawDiscard. Does not
+    // fire the game's AfterShuffle hooks (this is not a real Shuffle call).
+    case 'ShufflePiles': {
+      const spPlayerExpr = resolvePlayerExpr(ctx);
+      const spSource = action.shuffleSource || 'Discard';
+      const pileList = spSource === 'Hand' ? ['Hand'] : spSource === 'Discard' ? ['Discard'] : ['Hand', 'Discard'];
+      const lines = pileList.map((pt, i) => `        var fgShuf${pt} = MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.${pt}, ${spPlayerExpr}).Cards.ToList();`);
+      pileList.forEach(pt => {
+        lines.push(`        foreach (CardModel fgShufC${pt} in fgShuf${pt}) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgShufC${pt}, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case`);
+      });
+      // Wrapped in its own block so two ShufflePiles actions in one method don't redeclare fgShufHand/fgShufDiscard (CS0128).
+      return ['        {', ...lines.map(l => '    ' + l), '        }'].join('\n');
     }
     default:
       throw new Error(`No C# mapping registered for action type "${action.type}". Add one in compiler.js:actionToCSharp before this card can compile.`);

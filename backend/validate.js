@@ -288,6 +288,9 @@ const ACTION_TYPES = [
   // (confirmed via a direct ECMA-335 TypeDef scan) -- this is composed
   // entirely from already-[VERIFIED]-elsewhere primitives instead.
   'EnterStance', 'ExitStance',
+  // [Round 376] RemoveBlock / MillCards / RemoveFromCombat / ShufflePiles -- see
+  // compiler.js's actionToCSharp cases for the IL evidence trail.
+  'RemoveBlock', 'MillCards', 'RemoveFromCombat', 'ShufflePiles',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -907,6 +910,12 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
+    } else if (act.type === 'RemoveBlock' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 376] Same NO_CHOICE_CONTEXT_HOOK_TRIGGERS gap as DealDamage/
+      // PetAttack -- CreatureCmd.LoseBlock's first parameter is a real
+      // PlayerChoiceContext (verified via IL), which this hook's real
+      // signature doesn't have.
+      errors.push(`${p}: action "RemoveBlock" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which removing Block needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
     } else if ((act.type === 'EnterStance' || act.type === 'ExitStance') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 347, task #31] Same NO_CHOICE_CONTEXT_HOOK_TRIGGERS gap as
       // DealDamage/PetAttack above -- ForgeStanceCmd.Enter<T>/Exit both end
@@ -1239,6 +1248,15 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else {
       if (act.afflictionRef !== undefined) errors.push(`${p}: afflictionRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
       if (act.afflictionVanillaRef !== undefined) errors.push(`${p}: afflictionVanillaRef is only meaningful on "AfflictCard"/"ClearAfflictionFromPile" — action type is "${act.type}".`);
+    }
+    // [Round 376] removeAll (RemoveBlock) / shuffleSource (ShufflePiles).
+    if (act.removeAll !== undefined) {
+      if (typeof act.removeAll !== 'boolean') errors.push(`${p}.removeAll must be a boolean.`);
+      if (act.type !== 'RemoveBlock') errors.push(`${p}: removeAll is only meaningful on "RemoveBlock" — action type is "${act.type}".`);
+    }
+    if (act.shuffleSource !== undefined) {
+      if (!['Hand', 'Discard', 'HandAndDiscard'].includes(act.shuffleSource)) errors.push(`${p}.shuffleSource "${act.shuffleSource}" is not one of: Hand, Discard, HandAndDiscard.`);
+      if (act.type !== 'ShufflePiles') errors.push(`${p}: shuffleSource is only meaningful on "ShufflePiles" — action type is "${act.type}".`);
     }
     // [Round 347] stanceKind/stanceRef/stanceVanillaRef -- EnterStance
     // only (ExitStance needs no stance reference at all, see
