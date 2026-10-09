@@ -415,6 +415,15 @@ public static class ForgeActions
     public static int GetStatusStacks<T>(Creature target) where T : PowerModel =>
         target.HasPower<T>() ? target.GetPowerAmount<T>() : 0;
 
+    // [Round 380] ModifyStatus entry "capTotal" (Strength/Vigor only): how many
+    // of `amount` may still be applied so the target's TOTAL stacks never
+    // exceed `cap`. Already at/above the cap -> 0 (the caller then skips the
+    // apply entirely). Never raises a gain and never touches non-positive
+    // amounts. The game itself has no Strength/Vigor cap (checked in sts2.dll),
+    // so this is purely a clamp on THIS effect's own gain.
+    public static int CapStatusGain<T>(Creature target, int amount, int cap) where T : PowerModel =>
+        amount <= 0 ? amount : System.Math.Max(0, System.Math.Min(amount, cap - GetStatusStacks<T>(target)));
+
     // [VERIFIED] Creature.RemoveAllPowersInternalExcept(IEnumerable<PowerModel> except)
     // is a real, concrete, public method — found in already-collected round
     // 8 reflect-baselib data (see TOOLCHAIN_FINDINGS.md "reflect-baselib

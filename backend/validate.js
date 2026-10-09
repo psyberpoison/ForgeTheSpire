@@ -245,6 +245,7 @@ const COMPARATORS = ['lt', 'lte', 'eq', 'gte', 'gt'];
 // emits).
 const ACTION_TYPES = [
   'DealDamage', 'GainBlock', 'ModifyStatus', 'RemoveAllStatuses',
+  'GainTempHp', // [Round 380]
   'DrawCard', 'ModifyEnergy', 'ModifyHp', 'ModifyGold', 'DiscardCard',
   'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw',
   'StunEnemy', 'EndTurn', 'ModifyOrbSlots', 'ReturnToHand',
@@ -1096,6 +1097,15 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
             errors.push(`${ep}.ref "${entry.ref}" doesn't match any defined mechanic id.`);
           }
           if (entry.amount !== undefined && typeof entry.amount !== 'number') errors.push(`${ep}.amount must be a number if present.`);
+          // [Round 380] capTotal: "never let the target's total exceed N" -- only Strength/Vigor
+          // (the ask), only when adding, and not AllEnemies (that path applies per enemy through a
+          // different helper that has no per-creature clamp).
+          if (entry.capTotal !== undefined) {
+            if (!Number.isInteger(entry.capTotal) || entry.capTotal < 1) errors.push(`${ep}.capTotal must be a whole number >= 1 if present.`);
+            if (!(entry.kind === 'vanilla' && (entry.ref === 'Strength' || entry.ref === 'Vigor'))) errors.push(`${ep}.capTotal is only supported on the vanilla Strength and Vigor statuses.`);
+            if (act.mode !== 'Add') errors.push(`${ep}.capTotal only applies when the action's mode is "Add".`);
+            if (act.target === 'AllEnemies') errors.push(`${ep}.capTotal can't be used with target "AllEnemies" (the cap is checked against one creature's stacks).`);
+          }
         });
       }
     }

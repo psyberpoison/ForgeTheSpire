@@ -740,7 +740,8 @@ const PLAYER_ONLY_ACTIONS = [
 // the same "Self" restriction in validTargetsForAction below, but keeping
 // them separate preserves the accurate "why" for anyone reading either
 // one later.
-const SELF_ONLY_ACTIONS = ['GainBlock'];
+// [Round 380] GainTempHp joins: temporary HP lands on the player's own creature only (Tyler asked for a "Gain Temp HP" action, i.e. gain-only, no enemy variant).
+const SELF_ONLY_ACTIONS = ['GainBlock', 'GainTempHp'];
 
 // [Round 330] Multiplayer/co-op ally targeting — Tyler approved full scope
 // (all 4 sub-options an AskUserQuestion offered: ally Creature-targeting,
@@ -2153,6 +2154,15 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         }
         return dealLine;
       }
+    case 'GainTempHp': {
+      // [Round 380] Tyler: a "Gain Temp HP" action. The game has no temporary-HP concept (sts2.dll scan:
+      // no TempHp type/member), so this applies Forge's own generated ForgeTempHpPower (see
+      // generateTempHpPowerFile) -- a Counter buff whose stacks soak up HP loss after Block. Same
+      // ApplyStatus<T> helper ModifyStatus uses, so repeated gains stack onto one power.
+      // ForgeTempHp.Apply lives in Generated/ForgeTempHpSupport.cs (every generated file already imports
+      // {{namespace}}.Generated; not every one imports {{namespace}}.Powers).
+      return `        ForgeTempHp.Apply(${targetExpr}, ${resolveAmountExpr(action, ctx)}); // [Round 380] see generateTempHpPowerFile`;
+    }
     case 'GainBlock':
       // Target is ALWAYS "Self" (see SELF_ONLY_ACTIONS/validTargetsForAction
       // above — enforced before this switch is ever reached) — Tyler:
@@ -2233,6 +2243,14 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
           // evidence that caught this).
           if (action.target === 'AllEnemies') {
             return `        await ForgeActions.ApplyStatusAllEnemies<${typeArg}>(choiceContext, fgPlayer.CombatState.HittableEnemies, ${amt}, fgPlayer, null); // [BEST EFFORT] see ForgeActions.cs.template's ApplyStatusAllEnemies<T>`;
+          }
+          // [Round 380] Optional per-entry total cap (vanilla Strength/Vigor only,
+          // validated). Evaluate the amount once, clamp it to the headroom left under
+          // the cap, and skip the apply entirely when there is none (a 0-stack
+          // ApplyPowerInternal would still add the power).
+          if (entry.capTotal !== undefined && entry.capTotal !== null) {
+            const capN = Math.max(1, Math.floor(Number(entry.capTotal)));
+            return `        {\n            int fgCapGain = ForgeActions.CapStatusGain<${typeArg}>(${targetExpr}, ${amt}, ${capN}); // [Round 380] total ${entry.ref} never exceeds ${capN}\n            if (fgCapGain != 0) ForgeActions.ApplyStatus<${typeArg}>(${targetExpr}, fgCapGain);\n        }`;
           }
           return `        ForgeActions.ApplyStatus<${typeArg}>(${targetExpr}, ${amt}); // [BEST EFFORT] see TOOLCHAIN_FINDINGS.md "reflect-baselib round 8"`;
         }
@@ -8089,6 +8107,90 @@ ${capAssignments}
 `;
 }
 
+// [Round 380] Tyler: a "Gain Temp HP" action. [VERIFIED via direct ECMA-335 IL read of the real sts2.dll] the
+// game has NO temporary-HP concept (no TempHp type or member anywhere); the nearest vanilla pieces are Block
+// and the HP-loss-absorbing powers BufferPower / HardenedShellPower / IntangiblePower. Forge therefore
+// generates its own counter power, modelled on BufferPower:
+//   - CreatureCmd.Damage order (IL of <Damage>d__12.MoveNext): DamageBlockInternal first, THEN
+//     Hook.ModifyHpLost(BeforeOsty phase) -> LoseHpInternal(Osty redirect) -> Hook.ModifyHpLost(AfterOsty
+//     phase) -> LoseHpInternal, each followed by Hook.AfterModifyingHpLost{Before,After}Osty on the
+//     modifiers whose result changed the amount. So Temp HP naturally soaks up only what Block let through.
+//   - BufferPower overrides ModifyHpLostAfterOstyLate (returns 0 for its owner) and
+//     AfterModifyingHpLostAfterOsty (PowerCmd.Decrement == ModifyAmount(new ThrowingPlayerChoiceContext(),
+//     power, -1, null, null, false)). TempHp does the same but absorbs min(incoming, stacks) and removes that
+//     many stacks (the "Late" variant runs after Intangible/other reducers, like Buffer).
+// Only direct Damage is covered: Forge's own Lose HP action calls Creature.LoseHpInternal directly (it never
+// runs these hooks) and so bypasses Temp HP, same as it bypasses Block and Buffer.
+// Written only when some action actually uses GainTempHp (packageUsesActionType).
+const TEMP_HP_POWER_CLASS = 'ForgeTempHpPower';
+function generateTempHpPowerFile(characterPackage, namespace) {
+  if (!packageUsesActionType(characterPackage, 'GainTempHp')) return null;
+  return `using System.Collections.Generic;
+using System.Threading.Tasks;
+using BaseLib.Abstracts;
+using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Powers;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.ValueProps;
+
+namespace ${namespace}.Powers;
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+// [Round 380] See generateTempHpPowerFile's header comment in compiler.js for the IL evidence trail.
+public sealed class ${TEMP_HP_POWER_CLASS} : CustomPowerModel
+{
+    public override PowerType Type => PowerType.Buff;
+    public override PowerStackType StackType => PowerStackType.Counter;
+    public override bool ShouldReceiveCombatHooks => true;
+
+    // How much the last HP-loss pass absorbed; consumed by AfterModifyingHpLostAfterOsty, which the game
+    // calls right after Hook.ModifyHpLost only when this power changed the amount.
+    private int _fgPendingAbsorb;
+
+    public override decimal ModifyHpLostAfterOstyLate(Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource)
+    {
+        if (target != Owner || amount <= 0m || Amount <= 0) return amount;
+        int absorb = (int)System.Math.Min(System.Math.Truncate(amount), (decimal)Amount);
+        _fgPendingAbsorb = absorb;
+        return amount - absorb;
+    }
+
+    public override async Task AfterModifyingHpLostAfterOsty()
+    {
+        int absorbed = _fgPendingAbsorb;
+        _fgPendingAbsorb = 0;
+        if (absorbed <= 0) return;
+        Flash();
+        await PowerCmd.ModifyAmount(new ThrowingPlayerChoiceContext(), this, -absorbed, null, null, false);
+    }
+
+    public override List<(string, string)>? Localization => new List<(string, string)> { ("title", "Temporary HP"), ("description", "Absorbs HP loss that gets past Block, one for one, then is used up.") };
+}
+`;
+}
+function generateTempHpSupportFile(characterPackage, namespace) {
+  if (!packageUsesActionType(characterPackage, 'GainTempHp')) return null;
+  return `using MegaCrit.Sts2.Core.Entities.Creatures;
+using ${namespace}.Powers;
+
+namespace ${namespace}.Generated;
+
+// AUTO-GENERATED by Forge -- do not hand-edit, changes will be overwritten on next export.
+// [Round 380] Every generated file imports ${namespace}.Generated but not all import ${namespace}.Powers,
+// so the "Gain Temp HP" action calls through here.
+internal static class ForgeTempHp
+{
+    public static void Apply(Creature target, int amount)
+    {
+        if (amount > 0) ForgeActions.ApplyStatus<${TEMP_HP_POWER_CLASS}>(target, amount);
+    }
+}
+`;
+}
+
 // [Round 358] Tyler: "is it possible to set buy/sell price for potions?"
 //
 // [VERIFIED via direct ECMA-335 IL disassembly of the real installed
@@ -9750,6 +9852,9 @@ function packageUsesActionType(characterPackage, actionType) {
   });
   (characterPackage.relics || []).forEach(r => { if (Array.isArray(r.effects)) effectLists.push(r.effects); });
   (characterPackage.mechanics || []).forEach(m => { if (Array.isArray(m.effects)) effectLists.push(m.effects); });
+  // [Round 380] orbs (Round 379) and potions (Round 357) carry effect blocks too.
+  (characterPackage.orbs || []).forEach(o => { if (Array.isArray(o.effects)) effectLists.push(o.effects); });
+  (characterPackage.potions || []).forEach(po => { if (Array.isArray(po.effects)) effectLists.push(po.effects); });
   (characterPackage.enchantments || []).forEach(e => {
     if (e.onPlay && Array.isArray(e.onPlay.effects)) effectLists.push(e.onPlay.effects);
     if (e.whilePile && Array.isArray(e.whilePile.effects)) effectLists.push(e.whilePile.effects);
@@ -13055,6 +13160,12 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // PetAttack action is actually used anywhere in the package, see
   // generatePetAttackSupportFile's own header comment for the full
   // evidence trail.
+  // [Round 380] Temp HP power + its Apply wrapper -- only when a GainTempHp action exists.
+  const tempHpPowerSrc = generateTempHpPowerFile(characterPackage, namespace);
+  if (tempHpPowerSrc) {
+    write(`Powers/${TEMP_HP_POWER_CLASS}.cs`, tempHpPowerSrc);
+    write('Generated/ForgeTempHpSupport.cs', generateTempHpSupportFile(characterPackage, namespace));
+  }
   const petAttackSupportSrc = generatePetAttackSupportFile(characterPackage, namespace);
   if (petAttackSupportSrc) {
     write('Generated/ForgePetAttackSupport.cs', petAttackSupportSrc);

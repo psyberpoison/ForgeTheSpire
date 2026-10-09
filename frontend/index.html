@@ -1843,6 +1843,8 @@
      doesn't clutter the list with an irrelevant number box. */
   .picker-option .picker-amount{display:none; width:52px; min-width:52px; padding:3px 6px; font-size:12px;}
   .picker-option.checked .picker-amount{display:block;}
+  .picker-option .picker-cap{display:none; width:52px; min-width:52px; padding:3px 6px; font-size:12px;}
+  .picker-option.checked .picker-cap{display:block;}
 
   /* Compact single-select variant of the .picker-wrap/.picker-list pattern
      above — the condition row's status/mechanic picker (Tyler: "keep the
@@ -4716,7 +4718,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4873,6 +4875,7 @@ const ACTION_TYPE_LABELS = {
   // [Round 376, gap-analysis #44/#41/#42/#48] -- see backend/compiler.js's
   // actionToCSharp cases for the sts2.dll IL evidence trail.
   RemoveBlock: 'Remove Block',
+  GainTempHp: 'Gain Temp HP', // [Round 380] see backend/compiler.js generateTempHpPowerFile
   MillCards: 'Mill Cards',
   RemoveFromCombat: 'Remove This Card From Combat',
   ShufflePiles: 'Shuffle Pile Into Draw',
@@ -4890,6 +4893,7 @@ const ACTION_TYPE_TOOLTIPS = {
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
+  GainTempHp: 'Gives you Temporary HP: a status whose stacks soak up HP loss that gets past your Block, one for one, then are used up. Stacks across gains and lasts until the end of combat. Does not stop HP lost directly (e.g. by a Lose HP effect).',
   RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
 };
 // [Round 157] Tyler: "this menu looks a little difficult to navigate"
@@ -4927,7 +4931,7 @@ const ACTION_TYPE_TOOLTIPS = {
 // round 157 already committed to.
 const ACTION_TYPE_GROUPS = [
   { label: 'Damage', color: '#c65a48', types: ['DealDamage', 'StunEnemy'] },
-  { label: 'Defense', color: '#4b93dd', types: ['GainBlock', 'RemoveBlock'] },
+  { label: 'Defense', color: '#4b93dd', types: ['GainBlock', 'GainTempHp', 'RemoveBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
@@ -5005,6 +5009,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   EnterStance: 'enter stance wrath calm divinity buff',
   ExitStance: 'exit stance leave wrath calm divinity buff',
   RemoveBlock: 'remove lose strip block break',
+  GainTempHp: 'temp temporary hp health shield absorb buffer overheal',
   MillCards: 'mill draw pile discard top cards',
   RemoveFromCombat: 'remove this card from combat vanish not exhausted',
   ShufflePiles: 'shuffle hand discard draw pile',
@@ -5330,7 +5335,7 @@ const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard
 // same "Self"-only target list, but the frontend's target-hiding logic
 // checks both lists (see renderActionRowFields/wireActionRowHandlers) so
 // GainBlock's target dropdown is hidden exactly like the player-only types'.
-const SELF_ONLY_ACTIONS = ["GainBlock"];
+const SELF_ONLY_ACTIONS = ["GainBlock","GainTempHp"]; // [Round 380] GainTempHp: player-only, no target dropdown
 // [Round 330] Mirrors compiler.js:ALLY_CREATURE_TARGETABLE_ACTIONS exactly
 // — the 5 action types AllAllies/RandomAlly join AllEnemies/RandomEnemy
 // for, on top of GainBlock (handled separately in validTargetsForAction
@@ -12335,6 +12340,7 @@ function describeAction(act){
     // validTargetsForAction's own GainBlock branch). "For yourself" is
     // dropped for the common Self case (matches the pre-330 wording
     // exactly), and only spelled out for the two new ally targets.
+    case 'GainTempHp': return `Gain ${n} Temporary HP${describeActionScaling(act)}`; // [Round 380]
     case 'GainBlock': return `Gain ${n} Block${act.target === 'Self' ? '' : ` for ${targetPhrase}`}${describeActionScaling(act)}`;
     // Replaces the old separate ApplyStatus/RemoveStatus/ApplyCustomStatus/
     // RemoveCustomStatus descriptions — one combined statusEntries[] list,
@@ -15615,7 +15621,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -15633,7 +15639,7 @@ function actionNeedsAmount(type){
 // (renderActionRowFields) is responsible for that Add-only gating; this
 // function only answers "does this TYPE support scaling at all."
 function actionCanScaleWithStatus(type){
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'ModifyStatus'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'ModifyStatus'].includes(type);
 }
 
 // Option data for the two status pickers below — {value, label, tooltip}
@@ -15982,7 +15988,7 @@ function renderStatusPicker(act){
     }
     chipRow.innerHTML = selected.map(entry=>{
       const opt = options.find(o=>o.kind===entry.kind && o.value===entry.ref);
-      const amtSuffix = showAmounts ? ` ×${entry.amount ?? 1}` : '';
+      const amtSuffix = (showAmounts ? ` ×${entry.amount ?? 1}` : '') + (showAmounts && entry.capTotal ? ` (max ${entry.capTotal})` : ''); // [Round 380]
       return `<span class="chip" title="${escapeAttr(opt ? opt.tooltip : '')}">${escapeHtml(opt ? opt.label : entry.ref)}${amtSuffix} <span class="chip-x" data-kind="${escapeAttr(entry.kind)}" data-value="${escapeAttr(entry.ref)}">✕</span></span>`;
     }).join('');
   }
@@ -15994,6 +16000,9 @@ function renderStatusPicker(act){
       const checked = !!entry;
       const protectedAdd = showAmounts && o.kind === 'vanilla' && PROTECTED_CTOR_BUILTIN_POWERS_FRONTEND.includes(o.value);
       const amtInput = showAmounts ? `<input type="number" class="picker-amount" value="${entry ? (entry.amount ?? 1) : 1}" title="Amount for ${escapeAttr(o.label)}">` : '';
+      // [Round 380] Strength/Vigor only: optional "max total" -- see backend capTotal.
+      const capEligible = showAmounts && o.kind === 'vanilla' && (o.value === 'Strength' || o.value === 'Vigor');
+      const capInput = capEligible ? `<input type="number" min="1" step="1" class="picker-cap" placeholder="max" value="${entry && entry.capTotal ? entry.capTotal : ''}" title="Optional cap: total ${escapeAttr(o.label)} on the target never goes above this. Leave blank for no cap.">` : '';
       const title = protectedAdd
         ? `${o.tooltip} — this status can't be Added (only Removed).`
         : o.tooltip;
@@ -16001,7 +16010,7 @@ function renderStatusPicker(act){
       <label class="picker-option${checked?' checked':''}${protectedAdd?' picker-option-disabled':''}" title="${escapeAttr(title)}">
         <input type="checkbox" data-kind="${escapeAttr(o.kind)}" value="${escapeAttr(o.value)}" ${checked?'checked':''} ${protectedAdd?'disabled':''}>
         <span>${escapeHtml(o.label)}${o.kind==='custom'?' (your mechanic)':''}</span>
-        ${amtInput}
+        ${amtInput}${capInput}
       </label>`;
     }).join('');
   }
@@ -16036,6 +16045,17 @@ function renderStatusPicker(act){
   // Separate listener (not 'change') so the chip bubble's "×N" updates
   // live as Tyler types, not just after the amount input loses focus.
   listEl.addEventListener('input', e=>{
+    const capInput = e.target.closest('input.picker-cap'); // [Round 380]
+    if(capInput){
+      const cbox = capInput.closest('.picker-option').querySelector('input[type="checkbox"]');
+      const centry = findEntry(cbox.dataset.kind, cbox.value);
+      if(centry){
+        const n = Math.floor(parseFloat(capInput.value));
+        if(n >= 1) centry.capTotal = n; else delete centry.capTotal;
+      }
+      renderChips();
+      return;
+    }
     const amtInput = e.target.closest('input.picker-amount');
     if(!amtInput) return;
     const box = amtInput.closest('.picker-option').querySelector('input[type="checkbox"]');
@@ -16439,6 +16459,11 @@ function ensureActionRefDefaults(act){
 
   if(actionNeedsStatusPicker(act.type)){
     if(!Array.isArray(act.statusEntries)) act.statusEntries = [];
+    // [Round 380] capTotal only survives where backend/validate.js accepts it: vanilla
+    // Strength/Vigor, mode Add, not AllEnemies.
+    act.statusEntries.forEach(e=>{
+      if(e && e.capTotal !== undefined && !(e.kind === 'vanilla' && (e.ref === 'Strength' || e.ref === 'Vigor') && act.mode === 'Add' && act.target !== 'AllEnemies')) delete e.capTotal;
+    });
     if(!act.statusEntries.length){
       // 2026-09-07 update -- Tyler: "when adding the modify status to a
       // card effect, it automatically starts you out with your custom
@@ -17221,6 +17246,7 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // DealDamage-like types use (reads "Gain 5 Block for Yourself." /
     // "...for All Allies." / "...for A Random Ally.").
     case 'GainBlock': sentenceHtml = amountForTargetSentence('Gain', 'Block'); break;
+    case 'GainTempHp': sentenceHtml = selfOnlyScalableSentence('Gain', 'Temporary HP'); break; // [Round 380] (no target: always you)
     // Mode-driven merge of the old ApplyStatus/RemoveStatus/
     // ApplyCustomStatus/RemoveCustomStatus — Tyler: "lets reduce apply/
     // remove/customapply/customremove to just be 'Modify status', then

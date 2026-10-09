@@ -1779,6 +1779,7 @@
             "enum": [
               "DealDamage",
               "GainBlock",
+              "GainTempHp",
               "ModifyStatus",
               "RemoveAllStatuses",
               "DrawCard",
@@ -1877,6 +1878,11 @@
                 "amount": {
                   "type": "number",
                   "description": "only meaningful when the action's `mode` is \"Add\" (Remove never used an amount, matching the old RemoveStatus/RemoveCustomStatus behavior) \u2014 stacks to apply for THIS entry specifically. Missing/undefined falls back to 1 (backend/compiler.js:resolveStatusEntryAmountExpr), same fallback chain the old statusAmounts/refAmounts maps used."
+                },
+                "capTotal": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "[Round 380] optional - vanilla Strength/Vigor entries only, mode \"Add\" only, not target AllEnemies: the target's TOTAL stacks of this status never exceed this number (the entry applies only the headroom left under the cap, and nothing once at/above it). Compiles via ForgeActions.CapStatusGain<T>. The game itself has no Strength/Vigor cap."
                 }
               }
             },
