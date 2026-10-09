@@ -254,7 +254,7 @@
      underneath the badge, confirmed by a zoomed-in screenshot. */
   .side-nav-inner{
     width:var(--side-nav-ideal-width);
-    padding:30px 0 16px;
+    padding:8px 0 16px; /* [Round 374] the tab row above now clears the badge, not this padding */
     transition:width .18s ease;
   }
   /* [Round 327] Tyler: "when the window is closed you can still click on
@@ -386,6 +386,31 @@
     opacity:0;
     transform:translate(-50%, -70%) scale(.4);
   }
+  /* [Round 374] Character / World tabs at the top of the menu. The top padding clears the logo badge that dips below the menu's top border. */
+  .side-nav-tabs{display:flex; gap:2px; padding:24px 6px 0; border-bottom:1px solid var(--border);}
+  .side-nav-screen-tab{
+    flex:1 1 0; min-width:0; background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
+    color:var(--parchment-dim); font-family:'Cinzel',serif; font-size:12px; letter-spacing:.02em;
+    padding:7px 2px 6px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:0;
+    transition:color .15s, border-color .15s, background .15s;
+  }
+  .side-nav-screen-tab:hover{color:var(--parchment); background:rgba(255,255,255,.04);}
+  .side-nav-screen-tab.active{color:var(--parchment); border-bottom-color:var(--accent-bright);}
+  .side-nav-screen-tab .abbr{display:none;}
+  /* Collapsed: two stacked single-letter tabs (the box is too narrow for words). */
+  .side-nav.collapsed .side-nav-tabs, .side-nav.no-room .side-nav-tabs{flex-direction:column; gap:0; padding:8px 0 0;}
+  .side-nav.collapsed .side-nav-screen-tab .full, .side-nav.no-room .side-nav-screen-tab .full{display:none;}
+  .side-nav.collapsed .side-nav-screen-tab .abbr, .side-nav.no-room .side-nav-screen-tab .abbr{display:inline;}
+  .side-nav.collapsed .side-nav-screen-tab, .side-nav.no-room .side-nav-screen-tab{flex:0 0 auto; padding:6px 0; font-size:12px; letter-spacing:0;}
+  /* The two screens. The one being switched TO slides in from the right (World) or the left (back to Character). */
+  .screen[hidden]{display:none;}
+  @keyframes screen-in-right{from{opacity:0; transform:translateX(80px);} to{opacity:1; transform:none;}}
+  @keyframes screen-in-left{from{opacity:0; transform:translateX(-80px);} to{opacity:1; transform:none;}}
+  .screen.enter-right{animation:screen-in-right .34s cubic-bezier(.2,.8,.2,1);}
+  .screen.enter-left{animation:screen-in-left .34s cubic-bezier(.2,.8,.2,1);}
+  body.screen-switching{overflow-x:hidden;}
+  @media (prefers-reduced-motion:reduce){ .screen.enter-right, .screen.enter-left{animation:none;} }
+  .world-pending{margin-top:12px; padding:14px 16px; border:1px dashed var(--border-soft); border-radius:var(--radius); color:var(--parchment-dim); font-style:italic; font-size:13px;}
   .side-nav-link{
     display:flex; align-items:center;
     padding:8px 18px;
@@ -3084,6 +3109,11 @@
 <nav class="side-nav" id="side-nav">
   <div class="side-nav-badge" aria-hidden="true"><img id="side-nav-badge-img" alt=""></div>
   <div class="side-nav-clip">
+    <!-- [Round 374] Tyler: tabs at the top of the menu, "one for character, and one for world". -->
+    <div class="side-nav-tabs" role="tablist" aria-label="App area">
+      <button type="button" class="side-nav-screen-tab active" role="tab" aria-selected="true" data-screen="character" title="Character -- your character and everything it owns"><span class="full">Character</span><span class="abbr">C</span></button>
+      <button type="button" class="side-nav-screen-tab" role="tab" aria-selected="false" data-screen="world" title="World -- content that affects the whole game, not just your character"><span class="full">World</span><span class="abbr">W</span></button>
+    </div>
     <div class="side-nav-inner"></div>
   </div>
   <div class="side-nav-tab" id="side-nav-toggle" title="Collapse section navigation">&lsaquo;</div>
@@ -3116,6 +3146,7 @@
 
 <main>
 
+<div class="screen" id="screen-character" data-screen="character">
   <section class="panel" id="section-character">
     <div class="panel-head"><h2><span class="num">01</span> Character &amp; Art</h2></div>
     <div class="panel-body">
@@ -4016,6 +4047,35 @@
       <div class="grid-cards" id="chronicles-grid"></div>
     </div>
   </section>
+
+</div><!-- /#screen-character -->
+
+<!-- [Round 374] Tyler: "Events, Enemies, and Battles. But those all affect the entire world, not just the created character, so ... another menu that swipes in from the right that shows world options ... The world section will start the numbers over at 1." A second whole screen (same <main>, same side menu) that slides in from the right when the menu's World tab is picked. Its sections are numbered from 01 on their own, and the side menu lists only the active screen's sections. The three sections are placeholders for now -- each says plainly that its editor isn't built yet; they'll be built one at a time, each researched against the real game code first. -->
+<div class="screen" id="screen-world" data-screen="world" hidden>
+  <section class="panel" id="section-world-enemies">
+    <div class="panel-head"><h2><span class="num">01</span> Enemies</h2></div>
+    <div class="panel-body">
+      <div class="panel-desc">Custom enemies for the whole game: their own health, moves and art. These belong to the world, not to your character.</div>
+      <div class="world-pending">Not built yet &mdash; the Enemies editor arrives in a later round.</div>
+    </div>
+  </section>
+
+  <section class="panel" id="section-world-battles">
+    <div class="panel-head"><h2><span class="num">02</span> Battles</h2></div>
+    <div class="panel-body">
+      <div class="panel-desc">Custom encounters: which enemies fight together, and where in a run the fight can show up.</div>
+      <div class="world-pending">Not built yet &mdash; the Battles editor arrives in a later round, after Enemies (battles are made of enemies).</div>
+    </div>
+  </section>
+
+  <section class="panel" id="section-world-events">
+    <div class="panel-head"><h2><span class="num">03</span> Events</h2></div>
+    <div class="panel-body">
+      <div class="panel-desc">Custom events a player can run into on the map, with their own choices and outcomes.</div>
+      <div class="world-pending">Not built yet &mdash; the Events editor arrives in a later round.</div>
+    </div>
+  </section>
+</div><!-- /#screen-world -->
 
 </main>
 
@@ -23550,24 +23610,79 @@ function renderSideNav(){
   const headerLogo = document.getElementById('app-logo-mark');
   if(badgeImg && headerLogo) badgeImg.src = headerLogo.src;
 
-  const sections = Array.from(document.querySelectorAll('main section.panel[id^="section-"]'));
+  const toggle = document.getElementById('side-nav-toggle');
+  if(toggle) toggle.onclick = ()=> setSideNavCollapsed(!nav.classList.contains('collapsed'));
+  nav.querySelectorAll('.side-nav-screen-tab').forEach(btn=>{
+    btn.onclick = ()=> setActiveScreen(btn.dataset.screen, { animate:true });
+  });
+  setSideNavCollapsed(getSideNavCollapsedPref());
+  setActiveScreen(getScreenPref(), { animate:false });
+}
+
+// [Round 374] Which of the two screens (Character / World) is showing.
+const SCREEN_KEY = 'forge.activeScreen';
+let activeScreen = 'character';
+const screenScrollPos = { character:0, world:0 };
+let screenSwitchTimer = null;
+function getScreenPref(){
+  try{ return localStorage.getItem(SCREEN_KEY) === 'world' ? 'world' : 'character'; }catch(e){ return 'character'; }
+}
+function setActiveScreen(name, opts){
+  name = name === 'world' ? 'world' : 'character';
+  const prev = activeScreen;
+  const changed = prev !== name;
+  if(changed) screenScrollPos[prev] = window.scrollY || 0;
+  activeScreen = name;
+  document.querySelectorAll('.screen').forEach(el=>{ el.hidden = el.dataset.screen !== name; });
+  document.body.dataset.screen = name;
+  const nav = document.getElementById('side-nav');
+  if(nav) nav.querySelectorAll('.side-nav-screen-tab').forEach(btn=>{
+    const on = btn.dataset.screen === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  try{ localStorage.setItem(SCREEN_KEY, name); }catch(e){ /* still works this session, just won't be remembered */ }
+  buildSideNavLinks();
+  if(changed){
+    // Land at the top of a screen the first time, and where you left it after that. 'instant' beats the page's smooth scrolling.
+    window.scrollTo({ top: screenScrollPos[name] || 0, behavior:'instant' });
+    if(opts && opts.animate){
+      const el = document.getElementById('screen-' + name);
+      el.classList.remove('enter-right', 'enter-left');
+      void el.offsetWidth; // restart the animation if it was just played
+      el.classList.add(name === 'world' ? 'enter-right' : 'enter-left');
+      document.body.classList.add('screen-switching');
+      clearTimeout(screenSwitchTimer);
+      screenSwitchTimer = setTimeout(()=>{
+        el.classList.remove('enter-right', 'enter-left');
+        document.body.classList.remove('screen-switching');
+      }, 400);
+    }
+  }
+  updateSideNavFit();
+}
+
+// Builds the menu's link list from the ACTIVE screen's own sections (each
+// screen numbers its sections from 01 on its own), and re-points the
+// scroll-spy at them.
+let sideNavObserver = null;
+let sideNavScrollHandler = null;
+function buildSideNavLinks(){
+  const nav = document.getElementById('side-nav');
+  const inner = nav ? nav.querySelector('.side-nav-inner') : null;
+  if(!nav || !inner) return;
+  inner.innerHTML = '';
+  if(sideNavObserver){ sideNavObserver.disconnect(); sideNavObserver = null; }
+  const sections = Array.from(document.querySelectorAll(`#screen-${activeScreen} section.panel[id^="section-"]`));
   const links = [];
   sections.forEach(sec=>{
     const h2 = sec.querySelector('.panel-head h2');
     if(!h2) return;
     const numEl = h2.querySelector('.num');
     const num = numEl ? numEl.textContent.trim() : '';
-    // h2.textContent is "01 Character & Art" (a real space text node
-    // separates the .num span from the title in the source markup) --
-    // stripping the number substring back out leaves just the title,
-    // without needing to clone/mutate the real h2 node to read it.
-    // [Round 324] "remove the numbers from each section" (nav only --
-    // the real section headers in <main> keep theirs) -- num is still
-    // computed and stripped out of the title text above.
-    // [Round 327] ...but no longer removed from the link ENTIRELY: both
-    // spans are always rendered, and CSS (see .side-nav-num/.side-nav-
-    // label) decides which one is visible based on collapse state, so
-    // toggling collapsed/expanded never needs to re-render the list.
+    // h2.textContent is "01 Character & Art" -- stripping the number
+    // substring back out leaves just the title. Both spans are always
+    // rendered; CSS decides which shows by collapse state (round 327).
     const title = (num ? h2.textContent.replace(num, '') : h2.textContent).trim();
     const a = document.createElement('a');
     a.className = 'side-nav-link';
@@ -23579,40 +23694,35 @@ function renderSideNav(){
     links.push(a);
   });
 
-  const toggle = document.getElementById('side-nav-toggle');
-  if(toggle) toggle.onclick = ()=> setSideNavCollapsed(!nav.classList.contains('collapsed'));
-  setSideNavCollapsed(getSideNavCollapsedPref());
-  updateSideNavFit();
-
   if(!sections.length || !('IntersectionObserver' in window)) return;
   const orderedIds = sections.map(sec=>sec.id);
   const visible = new Set();
   const setActive = (id)=>{
     links.forEach(a=> a.classList.toggle('active', a.dataset.sectionId === id));
   };
-  // Picks the TOPMOST section (in document order) currently inside the
-  // "active zone" rather than trusting whichever IntersectionObserver
-  // entry happened to fire last in a batch -- entries order isn't
-  // something to rely on when several sections cross the threshold in
-  // the same scroll frame (e.g. a fast scroll/jump past a short one).
+  // Picks the TOPMOST section (in document order) inside the "active zone"
+  // rather than trusting whichever IntersectionObserver entry fired last.
+  // A short screen (World has three small sections) can't scroll its last
+  // section up into the top band at all, so once the page is scrolled to the
+  // very bottom the LAST section counts as current.
+  const atPageBottom = ()=> window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2 && window.scrollY > 0;
   const updateActive = ()=>{
     const firstVisible = orderedIds.find(id=> visible.has(id));
-    setActive(firstVisible || orderedIds[0]);
+    setActive(atPageBottom() ? orderedIds[orderedIds.length - 1] : (firstVisible || orderedIds[0]));
   };
-  // rootMargin's -70% bottom shrinks the observed viewport down to just
-  // its top 30% -- a section only counts "current" once its own top has
-  // scrolled up into that band, the standard scroll-spy trick (waiting
-  // for a section to be fully centered/visible would leave the LAST
-  // section stuck un-highlightable once the page can't scroll it any
-  // higher than partway up the viewport).
-  const observer = new IntersectionObserver((entries)=>{
+  if(sideNavScrollHandler) window.removeEventListener('scroll', sideNavScrollHandler);
+  sideNavScrollHandler = ()=> updateActive();
+  window.addEventListener('scroll', sideNavScrollHandler, { passive:true });
+  // rootMargin's -70% bottom shrinks the observed viewport to its top 30% --
+  // the standard scroll-spy trick (see round 321).
+  sideNavObserver = new IntersectionObserver((entries)=>{
     entries.forEach(entry=>{
       if(entry.isIntersecting) visible.add(entry.target.id);
       else visible.delete(entry.target.id);
     });
     updateActive();
   }, { rootMargin:'0px 0px -70% 0px', threshold:0 });
-  sections.forEach(sec=> observer.observe(sec));
+  sections.forEach(sec=> sideNavObserver.observe(sec));
   updateActive();
 }
 
