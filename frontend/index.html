@@ -4507,7 +4507,7 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   }
   // [Round 377] Mill Cards dispatches the milled trigger itself -- offering it inside that trigger would recurse forever (validate.js rejects it too).
   if(trigger === 'AfterCardMilled') hidden.add('MillCards');
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4704,7 +4704,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles"];
+const ACTION_TYPES = ["DealDamage","GainBlock","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4861,6 +4861,9 @@ const ACTION_TYPE_LABELS = {
   MillCards: 'Mill Cards',
   RemoveFromCombat: 'Remove This Card From Combat',
   ShufflePiles: 'Shuffle Pile Into Draw',
+  // [Round 378] see backend/compiler.js's ChannelOrb/EvokeOrb cases.
+  ChannelOrb: 'Channel Orb',
+  EvokeOrb: 'Evoke Orb',
 };
 // [Round 376] Hover text for action types that need a clarifying note.
 // Shown as the <option>'s native title and again on the action's own
@@ -4870,6 +4873,8 @@ const ACTION_TYPE_TOOLTIPS = {
   RemoveFromCombat: 'Removes this card from the rest of this combat. The card is NOT exhausted: it does not go to the exhaust pile and "when exhausted" effects do not trigger. It is back in your deck next combat.',
   MillCards: 'Moves cards from the top of your Draw pile straight to your Discard pile without drawing them. They are not "discarded" (no on-discard effects trigger). Does nothing if the Draw pile is empty.',
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
+  ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
+  EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
 };
 // [Round 157] Tyler: "this menu looks a little difficult to navigate"
@@ -4911,6 +4916,8 @@ const ACTION_TYPE_GROUPS = [
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
+  // [Round 378] Orb queue actions -- Defect-style channel/evoke.
+  { label: 'Orbs', color: '#3e9fd1', types: ['ChannelOrb', 'EvokeOrb'] },
   // [2026-09-30] "DiscoverCard" joined the old single "Card Effects" group
   // -- same "generate/manipulate a card mid-combat" bucket as
   // CreateCard/ShuffleCardIntoDraw, not a distinct-enough concept to
@@ -4986,6 +4993,8 @@ const ACTION_TYPE_SEARCH_TEXT = {
   MillCards: 'mill draw pile discard top cards',
   RemoveFromCombat: 'remove this card from combat vanish not exhausted',
   ShufflePiles: 'shuffle hand discard draw pile',
+  ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
+  EvokeOrb: 'evoke orb trigger activate',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -5296,7 +5305,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -5844,6 +5853,8 @@ const AFFLICTION_DESCRIPTIONS = {
 // DivinityStance classes instead (see BUILTIN_STANCE_PRESETS' own per-field
 // comment in compiler.js for the exact decompiled evidence).
 const BUILTIN_STANCES = ['Wrath', 'Calm', 'Divinity'];
+// [Round 378] The five real built-in orbs (verified via sts2.dll type scan) -- ChannelOrb's vanilla options.
+const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
 const STANCE_DESCRIPTIONS = {
   Wrath: 'Deal 100% more damage. Take 100% more damage.',
   Calm: 'On Exit: Gain 2 Energy.',
@@ -12459,6 +12470,13 @@ function describeAction(act){
     case 'SwapDrawDiscard': return `Swap your Draw and Discard piles`;
     case 'RemoveBlock': return `Remove ${act.removeAll ? 'all' : n} Block from ${targetPhrase}`;
     case 'MillCards': return `Mill ${n} card${n===1?'':'s'} (top of Draw pile to Discard pile)`;
+    case 'ChannelOrb': {
+      const orbName = act.orbKind === 'vanilla'
+        ? (act.orbVanillaRef || 'an')
+        : ((state.orbs.find(o=>o.id===act.orbRef) || {}).name || 'an');
+      return `Channel ${n} ${orbName} orb${n===1?'':'s'}`;
+    }
+    case 'EvokeOrb': return `Evoke your ${act.evokeWhich === 'Last' ? 'last' : 'first'} orb ${n} time${n===1?'':'s'}${act.keepOrb ? ' (keeps it)' : ''}`;
     case 'RemoveFromCombat': return `Remove this card from combat (not exhausted)`;
     case 'ShufflePiles': return `Shuffle your ${act.shuffleSource === 'Hand' ? 'Hand' : act.shuffleSource === 'HandAndDiscard' ? 'Hand and Discard pile' : 'Discard pile'} into your Draw pile`;
     case 'TransformDeckCards': {
@@ -14460,6 +14478,15 @@ function afflictionSelectHtml(act){
 // confirmed-behavior hover tooltip AFFLICTION_DESCRIPTIONS already does for
 // vanilla afflictions -- see that const's own header comment for the full
 // evidence trail (ported from Tyler's own uploaded reference tool).
+// [Round 378] ChannelOrb's orb picker -- same combined custom/vanilla
+// combobox shape as stanceSelectHtml right below.
+function orbSelectHtml(act){
+  const customGroup = state.orbs.length
+    ? `<optgroup label="Your orbs">${state.orbs.map(o=>`<option value="custom:${escapeAttr(o.id)}" title="${escapeAttr(o.description || 'No description set for this orb yet.')}" ${act.orbKind!=='vanilla'&&act.orbRef===o.id?'selected':''}>${escapeHtml(o.name||'Untitled')}</option>`).join('')}</optgroup>`
+    : '';
+  const vanillaGroup = `<optgroup label="Vanilla orbs">${BUILTIN_ORBS.map(v=>`<option value="vanilla:${escapeAttr(v)}" ${act.orbKind==='vanilla'&&act.orbVanillaRef===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}</optgroup>`;
+  return `<select class="a-orb-ref" title="Choose from your own created orbs, or a vanilla orb.">${customGroup}${vanillaGroup}</select>`;
+}
 function stanceSelectHtml(act){
   const customGroup = state.stances.length
     ? `<optgroup label="Your stances">${state.stances.map(s=>`<option value="custom:${escapeAttr(s.id)}" title="${escapeAttr(s.description || 'No description set for this stance yet.')}" ${act.stanceKind!=='vanilla'&&act.stanceRef===s.id?'selected':''}>${escapeHtml(s.name||'Untitled')}</option>`).join('')}</optgroup>`
@@ -15572,7 +15599,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards'].includes(type);
+  return ['DealDamage', 'GainBlock', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16496,6 +16523,28 @@ function ensureActionRefDefaults(act){
   // nothing for the dropdown to actually show selected). ExitStance needs
   // none of these fields at all (see compiler.js:actionToCSharp's
   // ExitStance case -- it just exits whichever stance is currently active).
+  // [Round 378] ChannelOrb's orb picker -- same self-healing shape as the
+  // EnterStance picker below (custom orbs first, vanilla when none exist);
+  // EvokeOrb's evokeWhich/keepOrb. Everything is dropped on any other type.
+  if(act.type === 'ChannelOrb'){
+    if(act.orbKind !== 'vanilla') act.orbKind = 'custom';
+    if(act.orbKind === 'custom' && !state.orbs.length) act.orbKind = 'vanilla';
+    if(act.orbKind === 'custom'){
+      if(!act.orbRef || !state.orbs.find(o=>o.id===act.orbRef)) act.orbRef = state.orbs[0].id;
+      delete act.orbVanillaRef;
+    } else {
+      if(!BUILTIN_ORBS.includes(act.orbVanillaRef)) act.orbVanillaRef = BUILTIN_ORBS[0];
+      delete act.orbRef;
+    }
+  } else {
+    delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef;
+  }
+  if(act.type === 'EvokeOrb'){
+    if(!['First','Last'].includes(act.evokeWhich)) act.evokeWhich = 'First';
+    if(!act.keepOrb) delete act.keepOrb;
+  } else {
+    delete act.evokeWhich; delete act.keepOrb;
+  }
   if(act.type === 'EnterStance'){
     if(act.stanceKind !== 'vanilla') act.stanceKind = 'custom';
     if(act.stanceKind === 'custom' && !state.stances.length){
@@ -17412,6 +17461,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
         : `<span class="cond-word">Remove</span>${amountHtml}${useXAmountHtml}<span class="cond-word">Block from</span>${targetHtml}<span class="cond-word">.</span>`;
       break;
     }
+    case 'ChannelOrb':
+      sentenceHtml = `<span class="cond-word">Channel</span>${amountHtml}${useXAmountHtml}${orbSelectHtml(act)} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ChannelOrb)}">orb(s).</span>`;
+      break;
+    case 'EvokeOrb': {
+      const eoSel = `<select class="a-evoke-which">${[['First','first'],['Last','last']].map(([v,l])=>`<option value="${v}" ${(act.evokeWhich||'First')===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      const eoKeep = `<label class="a-check-label" title="Evoke without removing the orb afterwards."><input type="checkbox" class="a-keeporb" ${act.keepOrb?'checked':''}> Keep the orb</label>`;
+      afflictOptionsBlockHtml = `<div class="action-row-usex">${eoKeep}</div>`;
+      sentenceHtml = `<span class="cond-word">Evoke your</span> ${eoSel} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.EvokeOrb)}">orb</span>${amountHtml}${useXAmountHtml}<span class="cond-word">time(s).</span>`;
+      break;
+    }
     case 'MillCards':
       sentenceHtml = `<span class="cond-word">Mill</span>${amountHtml}${useXAmountHtml}<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.MillCards)}">card(s) from the top of your Draw pile to your Discard pile.</span>`;
       break;
@@ -17785,6 +17844,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.retainThisTurn; delete act.afflictionRef; delete act.afflictionKind; delete act.afflictionVanillaRef; delete act.enchantmentRef; delete act.pile; delete act.unblockable; delete act.petRef;
     delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
     delete act.removeAll; delete act.shuffleSource;
+    delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -17844,6 +17904,22 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     if(!act.removeAll) delete act.removeAll;
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  const orbRefSelect = row.querySelector('.a-orb-ref');
+  if(orbRefSelect) orbRefSelect.onchange = (e)=>{
+    const raw = e.target.value;
+    const sep = raw.indexOf(':');
+    const kind = raw.slice(0, sep), value = raw.slice(sep + 1);
+    act.orbKind = kind;
+    if(kind === 'vanilla'){ act.orbVanillaRef = value; delete act.orbRef; }
+    else { act.orbRef = value; delete act.orbVanillaRef; }
+  };
+  const evokeWhichSelect = row.querySelector('.a-evoke-which');
+  if(evokeWhichSelect) evokeWhichSelect.onchange = e=> act.evokeWhich = e.target.value;
+  const keepOrbCheck = row.querySelector('.a-keeporb');
+  if(keepOrbCheck) keepOrbCheck.onchange = (e)=>{
+    act.keepOrb = e.target.checked;
+    if(!act.keepOrb) delete act.keepOrb;
   };
   const shuffleSourceSelect = row.querySelector('.a-shuffle-source');
   if(shuffleSourceSelect) shuffleSourceSelect.onchange = e=> act.shuffleSource = e.target.value;

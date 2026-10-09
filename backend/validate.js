@@ -299,6 +299,8 @@ const ACTION_TYPES = [
   // [Round 376] RemoveBlock / MillCards / RemoveFromCombat / ShufflePiles -- see
   // compiler.js's actionToCSharp cases for the IL evidence trail.
   'RemoveBlock', 'MillCards', 'RemoveFromCombat', 'ShufflePiles',
+  // [Round 378] ChannelOrb / EvokeOrb -- see compiler.js's actionToCSharp cases.
+  'ChannelOrb', 'EvokeOrb',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -440,6 +442,11 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // binds fgPet (there's no cardPlay.Player.Osty path for a value-returning
 // hook body, unlike OnPlay/OnAnyCardPlayed) — see the modifierHook branch
 // inside the SUBJECT_CAPABLE_CONDITION_KINDS block below.
+// [Round 378] Orb ids + vanilla orb names for ChannelOrb validation. Module-level
+// (set at the top of validateCharacterPackage) rather than threaded through
+// validateActions' ~15 call sites, same trade-off compiler.js's currentPetById makes.
+const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
+let currentOrbIds = new Set();
 function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds, stanceIds) {
   if (conditions === undefined) return;
   if (!Array.isArray(conditions)) { errors.push(`${path}.conditions must be an array.`); return; }
@@ -922,6 +929,11 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
+    } else if ((act.type === 'ChannelOrb' || act.type === 'EvokeOrb') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 378] OrbCmd.Channel / EvokeNext / EvokeLast all take a real
+      // PlayerChoiceContext as their first parameter (verified via IL) --
+      // this hook's real signature has none.
+      errors.push(`${p}: action "${act.type}" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which orb commands need to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that has one.`);
     } else if (act.type === 'MillCards' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 377] MillCards dispatches Forge's "when a card is milled"
       // trigger, which needs a real PlayerChoiceContext to push models onto
@@ -1274,6 +1286,38 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     if (act.shuffleSource !== undefined) {
       if (!['Hand', 'Discard', 'HandAndDiscard'].includes(act.shuffleSource)) errors.push(`${p}.shuffleSource "${act.shuffleSource}" is not one of: Hand, Discard, HandAndDiscard.`);
       if (act.type !== 'ShufflePiles') errors.push(`${p}: shuffleSource is only meaningful on "ShufflePiles" — action type is "${act.type}".`);
+    }
+    // [Round 378] ChannelOrb: orbKind/orbRef/orbVanillaRef -- same
+    // custom/vanilla dual-field shape as stanceKind/stanceRef/
+    // stanceVanillaRef below. EvokeOrb: evokeWhich/keepOrb.
+    if (act.orbKind !== undefined) {
+      if (!['custom', 'vanilla'].includes(act.orbKind)) errors.push(`${p}.orbKind "${act.orbKind}" is not one of: custom, vanilla.`);
+      if (act.type !== 'ChannelOrb') errors.push(`${p}: orbKind is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
+    }
+    if (act.type === 'ChannelOrb') {
+      const orbKind = act.orbKind === 'vanilla' ? 'vanilla' : 'custom';
+      if (orbKind === 'vanilla') {
+        if (act.orbVanillaRef !== undefined && !BUILTIN_ORBS.includes(act.orbVanillaRef)) {
+          errors.push(`${p}.orbVanillaRef "${act.orbVanillaRef}" is not one of: ${BUILTIN_ORBS.join(', ')}.`);
+        } else if (act.orbVanillaRef === undefined || act.orbVanillaRef === '') {
+          errors.push(`${p}: action "ChannelOrb" needs a vanilla orb selected — pick one from the dropdown.`);
+        }
+      } else if (act.orbRef === '' || act.orbRef === undefined) {
+        errors.push(`${p}: action "ChannelOrb" needs an orb selected — pick one from the dropdown, or add an orb first if none exist yet (Orbs section).`);
+      } else if (!currentOrbIds.has(act.orbRef)) {
+        errors.push(`${p}.orbRef "${act.orbRef}" doesn't match any defined orb id.`);
+      }
+    } else {
+      if (act.orbRef !== undefined) errors.push(`${p}: orbRef is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
+      if (act.orbVanillaRef !== undefined) errors.push(`${p}: orbVanillaRef is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
+    }
+    if (act.evokeWhich !== undefined) {
+      if (!['First', 'Last'].includes(act.evokeWhich)) errors.push(`${p}.evokeWhich "${act.evokeWhich}" is not one of: First, Last.`);
+      if (act.type !== 'EvokeOrb') errors.push(`${p}: evokeWhich is only meaningful on "EvokeOrb" — action type is "${act.type}".`);
+    }
+    if (act.keepOrb !== undefined) {
+      if (typeof act.keepOrb !== 'boolean') errors.push(`${p}.keepOrb must be a boolean.`);
+      if (act.type !== 'EvokeOrb') errors.push(`${p}: keepOrb is only meaningful on "EvokeOrb" — action type is "${act.type}".`);
     }
     // [Round 347] stanceKind/stanceRef/stanceVanillaRef -- EnterStance
     // only (ExitStance needs no stance reference at all, see
@@ -2254,6 +2298,7 @@ function validateCharacterPackage(pkg) {
   // follow (threaded through validateEffects/validateConditions/
   // validateActions/validateModifiers/validateAdvancedOptions exactly like
   // petIds was).
+  currentOrbIds = new Set((Array.isArray(pkg.orbs) ? pkg.orbs : []).map(o => o && o.id).filter(Boolean));
   const stanceIds = new Set((Array.isArray(pkg.stances) ? pkg.stances : []).map(s => s && s.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
   // built up front (before any effect blocks are validated) so a

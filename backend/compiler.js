@@ -187,6 +187,14 @@ function mechanicClassName(statusRef) {
 // because generateProject runs a single character synchronously per call"
 // reasoning currentMechanicClassById already relies on.
 let currentPetById = new Map();
+// [Round 378] ChannelOrb: orb id -> generated class (fully-qualified), set by
+// generateProject() before any entity source is generated -- same early-set
+// reasoning as currentStanceClassById.
+let currentOrbClassById = new Map();
+// [Round 378] The five real built-in orbs, all [VERIFIED via direct sts2.dll
+// type scan]: MegaCrit.Sts2.Core.Models.Orbs.{Lightning,Frost,Dark,Plasma,Glass}Orb.
+const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
+const BUILTIN_ORB_CLASS_NAMES = Object.fromEntries(BUILTIN_ORBS.map(o => [o, `global::MegaCrit.Sts2.Core.Models.Orbs.${o}Orb`]));
 
 // [Round 139] Same module-level pattern as currentMechanicClassById above,
 // set by generateProject() before any card source is generated — the set
@@ -692,6 +700,9 @@ const PLAYER_ONLY_ACTIONS = [
   // ExhaustCard above. (RemoveBlock is NOT here: it is a real Creature-
   // target action, see its own case.)
   'MillCards', 'RemoveFromCombat', 'ShufflePiles',
+  // [Round 378] ChannelOrb / EvokeOrb -- orb-queue operations on the acting
+  // Player, no Creature-target concept.
+  'ChannelOrb', 'EvokeOrb',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -3322,6 +3333,34 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // that matches Slay the Spire's Mill. It does not reshuffle: milling an
     // empty Draw pile moves nothing. Taking a snapshot (.ToList()) first
     // keeps the loop safe while the pile mutates.
+    // [Round 378] ChannelOrb / EvokeOrb -- VERIFIED via direct sts2.dll IL
+    // read (claude/round378-channel-evoke-orb.md). Public static
+    // OrbCmd.Channel<T>(PlayerChoiceContext, Player) is
+    // Channel(ctx, ModelDb.Orb<T>().ToMutable(), player); the non-generic body
+    // returns early if the combat is over, auto-adds 1 slot for a character
+    // with BaseOrbSlotCount == 0 and Capacity == 0, evokes the front orb
+    // (dequeue: true) when the queue is full, then OrbQueue.TryEnqueue.
+    // OrbCmd.EvokeNext / EvokeLast(ctx, Player, bool dequeue) are no-ops on
+    // an empty queue; the real Multi-Cast evokes `n` times with
+    // dequeue == (i == n - 1), which `keepOrb` reproduces / disables.
+    case 'ChannelOrb': {
+      const choCls = action.orbKind === 'vanilla'
+        ? BUILTIN_ORB_CLASS_NAMES[action.orbVanillaRef]
+        : currentOrbClassById.get(action.orbRef);
+      if (!choCls) return `        ForgeActions.Todo("ChannelOrb -- no orb selected"); // pick an orb in this action's own dropdown`;
+      return `        for (int fgChanI = 0, fgChanN = (int)(${resolveAmountExpr(action, ctx)}); fgChanI < fgChanN; fgChanI++)
+        {
+            await MegaCrit.Sts2.Core.Commands.OrbCmd.Channel<${choCls}>(choiceContext, ${resolvePlayerExpr(ctx)}); // [VERIFIED via direct sts2.dll IL read, round 378]
+        }`;
+    }
+    case 'EvokeOrb': {
+      const evoMethod = action.evokeWhich === 'Last' ? 'EvokeLast' : 'EvokeNext';
+      const evoDequeue = action.keepOrb ? 'false' : 'fgEvokeI == fgEvokeN - 1';
+      return `        for (int fgEvokeI = 0, fgEvokeN = (int)(${resolveAmountExpr(action, ctx)}); fgEvokeI < fgEvokeN; fgEvokeI++)
+        {
+            await MegaCrit.Sts2.Core.Commands.OrbCmd.${evoMethod}(choiceContext, ${resolvePlayerExpr(ctx)}, ${evoDequeue}); // [VERIFIED via direct sts2.dll IL read of OrbCmd + Dualcast/MultiCast.OnPlay, round 378]
+        }`;
+    }
     case 'MillCards': {
       const mcPlayerExpr = resolvePlayerExpr(ctx);
       // [Round 377] After each card lands in Discard, fires Forge's own
@@ -12608,6 +12647,9 @@ function generateProject(characterPackage, outDir, opts = {}) {
   const petClassById = new Map((characterPackage.pets || []).map(p => [p.id, `global::${namespace}.Pets.${pascalCase(p.name)}Pet`]));
   // [Round 293] See currentPetById's own module-level comment above.
   currentPetById = new Map((characterPackage.pets || []).map(p => [p.id, p]));
+  // [Round 378] See currentOrbClassById's own comment. Matches the class name
+  // generateOrbSource/the write loop below emit (Orbs/<Pascal>Orb.cs).
+  currentOrbClassById = new Map((characterPackage.orbs || []).map(o => [o.id, `global::${namespace}.Orbs.${pascalCase(o.name)}Orb`]));
   const generateAllCardsExprs = characterPackage.cards.map(c => `ModelDb.Card<${cardClassById.get(c.id)}>()`).join(', ');
   const generateAllRelicsExprs = (characterPackage.relics || []).map(r => `ModelDb.Relic<${relicClassById.get(r.id)}>()`).join(', ');
   // [Round 357, task #32] Fully-qualified (same convention as the other
