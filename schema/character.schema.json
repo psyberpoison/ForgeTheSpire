@@ -1375,8 +1375,30 @@
         },
         "focusScales": {
           "type": "boolean",
-          "description": "Whether Focus should scale this orb's passive/evoke magnitude. STILL data-only/freeform \u2014 no reflect-baselib round has found a dedicated OrbModel-level \"scales with Focus\" mechanism; FocusPower is confirmed to be an ordinary real built-in status (see BUILTIN_POWER_CLASS_MAP), so if this is ever wired it would most likely reuse the same GetStatusStacks<FocusPower> scaling primitive Task #8's amountScalesWithStatus uses, inside a real Passive()/Evoke() override \u2014 not a property on the orb itself. Exported to Orbs/README.md as a design note only, same as passiveText/evokeText."
+          "description": "[Round 379] Whether Focus scales this orb's Passive/Evoke value. When true (the default for a new orb), PassiveVal/EvokeVal compile to `ModifyOrbValue(<value>m)` -- exactly how the five vanilla orbs do it (LightningOrb.get_PassiveVal is `this.ModifyOrbValue(3m)`) [VERIFIED via direct sts2.dll IL read]; Focus applies through each model's ModifyOrbValue hook (Hook.ModifyOrbValue iterates the combat's hook listeners). When false, the plain value is used. Omitted is read as true, matching the editor's old default."
+        },
+        "passiveTiming": {
+          "enum": ["TurnEnd", "TurnStart"],
+          "description": "[Round 379] When this orb's passive fires: \"TurnEnd\" (default -- overrides OrbModel.BeforeTurnEndOrbTrigger, like Lightning/Frost/Dark/Glass) or \"TurnStart\" (overrides AfterTurnStartOrbTrigger, like Plasma). Either way the override calls the real OrbModel.TriggerPassive(ctx, null), which applies the passive-trigger-count hooks and then calls Passive(). [VERIFIED via direct sts2.dll IL read]"
+        },
+        "effects": {
+          "type": "array",
+          "description": "[Round 379] What this orb DOES. Each block is (trigger -> conditions -> actions [-> elseActions]): \"OnOrbPassive\" runs inside the orb's Passive() (after ActivatePassive()/PlayPassiveSfx(), same as Frost); \"OnOrbEvoke\" runs inside Evoke() (after PlayEvokeSfx()/ActivateEvoke(), same as Frost). Inside these blocks the acting player is the orb's Owner, damage and Block are applied Unpowered (ValueProp.Unpowered = 4, as the vanilla orbs do -- Strength/Dexterity don't apply), and an amount formula can use the \"OrbValue\" source (this orb's own PassiveVal in a passive block, EvokeVal in an evoke block).",
+          "items": {
+            "$ref": "#/definitions/orbEffectBlock"
+          }
         }
+      }
+    },
+    "orbEffectBlock": {
+      "type": "object",
+      "description": "[Round 379] One (trigger -> conditions -> actions [-> elseActions]) rule on an ORB. Same shape as hookEffectBlock, but the only triggers are the orb's own two behaviors: OnOrbPassive and OnOrbEvoke. See the orb definition's `effects` property.",
+      "required": ["trigger", "actions"],
+      "properties": {
+        "trigger": { "enum": ["OnOrbPassive", "OnOrbEvoke"] },
+        "conditions": { "$ref": "#/definitions/conditionsArray" },
+        "actions": { "$ref": "#/definitions/actionsArray" },
+        "elseActions": { "$ref": "#/definitions/actionsArray" }
       }
     },
     "cardEffectBlock": {
@@ -1903,7 +1925,7 @@
               "type": "object",
               "properties": {
                 "source": {
-                  "enum": ["Literal", "CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"]
+                  "enum": ["Literal", "CurrentHp", "MaxHp", "Gold", "PendingDamage", "OrbValue", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"]
                 },
                 "sign": {
                   "enum": ["+", "-"]
@@ -1940,7 +1962,7 @@
               "minFrom": {
                 "type": "object",
                 "properties": {
-                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
+                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "OrbValue", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
                   "value": { "type": "number" },
                   "subject": { "enum": ["Self", "Target"] },
                   "statusRef": { "type": "string" },
@@ -1952,7 +1974,7 @@
               "maxFrom": {
                 "type": "object",
                 "properties": {
-                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
+                  "source": { "enum": ["CurrentHp", "MaxHp", "Gold", "PendingDamage", "OrbValue", "EnergyRemaining", "StarsRemaining", "OrbSlotCount", "CustomStatusStacks", "VanillaStatusStacks"] },
                   "value": { "type": "number" },
                   "subject": { "enum": ["Self", "Target"] },
                   "statusRef": { "type": "string" },

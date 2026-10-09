@@ -128,8 +128,12 @@ public static class ForgeActions
     // convention already used for LoseHp/DealDamage above; `fast: false`
     // matches the real DefendIronclad card's own real default (normal
     // pacing, not the upgraded/rushed timing).
-    public static async Task GainBlock(Creature target, int amount, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay = null) =>
-        await MegaCrit.Sts2.Core.Commands.CreatureCmd.GainBlock(target, (decimal)amount, default(ValueProp), cardPlay, false);
+    // [Round 379] `unpowered` -- an ORB's own effect (Frost orb's Block is applied with
+    // ValueProp.Unpowered = 4 [VERIFIED via direct sts2.dll IL read of FrostOrb.Passive/
+    // Evoke]) so Dexterity/Frail-style modifiers don't apply to it. Defaults false: every
+    // other caller is unchanged.
+    public static async Task GainBlock(Creature target, int amount, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay = null, bool unpowered = false) =>
+        await MegaCrit.Sts2.Core.Commands.CreatureCmd.GainBlock(target, (decimal)amount, unpowered ? ValueProp.Unpowered : default(ValueProp), cardPlay, false);
 
     // [BEST EFFORT] see header — real damage-dealing goes through
     // AttackCommand, not a simple Creature method. `hitCount` param added
@@ -211,7 +215,7 @@ public static class ForgeActions
     // it's still accepted (and silently ignored) on the sourceCard-bound
     // branch rather than throwing, so a package saved before this
     // distinction existed can't crash generation over it.
-    public static async Task<AttackCommand?> DealDamage(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, Creature target, int amount, int hitCount = 1, bool unblockable = false)
+    public static async Task<AttackCommand?> DealDamage(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, Creature target, int amount, int hitCount = 1, bool unblockable = false, bool unpowered = false)
     {
         if (sourceCard != null)
         {
@@ -219,7 +223,8 @@ public static class ForgeActions
         }
         else
         {
-            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, target, (decimal)amount, unblockable ? ValueProp.Unblockable : default(ValueProp), dealer);
+            // [Round 379] `unpowered` is only passed by an orb's own effects (LightningOrb.ApplyLightningDamage calls CreatureCmd.Damage with ValueProp.Unpowered = 4 [VERIFIED via direct sts2.dll IL read]).
+            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, target, (decimal)amount, (unblockable ? ValueProp.Unblockable : default(ValueProp)) | (unpowered ? ValueProp.Unpowered : default(ValueProp)), dealer);
             return null;
         }
     }
@@ -247,7 +252,7 @@ public static class ForgeActions
     // `unblockable` (new, round 199) -- same real ValueProp.Unblockable,
     // same private-setter limitation on the sourceCard-bound branch -- see
     // DealDamage's own comment just above for the full evidence.
-    public static async Task<AttackCommand?> DealDamageAllEnemies(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, MegaCrit.Sts2.Core.Combat.ICombatState combatState, int amount, int hitCount = 1, bool unblockable = false)
+    public static async Task<AttackCommand?> DealDamageAllEnemies(PlayerChoiceContext choiceContext, Creature dealer, CardModel? sourceCard, MegaCrit.Sts2.Core.Entities.Cards.CardPlay? cardPlay, MegaCrit.Sts2.Core.Combat.ICombatState combatState, int amount, int hitCount = 1, bool unblockable = false, bool unpowered = false)
     {
         if (sourceCard != null)
         {
@@ -255,7 +260,7 @@ public static class ForgeActions
         }
         else
         {
-            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, combatState.HittableEnemies, (decimal)amount, unblockable ? ValueProp.Unblockable : default(ValueProp), dealer);
+            await MegaCrit.Sts2.Core.Commands.CreatureCmd.Damage(choiceContext, combatState.HittableEnemies, (decimal)amount, (unblockable ? ValueProp.Unblockable : default(ValueProp)) | (unpowered ? ValueProp.Unpowered : default(ValueProp)), dealer);
             return null;
         }
     }

@@ -324,7 +324,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
 // [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
 // one real Discovery card's own default pool) plus every real
 // CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
@@ -447,6 +447,8 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // validateActions' ~15 call sites, same trade-off compiler.js's currentPetById makes.
 const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
 let currentOrbIds = new Set();
+// [Round 379] An orb's own two behaviors -- see compiler.js's TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke.
+const ORB_TRIGGERS = ['OnOrbPassive', 'OnOrbEvoke'];
 function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds, stanceIds) {
   if (conditions === undefined) return;
   if (!Array.isArray(conditions)) { errors.push(`${path}.conditions must be an array.`); return; }
@@ -1632,6 +1634,11 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(term.source) && !(xContext.trigger !== undefined && AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.includes(xContext.trigger))) {
         errors.push(`${tp}.source "${term.source}" only makes sense on trigger ${AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS.join(' or ')} (got "${xContext.trigger}") — no other trigger's hook body has this real value in scope.`);
       }
+      // [Round 379] OrbValue reads the orb's own PassiveVal/EvokeVal -- members that only exist
+      // on a generated orb class, so it's only valid inside that orb's OnOrbPassive/OnOrbEvoke.
+      if (AMOUNT_FORMULA_ORB_ONLY_SOURCES.includes(term.source) && !(xContext.trigger !== undefined && AMOUNT_FORMULA_ORB_TRIGGERS.includes(xContext.trigger))) {
+        errors.push(`${tp}.source "${term.source}" only makes sense inside an orb's own ${AMOUNT_FORMULA_ORB_TRIGGERS.join(' / ')} effects (got "${xContext.trigger}") — no other entity has an orb value in scope.`);
+      }
       if (AMOUNT_FORMULA_SUBJECT_SOURCES.includes(term.source)) {
         if (term.subject !== undefined && !['Self', 'Target'].includes(term.subject)) {
           errors.push(`${tp}.subject "${term.subject}" is not one of: Self, Target.`);
@@ -1899,6 +1906,10 @@ const TRIGGER_SELF_LOOP_ACTIONS = {
   // the dispatcher for every card it mills -- unbounded recursion, same
   // shape as the DealDamage/AfterDamageGiven case above. Rejected outright.
   AfterCardMilled: (a) => a && a.type === 'MillCards',
+  // [Round 379] Channeling a new orb into a full queue evokes the front orb (OrbCmd.Channel ->
+  // EvokeNext(dequeue: true)), and EvokeNext/EvokeLast can pick this very orb again -- so a
+  // Channel/Evoke Orb action INSIDE an orb's own evoke can re-trigger that evoke forever.
+  OnOrbEvoke: (a) => a && (a.type === 'ChannelOrb' || a.type === 'EvokeOrb'),
 };
 
 function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
@@ -3209,6 +3220,13 @@ function validateCharacterPackage(pkg) {
     if (orb.passiveValue !== undefined && typeof orb.passiveValue !== 'number') errors.push(`${p}.passiveValue must be a number.`);
     if (orb.evokeValue !== undefined && typeof orb.evokeValue !== 'number') errors.push(`${p}.evokeValue must be a number.`);
     if (orb.focusScales !== undefined && typeof orb.focusScales !== 'boolean') errors.push(`${p}.focusScales must be a boolean.`);
+    // [Round 379] Orb behavior: passiveTiming + effects[] (OnOrbPassive/OnOrbEvoke).
+    if (orb.passiveTiming !== undefined && !['TurnEnd', 'TurnStart'].includes(orb.passiveTiming)) {
+      errors.push(`${p}.passiveTiming "${orb.passiveTiming}" is not one of: TurnEnd, TurnStart.`);
+    }
+    if (orb.effects !== undefined) {
+      validateEffects(orb.effects, p, errors, { allowedTriggers: ORB_TRIGGERS, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind: 'orb', gameplayTagsInUse });
+    }
   });
 
   // [Round 347, task #31] Custom stances -- see schema's own "stance"

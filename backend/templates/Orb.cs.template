@@ -1,5 +1,16 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Linq;
 using BaseLib.Abstracts;
-using Godot;
+using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.ValueProps;
+using {{namespace}}.Generated;
+using {{namespace}}.Powers;
 
 namespace {{namespace}}.Orbs;
 
@@ -9,52 +20,47 @@ namespace {{namespace}}.Orbs;
 // extends MegaCrit.Sts2.Core.Models.OrbModel, public parameterless
 // constructor (`CustomOrbModel()`). Confirmed against a REAL, WORKING
 // compiled example — TheBurdenedNewCharacter.Orbs.MoonOrb — which extends
-// CustomOrbModel directly and overrides EXACTLY the 3 members below
-// (PassiveVal/EvokeVal/DarkenedColor), nothing else.
+// CustomOrbModel directly and overrides PassiveVal/EvokeVal/DarkenedColor
+// (plus Passive/Evoke/AfterTurnStartOrbTrigger for its own behavior).
 //
 // A NOTE ON ShouldReceiveCombatHooks: reflect-baselib's own "abstract
-// members" sweep (DumpAbstractMembers, tools/reflect-baselib/Program.cs)
-// ALSO flagged `ShouldReceiveCombatHooks` as still-abstract on
-// CustomOrbModel — the same member Card/Character/Power all genuinely
-// need to override. But MoonOrb (a real compiled DLL, which the C#
-// compiler would have refused to build as a non-abstract class unless
-// EVERY abstract member were satisfied) does NOT override it anywhere.
-// The likely explanation: DumpAbstractMembers walks DeclaredOnly
-// properties at every hierarchy level and reports each level's ORIGINAL
-// abstract declaration without checking whether an INTERMEDIATE level
-// (here, OrbModel itself) already overrode it concretely — a real,
-// now-understood limitation of that specific sweep, not a build risk
-// here, since this template follows MoonOrb's real working shape instead
-// of the sweep's (misleading, for this one member) result. Deliberately
-// NOT overriding ShouldReceiveCombatHooks below.
+// members" sweep flagged `ShouldReceiveCombatHooks` as still-abstract on
+// CustomOrbModel, but MoonOrb (a real compiled DLL) does NOT override it —
+// the sweep reports each level's ORIGINAL abstract declaration without
+// checking whether OrbModel already overrode it. Deliberately NOT overriding
+// it below.
+//
+// [Round 379] BEHAVIOR. The members below mirror how the five vanilla orbs
+// are built (all [VERIFIED via direct sts2.dll IL reads of
+// LightningOrb/FrostOrb/DarkOrb/PlasmaOrb/GlassOrb and OrbModel itself]):
+//   - PassiveVal/EvokeVal are `ModifyOrbValue(<N>m)` when the orb scales with
+//     Focus (e.g. LightningOrb.get_PassiveVal is `ModifyOrbValue(3m)`); Focus
+//     reaches it through Hook.ModifyOrbValue's walk of the combat hook
+//     listeners.
+//   - The passive timer is BeforeTurnEndOrbTrigger (Lightning/Frost/Dark/
+//     Glass) or AfterTurnStartOrbTrigger (Plasma); both just call the real
+//     OrbModel.TriggerPassive(ctx, null), which applies the passive-trigger-
+//     count hooks and then calls Passive(ctx, target).
+//   - Passive(): ActivatePassive(); PlayPassiveSfx(); then the effect.
+//   - Evoke(): PlayEvokeSfx(); ActivateEvoke(<creatures hit>); then the
+//     effect; returns the creatures hit. Forge returns an empty list (the
+//     base OrbModel.Evoke default) and passes the owner to ActivateEvoke the
+//     way FrostOrb does, because Forge effects can hit anything.
+//   - Orbs are NOT combat hook listeners (Hook.IterateCombatHookListeners
+//     never walks the OrbQueue), so the author's "passive" and "evoke" effect
+//     blocks compile to plain public methods (ForgeOrbPassive/ForgeOrbEvoke)
+//     that the real overrides above call.
+// If an orb has no passive/evoke effects, those overrides are simply not
+// emitted and the orb runs OrbModel's own no-op defaults.
 public sealed class {{className}} : CustomOrbModel
 {
-    public override decimal PassiveVal => {{passiveValue}}m;
-    public override decimal EvokeVal => {{evokeValue}}m;
+    public override decimal PassiveVal => {{passiveValExpr}};
+    public override decimal EvokeVal => {{evokeValExpr}};
 
     // [BEST EFFORT] no orb-specific color field in the schema yet —
     // reuses the character's own accent color, same source
     // Character.cs.template's NameColor override already uses.
-    public override Color DarkenedColor => new Color("{{colorHex}}");
+    public override Godot.Color DarkenedColor => new Godot.Color("{{colorHex}}");
 
-    // Passive()/Evoke()/AfterTurnStartOrbTrigger() intentionally NOT
-    // overridden. MoonOrb (the real example) DOES override these for its
-    // own custom per-turn/evoke behavior [CONFIRMED via reflect-baselib
-    // round 12 — MoonOrb's compiled async state-machine classes prove
-    // it], but Forge has no effect editor for orb passive/evoke logic yet
-    // — orb.passiveText/orb.evokeText remain freeform design notes only
-    // (see Orbs/README.md in this export). Leaving these unoverridden
-    // means this orb has real PassiveVal/EvokeVal numbers but runs
-    // whatever OrbModel's own base Passive()/Evoke()/
-    // AfterTurnStartOrbTrigger() do by default — UNCONFIRMED, but very
-    // likely a harmless no-op, since every built-in orb (Frost/Lightning/
-    // Dark/Plasma/Glass) individually overrides these to add its own
-    // effect, consistent with OrbModel itself providing an empty default
-    // for orbs that don't need one. Deliberately NOT emitting a
-    // ForgeActions.Todo(...)-style throwing stub here (unlike
-    // OnUpgrade/OnDiscard elsewhere) — Passive() fires every turn this
-    // orb sits in a slot, a core always-on gameplay loop, so a throwing
-    // stub would crash combat outright if this guess about the base
-    // default turns out wrong; leaving it un-overridden is the safer
-    // failure mode either way.
+{{behaviorMethods}}
 }

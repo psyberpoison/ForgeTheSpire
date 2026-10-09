@@ -1258,6 +1258,8 @@ function resolvePlayerExpr(ctx) {
   // DiscardCard's own still-open gap noted in the round 30 write-up.
   if (ctx.cardPlayBound) return 'cardPlay.Player';
   if (ctx.entityKind === 'relic') return 'this.Owner';
+  // [Round 379] OrbModel.Owner is a real Player property [VERIFIED via sts2.dll IL: every vanilla orb reads `base.Owner.Creature`].
+  if (ctx.entityKind === 'orb') return 'this.Owner';
   // [Round 199, extended round 200] Neither AfflictionModel nor
   // EnchantmentModel has an Owner property of its own (only get_Card()) --
   // CardModel.Owner IS the real, confirmed Player-typed property (see
@@ -1451,12 +1453,16 @@ const RESOLVE_STAR_X_EXPR = 'this.ResolveStarXValue() /* [VERIFIED via decompili
 // only "self/target" HP and stacks — Target here reuses
 // resolveTargetExpr(action.target), the exact same resolution
 // amountScalesWithSubject's own 'Target' case already uses).
-const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'OrbValue', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
 const AMOUNT_FORMULA_SUBJECT_SOURCES = ['CurrentHp', 'MaxHp', 'CustomStatusStacks', 'VanillaStatusStacks'];
 const AMOUNT_FORMULA_STATUS_SOURCES = ['CustomStatusStacks', 'VanillaStatusStacks'];
 const AMOUNT_FORMULA_PLAYER_SOURCES = ['Gold', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount'];
 const AMOUNT_FORMULA_HOOK_ONLY_SOURCES = ['PendingDamage'];
 const AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS = ['BeforeMyDamageReceived', 'BeforeEnemyDamageReceived'];
+// [Round 379] 'OrbValue' reads the orb's OWN PassiveVal (OnOrbPassive) /
+// EvokeVal (OnOrbEvoke) -- only in scope inside an orb's own effect blocks.
+const AMOUNT_FORMULA_ORB_ONLY_SOURCES = ['OrbValue'];
+const AMOUNT_FORMULA_ORB_TRIGGERS = ['OnOrbPassive', 'OnOrbEvoke'];
 const MAX_AMOUNT_FORMULA_TERMS = 6;
 
 // One term's own real C# sub-expression, ALWAYS with an explicit leading
@@ -1475,6 +1481,14 @@ function resolveAmountFormulaTermExpr(term, ctx) {
       return `${sign}(${v}m * (decimal)${subjExpr}.CurrentHp) /* [VERIFIED via sts2.dll — Creature.CurrentHp] */`;
     case 'MaxHp':
       return `${sign}(${v}m * (decimal)${subjExpr}.MaxHp) /* [VERIFIED via sts2.dll — Creature.MaxHp] */`;
+    case 'OrbValue':
+      // [Round 379] hookCtx.orbValueExpr is 'PassiveVal' / 'EvokeVal' (set from
+      // TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke). backend/validate.js rejects this
+      // source on every other trigger; throwing here keeps a direct
+      // generateProject() call from emitting a reference to a member that
+      // doesn't exist on the class (fail loud, not a silent 0).
+      if (!ctx.orbValueExpr) throw new Error('Amount formula source "OrbValue" is only available inside an orb\'s own OnOrbPassive/OnOrbEvoke effects.');
+      return `${sign}(${v}m * ${ctx.orbValueExpr}) /* [Round 379] this orb's own ${ctx.orbValueExpr} (already Focus-scaled when the orb's "scales with Focus" is on) */`;
     case 'Gold':
       return `${sign}(${v}m * (decimal)${resolvePlayerExpr(ctx)}.Gold) /* [VERIFIED round 329 via direct sts2.dll IL read — Player.Gold] */`;
     case 'PendingDamage':
@@ -2100,12 +2114,14 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         // honestly dropped (not silently wrong) with a comment on that
         // branch instead of being passed somewhere it can't take effect.
         const unblockableArg = action.unblockable ? 'true' : 'false';
+        // [Round 379] An orb's damage is Unpowered (see ForgeActions.DealDamage) -- named arg so it can follow the positional ones.
+        const orbUnpoweredArg = ctx.entityKind === 'orb' ? ', unpowered: true' : '';
         const unblockableNote = (action.unblockable && ctx.cardPlayBound)
           ? ' /* [KNOWN GAP] "Unblockable" has no effect here -- this goes through AttackCommand, whose DamageProps setter is private; only takes effect on a relic/mechanic/affliction\'s own DealDamage (no CardModel source) -- see compiler.js\'s own comment on this case */'
           : '';
         const dealLine = action.target === 'AllEnemies'
-          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies${unblockableNote}`
-          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage${unblockableNote}`;
+          ? `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamageAllEnemies(choiceContext, ${dmgSrc}, fgPlayer.CombatState, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}${orbUnpoweredArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamageAllEnemies${unblockableNote}`
+          : `        ${usesKilledTargetAttackCommand ? 'var fuAttackCommand = ' : ''}await ForgeActions.DealDamage(choiceContext, ${dmgSrc}, ${targetExpr}, ${resolveAmountExpr(action, ctx)}, ${resolveHitCountExpr(action)}, ${unblockableArg}${orbUnpoweredArg}); // [Fix, round 30] see ForgeActions.cs.template's DealDamage${unblockableNote}`;
         if (fu && fu.trigger && Array.isArray(fu.actions) && fu.actions.length) {
           // FullyBlocked/UnblockedAmount added 2026-08-27 (sts2.dll direct
           // read confirmed DamageResult.WasFullyBlocked/UnblockedDamage as
@@ -2158,7 +2174,7 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // same way a vanilla card's own OnPlay does; a relic/mechanic hook
       // with no real cardPlay in scope omits it (defaults to null on the
       // C# side).
-      return `        await ForgeActions.GainBlock(${targetExpr}, ${resolveAmountExpr(action, ctx)}${ctx.cardPlayBound ? ', cardPlay' : ''}); // [Fix, round 36] see ForgeActions.cs.template's GainBlock`;
+      return `        await ForgeActions.GainBlock(${targetExpr}, ${resolveAmountExpr(action, ctx)}${ctx.cardPlayBound ? ', cardPlay' : ''}${ctx.entityKind === 'orb' ? ', unpowered: true' : ''}); // [Fix, round 36] see ForgeActions.cs.template's GainBlock`;
     case 'ModifyStatus': {
       // Replaces the old ApplyStatus/RemoveStatus/ApplyCustomStatus/
       // RemoveCustomStatus — Tyler: "lets reduce apply/remove/customapply/
@@ -5515,6 +5531,33 @@ const TRIGGER_HOOKS = {
     playerExpr: 'card.Owner.Creature', targetExpr: null,
     cardParamExpr: 'card',
   },
+  // --- Round 379: an ORB's own two behaviors. Orbs are NOT combat hook
+  // listeners (Hook.IterateCombatHookListeners / ICombatState.
+  // IterateHookListeners never walk the OrbQueue [VERIFIED via direct sts2.dll
+  // IL read]), so these are Forge-defined methods (forgeHook) that the
+  // generated orb's own real overrides call: Passive(ctx, target) ->
+  // ForgeOrbPassive(ctx), Evoke(ctx) -> ForgeOrbEvoke(ctx). See
+  // Orb.cs.template and generateOrbSource. Only valid on an orb's `effects`
+  // (validate.js allowedTriggers) -- never offered to relics/mechanics.
+  // playerExpr `Owner.Creature` mirrors the real orbs, which all act through
+  // `base.Owner.Creature` (OrbModel.Owner is a Player). orbValueExpr feeds the
+  // amount formula's "OrbValue" source.
+  OnOrbPassive: {
+    method: 'ForgeOrbPassive',
+    forgeHook: true,
+    forgeNote: "called by this orb's own Passive() override, see Orb.cs.template",
+    params: 'PlayerChoiceContext choiceContext',
+    playerExpr: 'Owner.Creature', targetExpr: null,
+    orbValueExpr: 'PassiveVal',
+  },
+  OnOrbEvoke: {
+    method: 'ForgeOrbEvoke',
+    forgeHook: true,
+    forgeNote: "called by this orb's own Evoke() override, see Orb.cs.template",
+    params: 'PlayerChoiceContext choiceContext',
+    playerExpr: 'Owner.Creature', targetExpr: null,
+    orbValueExpr: 'EvokeVal',
+  },
   // --- Round 20 addition: AfterForge, a real Task-returning AbstractModel
   // hook that got missed entirely by Round 19's review (it was mistakenly
   // filed into the reconstructed "Group B" list even though it returns
@@ -6363,7 +6406,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // whole method body is just the Todo() fallback and neither is
     // invoked. So every reachable call passes through this ctx with
     // fgPlayer already unconditionally bound.
-    const hookCtx = { cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', hookCardExpr: hook.cardParamExpr || null, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
+    const hookCtx = { orbValueExpr: hook.orbValueExpr, cardPlayBound: !!hook.cardPlayBound, fgPlayerBound: true, targetMayBeNull: !!hook.targetMayBeNull, entityKind, affectedCardIsThisCard: entityKind === 'affliction' || entityKind === 'enchantment', hookCardExpr: hook.cardParamExpr || null, cardClassById: refMaps && refMaps.cardClassById, relicClassById: refMaps && refMaps.relicClassById, petClassById: refMaps && refMaps.petClassById, afflictionClassById: refMaps && refMaps.afflictionClassById, enchantmentClassById: refMaps && refMaps.enchantmentClassById }; // targetMayBeNull [Fix, round 29] — see TRIGGER_HOOKS.OnAnyCardPlayed's own comment. entityKind [Fix, round 31] — see resolvePlayerExpr's own comment. affectedCardIsThisCard [Round 199, extended round 200 to entityKind 'enchantment' too] — on an affliction's or enchantment's own additional-trigger hooks, `this` IS the AfflictionModel/EnchantmentModel instance and `this.Card` is always its real, confirmed owning CardModel (see resolveActedCardExpr) — lets AfflictCard/RemoveAffliction/EnchantCard/RemoveEnchantment/ClearAfflictionFromPile work from ANY of these hooks, not just OnPlay.
     // Round 19 added a THIRD real shape beyond "both bound"/"neither bound"
     // — 22 of the 39 new hooks expose exactly ONE real Creature (playerExpr
     // set, targetExpr null: e.g. AfterGoldGained's bare `Player player`,
@@ -6439,7 +6482,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     }
     const triggerList = group.map(g => g.effect.trigger).join(', ');
     blocks.push(
-`    // trigger(s): ${triggerList} -> ${hook.method}(${hook.params}) [${hook.forgeHook ? 'FORGE-DEFINED hook, not a game override -- called by ForgeActions.DispatchCardMilled, see TRIGGER_HOOKS.AfterCardMilled;' : 'VERIFIED signature via reflect-baselib round 2;'} player/target binding is best-effort or a Todo fallback, see TRIGGER_HOOKS above. Multiple triggers on one line means they're Mine/Enemy (or turn-side) siblings sharing this one real method — see the round-35 comment on generateHookEffects' methodGroups.]
+`    // trigger(s): ${triggerList} -> ${hook.method}(${hook.params}) [${hook.forgeHook ? `FORGE-DEFINED hook, not a game override -- ${hook.forgeNote || 'called by ForgeActions.DispatchCardMilled, see TRIGGER_HOOKS.AfterCardMilled'};` : 'VERIFIED signature via reflect-baselib round 2;'} player/target binding is best-effort or a Todo fallback, see TRIGGER_HOOKS above. Multiple triggers on one line means they're Mine/Enemy (or turn-side) siblings sharing this one real method — see the round-35 comment on generateHookEffects' methodGroups.]
     public ${hook.forgeHook ? '' : 'override '}async System.Threading.Tasks.Task ${hook.method}(${hook.params})
     {
 ${body}
@@ -8404,16 +8447,57 @@ function generatePotionSource(potion, namespace, poolClassName, refMaps, iconOve
 // before this round (same "absent field defaults sensibly" convention
 // used throughout this app — see character.gender for the most recent
 // example).
-function generateOrbSource(orb, namespace, colorHex) {
+function generateOrbSource(orb, namespace, colorHex, refMaps) {
   const tpl = loadTemplate('Orb.cs.template');
   const passiveValue = orb.passiveValue !== undefined ? orb.passiveValue : (orb.baseValue || 0);
   const evokeValue = orb.evokeValue !== undefined ? orb.evokeValue : (orb.baseValue || 0);
+  // [Round 379] Focus scaling -- the vanilla orbs' own shape: `ModifyOrbValue(<N>m)`.
+  // focusScales omitted is read as true (the editor's long-standing default).
+  const scales = orb.focusScales !== false;
+  const valExpr = (v) => scales ? `ModifyOrbValue(${v}m)` : `${v}m`;
+  const effects = Array.isArray(orb.effects) ? orb.effects : [];
+  const hasPassive = effects.some(e => e.trigger === 'OnOrbPassive');
+  const hasEvoke = effects.some(e => e.trigger === 'OnOrbEvoke');
+  const methods = [];
+  if (hasPassive) {
+    // TurnEnd (default) -> BeforeTurnEndOrbTrigger; TurnStart -> AfterTurnStartOrbTrigger.
+    // [VERIFIED via direct sts2.dll IL read] both are public virtual Task methods taking a
+    // PlayerChoiceContext on OrbModel (default body: Task.CompletedTask), and the vanilla
+    // orbs' overrides are exactly `await TriggerPassive(choiceContext, null)`.
+    const timingMethod = orb.passiveTiming === 'TurnStart' ? 'AfterTurnStartOrbTrigger' : 'BeforeTurnEndOrbTrigger';
+    methods.push(
+`    // passive timing: ${orb.passiveTiming === 'TurnStart' ? 'start of your turn' : 'end of your turn'} [VERIFIED -- same shape as the vanilla orbs, see this file's header]
+    public override async Task ${timingMethod}(PlayerChoiceContext choiceContext)
+    {
+        await TriggerPassive(choiceContext, null);
+    }
+
+    public override async Task Passive(PlayerChoiceContext choiceContext, Creature? target)
+    {
+        ActivatePassive();
+        PlayPassiveSfx();
+        await ForgeOrbPassive(choiceContext);
+    }`);
+  }
+  if (hasEvoke) {
+    methods.push(
+`    public override async Task<IEnumerable<Creature>> Evoke(PlayerChoiceContext choiceContext)
+    {
+        PlayEvokeSfx();
+        ActivateEvoke(Owner.Creature); // [BEST EFFORT] FrostOrb passes its owner here; Forge effects can hit anything, so no more specific target list is known
+        await ForgeOrbEvoke(choiceContext);
+        return System.Array.Empty<Creature>(); // OrbModel.Evoke's own default result
+    }`);
+  }
+  const hookMethods = generateHookEffects(orb, 'orb', refMaps || {});
+  if (effects.length) methods.push(hookMethods);
   return fillTemplate(tpl, {
     namespace,
     className: pascalCase(orb.name) + 'Orb',
-    passiveValue,
-    evokeValue,
+    passiveValExpr: valExpr(passiveValue),
+    evokeValExpr: valExpr(evokeValue),
     colorHex,
+    behaviorMethods: methods.length ? methods.join('\n\n') : '    // no passive/evoke effects defined on this orb -- it runs OrbModel\'s own no-op defaults',
   });
 }
 
@@ -10269,28 +10353,29 @@ function buildEnchantmentAfflictionReadme(heading, entries) {
 
 function buildOrbsReadme(orbs) {
   const lines = [];
-  lines.push('# Orbs — the numbers are real, behavior isn\'t wired yet');
+  lines.push('# Orbs');
   lines.push('');
-  lines.push('UPDATED: each orb below now ALSO compiles to a real');
-  lines.push('`Orbs/<OrbName>Orb.cs` — reflect-baselib rounds 11/12 confirmed');
-  lines.push('`BaseLib.Abstracts.CustomOrbModel`\'s real shape against a genuine working');
-  lines.push('example, `TheBurdenedNewCharacter.Orbs.MoonOrb`. `PassiveVal`/`EvokeVal` are');
-  lines.push('real, typed overrides now (from passiveValue/evokeValue below). What\'s NOT');
-  lines.push('compiled: the passive/evoke TEXT below (what the orb actually DOES each turn');
-  lines.push('or on evoke) — Forge has no effect editor for orb hooks yet, so `Passive()`/');
-  lines.push('`Evoke()` aren\'t overridden in the generated class (see Orb.cs.template\'s');
-  lines.push('header for the full reasoning). This file exists purely to keep that design');
-  lines.push('intent readable — it is not read by the compiled mod at runtime.');
+  lines.push('Each orb below compiles to a real `Orbs/<OrbName>Orb.cs` (a');
+  lines.push('`BaseLib.Abstracts.CustomOrbModel` subclass). `PassiveVal`/`EvokeVal` come from the');
+  lines.push('values below (wrapped in `ModifyOrbValue(...)` when the orb scales with Focus, the');
+  lines.push('way the vanilla orbs do it), and the orb\'s **Passive** and **Evoke** effect blocks');
+  lines.push('compile to real code that runs when the passive fires (end or start of your turn)');
+  lines.push('and when the orb is evoked. The free-text passive/evoke notes below are optional');
+  lines.push('design notes only -- the effect blocks are what actually run.');
   lines.push('');
   orbs.forEach(o => {
     lines.push(`## ${o.name || 'Untitled'}`);
     lines.push('');
     if (o.description) { lines.push(o.description); lines.push(''); }
-    if (o.passiveText) { lines.push('**Passive (each turn, while slotted) — NOT compiled:** ' + o.passiveText); lines.push(''); }
-    if (o.evokeText) { lines.push('**Evoke (when passed out of the last slot) — NOT compiled:** ' + o.evokeText); lines.push(''); }
+    if (o.passiveText) { lines.push('**Passive note (not compiled):** ' + o.passiveText); lines.push(''); }
+    if (o.evokeText) { lines.push('**Evoke note (not compiled):** ' + o.evokeText); lines.push(''); }
     const passiveValue = o.passiveValue !== undefined ? o.passiveValue : (o.baseValue || 0);
     const evokeValue = o.evokeValue !== undefined ? o.evokeValue : (o.baseValue || 0);
-    lines.push(`**Compiled:** PassiveVal = ${passiveValue}, EvokeVal = ${evokeValue}${o.focusScales !== false ? ' (marked as scaling with Focus — NOT compiled, no confirmed mechanism yet)' : ' (marked as not scaling with Focus)'}`);
+    lines.push(`**Compiled:** PassiveVal = ${passiveValue}, EvokeVal = ${evokeValue}${o.focusScales !== false ? ' (scales with Focus via ModifyOrbValue)' : ' (does not scale with Focus)'}`);
+    const effs = Array.isArray(o.effects) ? o.effects : [];
+    const passiveN = effs.filter(e => e.trigger === 'OnOrbPassive').length;
+    const evokeN = effs.filter(e => e.trigger === 'OnOrbEvoke').length;
+    lines.push(`**Behavior:** ${passiveN} passive effect block(s) (${o.passiveTiming === 'TurnStart' ? 'start' : 'end'} of your turn), ${evokeN} evoke effect block(s)${(!passiveN && !evokeN) ? ' -- none defined, so this orb currently does nothing when it fires' : ''}`);
     lines.push('');
   });
   return lines.join('\n');
@@ -13021,7 +13106,7 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // `using {{namespace}}.Orbs;`, so there's no CS0234 risk to guard
   // against yet.
   for (const orb of characterPackage.orbs || []) {
-    const src = generateOrbSource(orb, namespace, colorHex);
+    const src = generateOrbSource(orb, namespace, colorHex, { cardClassById, relicClassById, afflictionClassById, enchantmentClassById, petClassById });
     write(`Orbs/${pascalCase(orb.name)}Orb.cs`, src);
   }
   if ((characterPackage.orbs || []).length) {
@@ -13231,7 +13316,7 @@ module.exports = {
   // which need a status ref, which need a real player in scope, which are
   // hook-local-only (and on which triggers), and the term-count cap.
   AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES,
-  AMOUNT_FORMULA_PLAYER_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS,
+  AMOUNT_FORMULA_PLAYER_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS,
   MAX_AMOUNT_FORMULA_TERMS,
   // Same reasoning — the list of real built-in status classes ApplyStatus/
   // RemoveStatus's builtinStatus dropdown can pick from. Derived from

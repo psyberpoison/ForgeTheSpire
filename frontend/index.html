@@ -4117,6 +4117,9 @@ const STORAGE_KEY = 'sts2-forge-character-v1';
 // (see compiler.js:CARD_TRIGGER_HOOKS.OnRetained). Same "player, no target"
 // shape as OnDiscard/OnTurnEndInHand — see CARD_PLAYER_ONLY_TRIGGERS below.
 const CARD_TRIGGERS = ["OnPlay","OnDiscard","OnTurnEndInHand","OnAnyCardPlayed","OnRetained"];
+// [Round 379] An orb's own two behaviors (see backend/compiler.js TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke).
+// Offered only in the Orb editor -- never to relics/mechanics.
+const ORB_TRIGGERS = ["OnOrbPassive","OnOrbEvoke"];
 // Plain-English labels for the trigger picker (Tyler: "OnPlay should be
 // 'When this card is played'... I want them to be easier to identify
 // without having to think too much about it") — the raw id (e.g. "OnPlay")
@@ -4223,6 +4226,9 @@ const HOOK_TRIGGER_LABELS = {
   AfterCardDiscarded: 'Whenever any card is discarded',
   // [Round 377] Forge-defined (the game has no mill event) -- fires once per card moved by a Mill Cards action. See backend/compiler.js TRIGGER_HOOKS.AfterCardMilled.
   AfterCardMilled: 'Whenever a card is milled (by a Mill Cards effect)',
+  // [Round 379] Orb behaviors -- see ORB_TRIGGERS.
+  OnOrbPassive: 'Passive: when this orb triggers (every turn while it is slotted)',
+  OnOrbEvoke: 'Evoke: when this orb is evoked',
   AfterAttack: 'After an attack command resolves',
   AfterDiedToDoom: 'After an enemy dies to Doom',
   AfterSummon: 'After a summon',
@@ -4372,6 +4378,7 @@ const HOOK_TRIGGER_BINDING = {
   AfterStarsSpent: 'player', AfterStarsGained: 'player', AfterSummon: 'player',
   BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', AfterCardMilled: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
   AfterForge: 'player', // playerExpr: 'forger.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.AfterForge
+  OnOrbPassive: 'player', OnOrbEvoke: 'player', // [Round 379] playerExpr: 'Owner.Creature', targetExpr: null -- see backend/compiler.js:TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke
   BeforeFlush: 'player', AfterFlush: 'player', // [Round 199] playerExpr: 'player.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.BeforeFlush/AfterFlush
 };
 // Round 21 — Tyler: "lets go through the hooks and their targets... I need
@@ -4507,6 +4514,8 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   }
   // [Round 377] Mill Cards dispatches the milled trigger itself -- offering it inside that trigger would recurse forever (validate.js rejects it too).
   if(trigger === 'AfterCardMilled') hidden.add('MillCards');
+  // [Round 379] Channeling/evoking an orb from inside an orb's own Evoke would loop (validate.js rejects it too).
+  if(trigger === 'OnOrbEvoke') { hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); }
   if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
@@ -4524,6 +4533,8 @@ function defaultActionForTrigger(trigger){
     if(potionEditCtx.target === 'AllEnemies') return {type:'DealDamage', target:'AllEnemies', amount:6};
     return {type:'GainBlock', target:'Self', amount:12};
   }
+  // [Round 379] An orb's effect has no bound target, so SingleEnemy isn't valid -- a random enemy is the Lightning orb's own shape.
+  if(ORB_TRIGGERS.includes(trigger)) return {type:'DealDamage', target:'RandomEnemy', amount:3};
   if(hiddenActionTypesForTrigger(trigger).has('DealDamage')) return {type:'GainBlock', target:'Self', amount:6};
   return {type:'DealDamage', target:'SingleEnemy', amount:6};
 }
@@ -4643,6 +4654,7 @@ const TRIGGER_CATEGORIES = [
   { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','AfterCardMilled','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
   { id:'orb', label:'Orb', color:'#3aa8a0', triggers:['AfterOrbChanneled','AfterOrbEvoked'] },
+  { id:'orbbehavior', label:'This orb', color:'#3e9fd1', triggers:['OnOrbPassive','OnOrbEvoke'] }, // [Round 379] only offered in the Orb editor
   { id:'restsite', label:'Rest Site', color:'#8fbf4a', triggers:['AfterRestSiteHeal','AfterRestSiteSmith'] },
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
@@ -4653,7 +4665,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // a matching category entry fails loudly in the console instead of just
 // silently never appearing in the bubble picker.
 (function(){
-  const known = new Set([...CARD_TRIGGERS, ...HOOK_TRIGGERS]);
+  const known = new Set([...CARD_TRIGGERS, ...HOOK_TRIGGERS, ...ORB_TRIGGERS]);
   const categorized = new Set(TRIGGER_CATEGORIES.flatMap(c=>c.triggers));
   const missing = [...known].filter(t=>!categorized.has(t));
   const extra = [...categorized].filter(t=>!known.has(t));
@@ -4744,13 +4756,14 @@ const PET_POSITION_MODE_LABELS = {
 // free-text/typed-syntax field for this ("ignore that. i dont want a
 // free-text editor") — every one of these sources is offered as a
 // dropdown option, never something the author types.
-const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
+const AMOUNT_FORMULA_SOURCES = ['Literal', 'CurrentHp', 'MaxHp', 'Gold', 'PendingDamage', 'OrbValue', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'CustomStatusStacks', 'VanillaStatusStacks'];
 const AMOUNT_FORMULA_SOURCE_LABELS = {
   Literal: 'just this number',
   CurrentHp: 'current HP',
   MaxHp: 'max HP',
   Gold: 'Gold',
   PendingDamage: 'the pending damage (this hit)',
+  OrbValue: "this orb's value (Passive or Evoke number)",
   EnergyRemaining: 'Energy remaining',
   StarsRemaining: 'Stars remaining',
   OrbSlotCount: 'orb slot count',
@@ -4770,6 +4783,8 @@ const AMOUNT_FORMULA_STATUS_SOURCES = ['CustomStatusStacks', 'VanillaStatusStack
 // which this pre-empts client-side).
 const AMOUNT_FORMULA_HOOK_ONLY_SOURCES = ['PendingDamage'];
 const AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS = ['BeforeMyDamageReceived', 'BeforeEnemyDamageReceived'];
+// [Round 379] OrbValue reads the orb's own PassiveVal/EvokeVal -- only offered inside an orb's own effects.
+const AMOUNT_FORMULA_ORB_ONLY_SOURCES = ['OrbValue'];
 const MAX_AMOUNT_FORMULA_TERMS = 6;
 // [Round 159] "GainEnergy" -> "ModifyEnergy" — Tyler asked whether a
 // negative "Gain Energy" amount reduces energy; direct sts2.dll IL
@@ -12195,6 +12210,7 @@ function describeAmountFormulaTerm(term){
     case 'MaxHp': base = `${v}x ${who} max HP`; break;
     case 'Gold': base = `${v}x your Gold`; break;
     case 'PendingDamage': base = `${v}x the pending damage`; break;
+    case 'OrbValue': base = `${v}x this orb's value`; break;
     case 'EnergyRemaining': base = `${v}x your Energy remaining`; break;
     case 'StarsRemaining': base = `${v}x your Stars remaining`; break;
     case 'OrbSlotCount': base = `${v}x your orb slot count`; break;
@@ -16075,6 +16091,7 @@ function formulaResultText(act){
       case 'MaxHp': name = `${who} max HP`; break;
       case 'Gold': name = 'your Gold'; break;
       case 'PendingDamage': name = 'the pending damage'; break;
+      case 'OrbValue': name = "this orb's value"; break;
       case 'EnergyRemaining': name = 'your Energy remaining'; break;
       case 'StarsRemaining': name = 'your Stars remaining'; break;
       case 'OrbSlotCount': name = 'your orb slot count'; break;
@@ -16119,6 +16136,7 @@ function amountFormulaSourceOptList(selected, trigger, excludeLiteral){
   });
   return uiSources.filter(s => {
     if(excludeLiteral && s === 'Literal') return false;
+    if(AMOUNT_FORMULA_ORB_ONLY_SOURCES.includes(s)) return s === selected || ORB_TRIGGERS.includes(trigger); // [Round 379]
     if(!AMOUNT_FORMULA_HOOK_ONLY_SOURCES.includes(s)) return true;
     // Only offer PendingDamage on the 2 real triggers whose hook body
     // actually declares that `amount` local (see backend/validate.js's
@@ -22120,15 +22138,25 @@ function renderAfflictions(){ afflictionSection.render(); }
 // generateOrbSource/backend/templates/Orb.cs.template for the full
 // evidence trail. passiveValue/evokeValue below are what's REAL and
 // compiled; passiveText/evokeText/focusScales remain freeform design
-// notes (still exported to Orbs/README.md) since Forge has no effect
-// editor for orb Passive()/Evoke() behavior yet.
+// notes (still exported to Orbs/README.md).
+// [Round 379] Orbs now have a REAL effect editor for Passive()/Evoke()
+// (o.effects, triggers OnOrbPassive/OnOrbEvoke -- see ORB_TRIGGERS) and a
+// compiled Focus-scaling choice (o.focusScales) plus o.passiveTiming.
 const orbGrid = document.getElementById('orbs-grid');
+// [Round 379] One-line tile summary of how many Passive/Evoke effect blocks an orb has.
+function orbEffectSummary(o){
+  const effs = Array.isArray(o.effects) ? o.effects : [];
+  const p = effs.filter(e=>e.trigger==='OnOrbPassive').length;
+  const v = effs.filter(e=>e.trigger==='OnOrbEvoke').length;
+  if(!p && !v) return 'no passive/evoke effects yet';
+  return [p ? `${p} passive` : '', v ? `${v} evoke` : ''].filter(Boolean).join(', ') + ' effect block' + ((p+v)===1?'':'s');
+}
 function renderOrbs(){
   orbGrid.innerHTML = '';
   state.orbs.forEach(o=>{
     const t = document.createElement('div');
     t.className = 'tile';
-    t.innerHTML = `<div class="t-name">${escapeHtml(o.name||'Untitled')}</div><div class="t-meta">orb — passive/evoke values are functional; behavior is still a design note</div>`;
+    t.innerHTML = `<div class="t-name">${escapeHtml(o.name||'Untitled')}</div><div class="t-meta">orb — ${escapeHtml(orbEffectSummary(o))}</div>`;
     t.onclick = ()=> openOrbEditor(o.id);
     orbGrid.appendChild(t);
   });
@@ -22136,7 +22164,7 @@ function renderOrbs(){
   addTile.className = 'tile add-tile';
   addTile.textContent = '+';
   addTile.onclick = ()=>{
-    const o = { id: uid('orb'), name:'New Orb', description:'', passiveText:'', evokeText:'', passiveValue:0, evokeValue:0, focusScales:true };
+    const o = { id: uid('orb'), name:'New Orb', description:'', passiveText:'', evokeText:'', passiveValue:0, evokeValue:0, focusScales:true, passiveTiming:'TurnEnd', effects:[] };
     state.orbs.push(o);
     save(); renderOrbs();
     openOrbEditor(o.id);
@@ -22152,33 +22180,48 @@ function openOrbEditor(orbId){
   // uses at export time.
   const passiveValue = o.passiveValue !== undefined ? o.passiveValue : (o.baseValue ?? 0);
   const evokeValue = o.evokeValue !== undefined ? o.evokeValue : (o.baseValue ?? 0);
+  if(!Array.isArray(o.effects)) o.effects = [];
+  if(o.passiveTiming !== 'TurnStart') o.passiveTiming = 'TurnEnd';
   openModal(`
     <div class="modal-head"><h3>Edit Orb</h3><span class="close" onclick="closeModal()">&times;</span></div>
     <div class="modal-body">
       <div class="panel-desc" style="margin-top:0">
-        <strong>Passive/Evoke value below are functional</strong> — they compile into the orb.
-        <span style="color:var(--danger-bright)">The passive/evoke effect text and Focus-scaling below are still just design notes</span> —
-        there's no effect editor for orb behavior yet, so they're included as reference notes, not compiled.
+        An orb has two behaviors: its <strong>Passive</strong> (fires every turn while it sits in a slot) and its <strong>Evoke</strong> (fires once when it is pushed out or evoked).
+        Build each with an effect block below &mdash; use the <em>this orb's value</em> amount source to read the Passive/Evoke number
+        (Focus-scaled when "Scales with Focus" is on). The text notes are optional reference only.
       </div>
       <label>Name</label><input type="text" id="o-name" value="${escapeAttr(o.name)}">
       <label>Description / flavor text</label><textarea id="o-desc">${escapeHtml(o.description||'')}</textarea>
       <div class="row">
-        <div><label title="Compiles into a real PassiveVal override.">Passive value (compiled)</label><input type="number" id="o-passive-value" value="${passiveValue}"></div>
-        <div><label title="Compiles into a real EvokeVal override.">Evoke value (compiled)</label><input type="number" id="o-evoke-value" value="${evokeValue}"></div>
+        <div><label title="Compiles into a real PassiveVal override.">Passive value</label><input type="number" id="o-passive-value" value="${passiveValue}"></div>
+        <div><label title="Compiles into a real EvokeVal override.">Evoke value</label><input type="number" id="o-evoke-value" value="${evokeValue}"></div>
       </div>
-      <label>Passive effect text (each turn, while slotted) — design note only, not compiled</label>
-      <textarea id="o-passive">${escapeHtml(o.passiveText||'')}</textarea>
-      <label>Evoke effect text (when passed out of the last slot) — design note only, not compiled</label>
-      <textarea id="o-evoke">${escapeHtml(o.evokeText||'')}</textarea>
       <div class="row">
-        <div><label title="Design note only, not compiled yet.">Scales with Focus (design note only)</label><select id="o-focus">${optList(['true','false'], String(o.focusScales!==false))}</select></div>
+        <div><label title="On: the Passive/Evoke value is run through the real Focus modifier (like Lightning/Frost). Off: the value is fixed (like Plasma).">Scales with Focus</label><select id="o-focus">${optList(['true','false'], String(o.focusScales!==false))}</select></div>
+        <div><label title="When the Passive effects fire, like the vanilla orbs: Lightning/Frost/Dark at the end of your turn, Plasma at the start.">Passive fires at</label><select id="o-passive-timing"><option value="TurnEnd"${o.passiveTiming==='TurnEnd'?' selected':''}>End of your turn</option><option value="TurnStart"${o.passiveTiming==='TurnStart'?' selected':''}>Start of your turn</option></select></div>
       </div>
+      <label style="margin-top:18px">Passive &amp; Evoke effects</label>
+      <button class="secondary" id="orb-add-effect" type="button">+ Add effect block</button>
+      <div class="panel-desc">Damage and Block from an orb are Unpowered (Strength, Vulnerable, etc. don't apply), same as the vanilla orbs.</div>
+      <div id="orb-effects-list"></div>
+      <label>Passive note (optional)</label>
+      <textarea id="o-passive">${escapeHtml(o.passiveText||'')}</textarea>
+      <label>Evoke note (optional)</label>
+      <textarea id="o-evoke">${escapeHtml(o.evokeText||'')}</textarea>
     </div>
     <div class="modal-foot">
       <button class="danger" id="delete-orb">Delete</button>
       <button id="save-orb">Done</button>
     </div>
   `);
+  renderEffectsList(o, ORB_TRIGGERS, 'orb-effects-list');
+  document.getElementById('orb-add-effect').onclick = ()=>{
+    // New block goes to whichever behavior has none yet, so a fresh orb gets Passive then Evoke.
+    const hasPassive = o.effects.some(e=>e.trigger==='OnOrbPassive');
+    const trigger = hasPassive ? 'OnOrbEvoke' : 'OnOrbPassive';
+    o.effects.push({ trigger, conditions: [], actions: [defaultActionForTrigger(trigger)], elseActions: [] });
+    renderEffectsList(o, ORB_TRIGGERS, 'orb-effects-list');
+  };
   document.getElementById('delete-orb').onclick = ()=>{ state.orbs = state.orbs.filter(x=>x.id!==orbId); save(); renderOrbs(); closeModal(); };
   // [Round 302] Named so it can also be handed to modalSaveOnOutsideClick
   // — see that variable's own header comment.
@@ -22190,6 +22233,7 @@ function openOrbEditor(orbId){
     o.passiveValue = parseFloat(document.getElementById('o-passive-value').value) || 0;
     o.evokeValue = parseFloat(document.getElementById('o-evoke-value').value) || 0;
     o.focusScales = document.getElementById('o-focus').value === 'true';
+    o.passiveTiming = document.getElementById('o-passive-timing').value === 'TurnStart' ? 'TurnStart' : 'TurnEnd';
     save(); renderOrbs(); closeModal();
   };
   document.getElementById('save-orb').onclick = doSaveOrb;
