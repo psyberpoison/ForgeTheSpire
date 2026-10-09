@@ -396,11 +396,11 @@
   }
   .side-nav-screen-tab:hover{color:var(--parchment); background:rgba(255,255,255,.04);}
   .side-nav-screen-tab.active{color:var(--parchment); border-bottom-color:var(--accent-bright);}
-  .side-nav-screen-tab .abbr{display:none;}
+  .side-nav-screen-tab .abbr{display:none; vertical-align:middle;}
   /* Collapsed: two stacked single-letter tabs (the box is too narrow for words). */
   .side-nav.collapsed .side-nav-tabs, .side-nav.no-room .side-nav-tabs{flex-direction:column; gap:0; padding:8px 0 0;}
   .side-nav.collapsed .side-nav-screen-tab .full, .side-nav.no-room .side-nav-screen-tab .full{display:none;}
-  .side-nav.collapsed .side-nav-screen-tab .abbr, .side-nav.no-room .side-nav-screen-tab .abbr{display:inline;}
+  .side-nav.collapsed .side-nav-screen-tab .abbr, .side-nav.no-room .side-nav-screen-tab .abbr{display:inline-block;}
   .side-nav.collapsed .side-nav-screen-tab, .side-nav.no-room .side-nav-screen-tab{flex:0 0 auto; padding:6px 0; font-size:12px; letter-spacing:0;}
   /* The two screens. The one being switched TO slides in from the right (World) or the left (back to Character). */
   .screen[hidden]{display:none;}
@@ -3111,8 +3111,8 @@
   <div class="side-nav-clip">
     <!-- [Round 374] Tyler: tabs at the top of the menu, "one for character, and one for world". -->
     <div class="side-nav-tabs" role="tablist" aria-label="App area">
-      <button type="button" class="side-nav-screen-tab active" role="tab" aria-selected="true" data-screen="character" title="Character -- your character and everything it owns"><span class="full">Character</span><span class="abbr">C</span></button>
-      <button type="button" class="side-nav-screen-tab" role="tab" aria-selected="false" data-screen="world" title="World -- content that affects the whole game, not just your character"><span class="full">World</span><span class="abbr">W</span></button>
+      <button type="button" class="side-nav-screen-tab active" role="tab" aria-selected="true" data-screen="character" title="Character -- your character and everything it owns"><span class="full">Character</span><svg class="abbr" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="12" cy="8" r="4.2" fill="currentColor"/><path d="M3.5 21c0-4.6 3.8-7.6 8.5-7.6s8.5 3 8.5 7.6z" fill="currentColor"/></svg></button>
+      <button type="button" class="side-nav-screen-tab" role="tab" aria-selected="false" data-screen="world" title="World -- content that affects the whole game, not just your character"><span class="full">World</span><svg class="abbr" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="3.8" ry="9"/><path d="M3.2 9h17.6M3.2 15h17.6"/></svg></button>
     </div>
     <div class="side-nav-inner"></div>
   </div>
