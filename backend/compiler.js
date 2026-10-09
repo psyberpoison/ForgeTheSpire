@@ -970,7 +970,7 @@ const CONDITION_SUBJECTS = ['Self', 'CardTarget', 'Pet'];
 // in conditionToCSharpRaw below.
 // [Round 347] 'InStance' added — same subject mechanism (Self/CardTarget/
 // Pet), see conditionToCSharpRaw's own InStance case.
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'InStance'];
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'InStance', 'MaxHp'];
 
 // [VERIFIED via reflect-baselib round 5] `Player.Osty` — the "pet"
 // creature some STS2 characters have — is a real, public, concrete
@@ -3324,7 +3324,16 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
     // keeps the loop safe while the pile mutates.
     case 'MillCards': {
       const mcPlayerExpr = resolvePlayerExpr(ctx);
-      return `        foreach (CardModel fgMillC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${mcPlayerExpr}).Cards.Take((int)(${resolveAmountExpr(action, ctx)})).ToList()) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgMillC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Bottom, null, false); } // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case`;
+      // [Round 377] After each card lands in Discard, fires Forge's own
+      // AfterCardMilled hook (see TRIGGER_HOOKS.AfterCardMilled) so relics/
+      // mechanics with a "when a card is milled" trigger react. Needs a real
+      // `choiceContext` (every hook's first param) to push onto, so
+      // validate.js gates MillCards off the NO_CHOICE_CONTEXT hooks.
+      return `        foreach (CardModel fgMillC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, ${mcPlayerExpr}).Cards.Take((int)(${resolveAmountExpr(action, ctx)})).ToList())
+        {
+            await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgMillC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Bottom, null, false); // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case
+            await ForgeActions.DispatchCardMilled(choiceContext, ${mcPlayerExpr}.Creature.CombatState, fgMillC); // [Round 377] fires the "when a card is milled" trigger
+        }`;
     }
     // [Round 376, gap-analysis #42] "Remove This Card From Combat" -- the
     // card vanishes for the rest of the combat WITHOUT being exhausted.
@@ -4358,6 +4367,35 @@ function conditionToCSharpRaw(cond, ctx = {}) {
         return `(${subjExpr}?.Block).GetValueOrDefault() ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.Block] */`;
       }
       return `${resolveConditionSubjectExpr(cond.subject)}.Block ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.Block] */`;
+    // [Round 377, gap-analysis #54] "Max HP" -- compares the chosen creature's
+    // MAX HP to a flat number (HpBelowPercent only compares current/max as a
+    // percentage). [VERIFIED via direct sts2.dll read] Creature.MaxHp is a
+    // real, public int property -- the same one HpBelowPercent's own
+    // `.CurrentHp / .MaxHp` already reads. Same subject handling and Glow
+    // branch as HasBlock/HpBelowPercent (resolveGlowSubjectExpr for the
+    // no-fgPlayer glow context, null-safe).
+    case 'MaxHp':
+      if (ctx.glowContext) {
+        const subjExpr = resolveGlowSubjectExpr(cond.subject);
+        return `(${subjExpr}?.MaxHp).GetValueOrDefault() ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.MaxHp] */`;
+      }
+      return `${resolveConditionSubjectExpr(cond.subject)}.MaxHp ${cmp} ${cond.value} /* [VERIFIED via sts2.dll — Creature.MaxHp] */`;
+    // [Round 377, gap-analysis #52] "N% chance" -- true N% of the time each time
+    // this condition is evaluated. Rolls `Rng.NextInt(100) < N` on the run's
+    // own seeded RNG: [VERIFIED via direct sts2.dll IL read] Rng.NextInt(int
+    // max) returns [0, max) (MegaRandom.Next(max)); IRunState.Rng is a real
+    // RunRngSet whose Niche stream is the game's own catch-all gameplay RNG
+    // (real relics roll from it, e.g. WarHammer/FishingRod), and run RNG
+    // state is synced across clients in co-op (SyncRngMessage) so both sides
+    // roll the same number. Reached via fgPlayer.Player (Creature.Player,
+    // real -- ConfusedPower reads Owner.Player.RunState.Rng the same way).
+    // Needs a real fgPlayer local, so it is gated on ctx.fgPlayerBound like
+    // PlayersInRun, and validate.js rejects it inside Glow/Playability (a
+    // per-frame getter must never consume RNG). 0% never fires, 100% always. `?? 100` makes a missing Player (a hook
+    // where fgPlayer isn't a player's Creature) read as "roll failed" instead of throwing.
+    case 'Chance':
+      if (!ctx.fgPlayerBound) return `ForgeActions.TodoCondition("Chance(no player in scope on this hook)")`;
+      return `((fgPlayer.Player?.RunState.Rng.Niche.NextInt(100) ?? 100) < ${cond.value}) /* [VERIFIED via direct sts2.dll IL read — Rng.NextInt(100), RunRngSet.Niche, round 377] */`;
     case 'DebuffStacksTotal':
       // [VERIFIED via sts2.dll] Creature.Powers is a real, enumerable
       // collection; PowerModel.Type returns the real PowerType enum
@@ -5416,6 +5454,28 @@ const TRIGGER_HOOKS = {
     playerExpr: 'card.Owner.Creature', targetExpr: null, // this exact hook already backs cards' own OnDiscard (CARD_TRIGGER_HOOKS) but had no relic/mechanic-level 'any card discarded' trigger until round 20 introduced it (the parallel to OnAnyCardPlayed).
     cardParamExpr: 'card',
   },
+  // [Round 377, gap-analysis "last card discarded/milled" -- Tyler picked "Trigger:
+  // when a card is milled"] A FORGE-DEFINED hook, not a real AbstractModel
+  // method: the game has no mill event (CardPileCmd has no Mill command at
+  // all), so MillCards (see its actionToCSharp case) dispatches this itself
+  // after each card it moves, using ForgeActions.DispatchCardMilled -- a copy
+  // of the real Hook.AfterCardDiscarded dispatcher loop ([VERIFIED via direct
+  // IL read of <AfterCardDiscarded>d__10.MoveNext]: iterate the combat's hook
+  // listeners, choiceContext.PushModel(model), call the hook on the model,
+  // model.InvokeExecutionFinished(), choiceContext.PopModel(model)). Because
+  // there is nothing to override, `forgeHook: true` makes generateHookEffects
+  // emit a plain public method (no `override`) with this `method` name, which
+  // the dispatcher finds by name on each listener. So it ONLY fires for cards
+  // milled by Forge's own Mill Cards action -- never for the game's own
+  // cards, and never for discards. playerExpr/cardParamExpr mirror
+  // AfterCardDiscarded exactly (card.Owner is unchanged by the pile move).
+  AfterCardMilled: {
+    method: 'ForgeAfterCardMilled',
+    forgeHook: true,
+    params: 'PlayerChoiceContext choiceContext, CardModel card',
+    playerExpr: 'card.Owner.Creature', targetExpr: null,
+    cardParamExpr: 'card',
+  },
   // --- Round 20 addition: AfterForge, a real Task-returning AbstractModel
   // hook that got missed entirely by Round 19's review (it was mistakenly
   // filed into the reconstructed "Group B" list even though it returns
@@ -6340,8 +6400,8 @@ function generateHookEffects(entity, entityKind, refMaps) {
     }
     const triggerList = group.map(g => g.effect.trigger).join(', ');
     blocks.push(
-`    // trigger(s): ${triggerList} -> ${hook.method}(${hook.params}) [VERIFIED signature via reflect-baselib round 2; player/target binding is best-effort or a Todo fallback, see TRIGGER_HOOKS above. Multiple triggers on one line means they're Mine/Enemy (or turn-side) siblings sharing this one real method — see the round-35 comment on generateHookEffects' methodGroups.]
-    public override async System.Threading.Tasks.Task ${hook.method}(${hook.params})
+`    // trigger(s): ${triggerList} -> ${hook.method}(${hook.params}) [${hook.forgeHook ? 'FORGE-DEFINED hook, not a game override -- called by ForgeActions.DispatchCardMilled, see TRIGGER_HOOKS.AfterCardMilled;' : 'VERIFIED signature via reflect-baselib round 2;'} player/target binding is best-effort or a Todo fallback, see TRIGGER_HOOKS above. Multiple triggers on one line means they're Mine/Enemy (or turn-side) siblings sharing this one real method — see the round-35 comment on generateHookEffects' methodGroups.]
+    public ${hook.forgeHook ? '' : 'override '}async System.Threading.Tasks.Task ${hook.method}(${hook.params})
     {
 ${body}
         await System.Threading.Tasks.Task.CompletedTask;

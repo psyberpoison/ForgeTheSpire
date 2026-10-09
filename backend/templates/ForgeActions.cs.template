@@ -277,6 +277,40 @@ public static class ForgeActions
     // null-guards this, same "compiles but does nothing" honesty as the
     // rest of this class rather than throwing.
     private static readonly Random _forgeRandom = new Random();
+
+    // [Round 377] Dispatcher for Forge's own "when a card is milled" trigger
+    // (compiler.js TRIGGER_HOOKS.AfterCardMilled). The game has no mill event,
+    // so this mirrors the real Hook.AfterCardDiscarded dispatcher loop
+    // [VERIFIED via direct sts2.dll IL read of <AfterCardDiscarded>d__10.MoveNext]:
+    // for every model in ICombatState.IterateHookListeners() (public interface
+    // method; the Hook class's own wrapper around it is private):
+    // choiceContext.PushModel(model); await model.<Hook>(...);
+    // model.InvokeExecutionFinished(); choiceContext.PopModel(model).
+    // Generated relics/mechanics/etc. with this trigger define a plain public
+    // method named ForgeAfterCardMilled(PlayerChoiceContext, CardModel) (NOT an
+    // override -- there is no base method), found here by exact name + parameter
+    // types; the lookup is cached per concrete model type. The name below MUST
+    // match compiler.js TRIGGER_HOOKS.AfterCardMilled.method (a backend test
+    // asserts they stay in sync). Skipped entirely once combat is over/ending.
+    private static readonly System.Collections.Generic.Dictionary<Type, System.Reflection.MethodInfo?> _milledListenerCache = new();
+    public static async Task DispatchCardMilled(PlayerChoiceContext choiceContext, MegaCrit.Sts2.Core.Combat.ICombatState combatState, MegaCrit.Sts2.Core.Models.CardModel card)
+    {
+        if (MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsOverOrEnding) return;
+        foreach (var model in System.Linq.Enumerable.ToList(combatState.IterateHookListeners()))
+        {
+            var type = model.GetType();
+            if (!_milledListenerCache.TryGetValue(type, out var method))
+            {
+                method = type.GetMethod("ForgeAfterCardMilled", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance, null, new[] { typeof(PlayerChoiceContext), typeof(MegaCrit.Sts2.Core.Models.CardModel) }, null);
+                _milledListenerCache[type] = method;
+            }
+            if (method == null) continue;
+            choiceContext.PushModel(model);
+            await (Task)method.Invoke(model, new object[] { choiceContext, card })!;
+            model.InvokeExecutionFinished();
+            choiceContext.PopModel(model);
+        }
+    }
     public static Creature? PickRandomEnemy(IEnumerable<Creature> enemies)
     {
         var list = enemies as IList<Creature> ?? new List<Creature>(enemies);

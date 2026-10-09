@@ -109,7 +109,7 @@ const CARD_TAGS = ['None', 'Strike', 'Defend', 'Minion', 'OstyAttack', 'Shiv'];
 // — despite being on Tyler's reconstructed "odd-shaped Group B" list, a
 // fresh sts2.dll read confirmed it's Task-returning, i.e. a real Group A
 // event hook like every other entry in this array.
-const HOOK_TRIGGERS = ['OnMyTurnStart', 'OnEnemyTurnStart', 'OnMyTurnEnd', 'OnEnemyTurnEnd', 'OnCombatStart', 'OnKillEnemy', 'OnMyDamageTaken', 'OnEnemyDamageTaken', 'OnExhaust', 'OnDrawCard', 'Passive', 'OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterAttack', 'AfterMyDamageGiven', 'AfterEnemyDamageGiven', 'BeforeMyDamageReceived', 'BeforeEnemyDamageReceived', 'AfterMyBlockCleared', 'AfterEnemyBlockCleared', 'AfterMyBlockGained', 'AfterEnemyBlockGained', 'AfterMyBlockBroken', 'AfterEnemyBlockBroken', 'AfterEnemyAddedToCombat', 'AfterMyCurrentHpChanged', 'AfterEnemyCurrentHpChanged', 'BeforeMyDeath', 'BeforeEnemyDeath', 'AfterDiedToDoom', 'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath', 'AfterSummon', 'AfterMyPowerAmountChanged', 'AfterEnemyPowerAmountChanged', 'AfterThisPowerStacksAdded', 'AfterThisPowerStacksRemoved', 'AfterThisPowerApplied', 'AfterThisPowerRemoved', 'AfterEnergyReset', 'AfterEnergySpent', 'AfterGoldGained', 'AfterStarsSpent', 'AfterStarsGained', 'BeforeHandDraw', 'AfterHandEmptied', 'AfterPreventingDraw', 'AfterShuffle', 'AfterActEntered', 'AfterCombatEnd', 'AfterCombatVictory', 'BeforeSideTurnStart', 'AfterPlayerTurnStart', 'AfterOrbChanneled', 'AfterOrbEvoked', 'AfterRestSiteHeal', 'AfterRestSiteSmith', 'BeforePotionUsed', 'AfterPotionUsed', 'AfterPotionDiscarded', 'AfterPotionProcured', 'AfterItemPurchased', 'AfterForge', 'BeforeFlush', 'AfterFlush'];
+const HOOK_TRIGGERS = ['OnMyTurnStart', 'OnEnemyTurnStart', 'OnMyTurnEnd', 'OnEnemyTurnEnd', 'OnCombatStart', 'OnKillEnemy', 'OnMyDamageTaken', 'OnEnemyDamageTaken', 'OnExhaust', 'OnDrawCard', 'Passive', 'OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'AfterAttack', 'AfterMyDamageGiven', 'AfterEnemyDamageGiven', 'BeforeMyDamageReceived', 'BeforeEnemyDamageReceived', 'AfterMyBlockCleared', 'AfterEnemyBlockCleared', 'AfterMyBlockGained', 'AfterEnemyBlockGained', 'AfterMyBlockBroken', 'AfterEnemyBlockBroken', 'AfterEnemyAddedToCombat', 'AfterMyCurrentHpChanged', 'AfterEnemyCurrentHpChanged', 'BeforeMyDeath', 'BeforeEnemyDeath', 'AfterDiedToDoom', 'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath', 'AfterSummon', 'AfterMyPowerAmountChanged', 'AfterEnemyPowerAmountChanged', 'AfterThisPowerStacksAdded', 'AfterThisPowerStacksRemoved', 'AfterThisPowerApplied', 'AfterThisPowerRemoved', 'AfterEnergyReset', 'AfterEnergySpent', 'AfterGoldGained', 'AfterStarsSpent', 'AfterStarsGained', 'BeforeHandDraw', 'AfterHandEmptied', 'AfterPreventingDraw', 'AfterShuffle', 'AfterActEntered', 'AfterCombatEnd', 'AfterCombatVictory', 'BeforeSideTurnStart', 'AfterPlayerTurnStart', 'AfterOrbChanneled', 'AfterOrbEvoked', 'AfterRestSiteHeal', 'AfterRestSiteSmith', 'BeforePotionUsed', 'AfterPotionUsed', 'AfterPotionDiscarded', 'AfterPotionProcured', 'AfterItemPurchased', 'AfterForge', 'BeforeFlush', 'AfterFlush'];
 // [Fix, round 35] 13 old ambiguous "fires for both your side and the
 // enemy's" trigger ids retired above (fail loud -- Tyler's own migration
 // choice, see RETIRED_AMBIGUOUS_TRIGGERS below): AfterDamageGiven,
@@ -185,6 +185,14 @@ const CONDITION_KINDS = [
   // but boolean (no comparator/value) -- see this file's own dedicated
   // "InStance" branch above the generic COMPARATORS/value check below.
   'InStance',
+  // [Round 377, gap-analysis #54 / #52] "MaxHp" -- the chosen creature's MAX HP
+  // compared to a flat number (Creature.MaxHp, [VERIFIED] real property --
+  // see compiler.js:conditionToCSharpRaw's MaxHp case). Subject-capable,
+  // works everywhere incl. Glow. "Chance" -- "N% chance" (value 0-100, no
+  // comparator, no subject); rolls the game's own seeded run RNG every time
+  // the condition is evaluated, so it is rejected inside Glow/Playability
+  // (see GENERALIZED_PLAYER_ONLY_CONDITION_KINDS).
+  'MaxHp', 'Chance',
 ];
 // cardPlayBound-only condition kinds — down to just EnemyIntent as of
 // round 63. HandCardTypeCheck/OrbSlotCount/HasSpecificRelic/
@@ -210,7 +218,7 @@ const CARD_PLAY_BOUND_ONLY_CONDITION_KINDS = ['EnemyIntent'];
 // [Round 330] PlayersInRun joins this list too — same real `fgPlayer`-
 // Creature-local requirement (for `.CombatState.Players`) as the 5 kinds
 // above, see compiler.js:conditionToCSharpRaw's PlayersInRun case.
-const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'PetPositionIs', 'PlayersInRun'];
+const GENERALIZED_PLAYER_ONLY_CONDITION_KINDS = ['HandCardTypeCheck', 'OrbSlotCount', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'PetPositionIs', 'PlayersInRun', 'Chance'];
 const COMPARATORS = ['lt', 'lte', 'eq', 'gte', 'gt'];
 // 12-action-type model — replaces the old 17-type list (ApplyStatus/
 // RemoveStatus/ApplyCustomStatus/RemoveCustomStatus/LoseHp/HealHp/GainGold/
@@ -453,8 +461,8 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // AfterCardDiscarded/OnExhaust now also expose a real referenced-card
       // reference (see backend/compiler.js:TRIGGER_HOOKS' own
       // cardParamExpr comments and resolveReferencedCardExpr).
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
-        errors.push(`${p} has kind "PlayedCardHasKeyword" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasKeyword" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_KEYWORDS.includes(cond.keyword)) errors.push(`${p}.keyword "${cond.keyword}" is not one of: ${CARD_KEYWORDS.join(', ')}.`);
       return;
@@ -472,8 +480,8 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // reasoning statusRef/cardRef references already get elsewhere in
       // this file.
       // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
-        errors.push(`${p} has kind "PlayedCardHasTag" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasTag" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!isNonEmptyString(cond.tag)) {
         errors.push(`${p} has kind "PlayedCardHasTag" but no tag.`);
@@ -493,8 +501,8 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // against below), not a numeric threshold. Replaces the old
       // single-type "IsAttack" condition.
       // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'].includes(trigger)) {
-        errors.push(`${p} has kind "PlayedCardHasType" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
+      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+        errors.push(`${p} has kind "PlayedCardHasType" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_TYPES.includes(cond.cardType)) errors.push(`${p}.cardType "${cond.cardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
       return;
@@ -724,7 +732,11 @@ if (cond.kind === 'CardPositionInHand') {
     // because, unlike those three, it DOES need the subject block just
     // below (SUBJECT_CAPABLE_CONDITION_KINDS now includes it — see
     // compiler.js's own comment on that const).
-    if (cond.kind !== 'InStance') {
+    if (cond.kind === 'Chance') {
+      // [Round 377] value is a percentage 0-100; comparator is meaningless
+      // (the UI hides it) so it isn't required or checked.
+      if (typeof cond.value !== 'number' || !isFinite(cond.value) || cond.value < 0 || cond.value > 100) errors.push(`${p}.value must be a number from 0 to 100 (the % chance) for kind "Chance".`);
+    } else if (cond.kind !== 'InStance') {
       if (!COMPARATORS.includes(cond.comparator)) errors.push(`${p}.comparator "${cond.comparator}" is not one of: ${COMPARATORS.join(', ')}.`);
       if (typeof cond.value !== 'number') errors.push(`${p}.value must be a number.`);
     }
@@ -910,6 +922,11 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
+    } else if (act.type === 'MillCards' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 377] MillCards dispatches Forge's "when a card is milled"
+      // trigger, which needs a real PlayerChoiceContext to push models onto
+      // (ForgeActions.DispatchCardMilled) -- this hook has none.
+      errors.push(`${p}: action "MillCards" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which Mill Cards needs to fire "when a card is milled" effects (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
     } else if (act.type === 'RemoveBlock' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 376] Same NO_CHOICE_CONTEXT_HOOK_TRIGGERS gap as DealDamage/
       // PetAttack -- CreatureCmd.LoseBlock's first parameter is a real
@@ -1832,6 +1849,12 @@ const TRIGGER_SELF_LOOP_ACTIONS = {
   // its own DiscardCard action, so that specific case is real and
   // confirmed-safe — left unflagged on purpose, not overlooked.
   AfterCardDiscarded: (a) => a && a.type === 'DiscardCard',
+  // [Round 377] Forge's own AfterCardMilled trigger is dispatched BY the
+  // MillCards action itself (ForgeActions.DispatchCardMilled), so a
+  // MillCards action inside a "when a card is milled" effect would re-enter
+  // the dispatcher for every card it mills -- unbounded recursion, same
+  // shape as the DealDamage/AfterDamageGiven case above. Rejected outright.
+  AfterCardMilled: (a) => a && a.type === 'MillCards',
 };
 
 function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {

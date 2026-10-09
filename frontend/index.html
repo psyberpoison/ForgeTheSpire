@@ -4221,6 +4221,8 @@ const HOOK_TRIGGER_LABELS = {
   Passive: 'Passive (always active)',
   AfterCardGeneratedForCombat: 'When a card is generated for combat',
   AfterCardDiscarded: 'Whenever any card is discarded',
+  // [Round 377] Forge-defined (the game has no mill event) -- fires once per card moved by a Mill Cards action. See backend/compiler.js TRIGGER_HOOKS.AfterCardMilled.
+  AfterCardMilled: 'Whenever a card is milled (by a Mill Cards effect)',
   AfterAttack: 'After an attack command resolves',
   AfterDiedToDoom: 'After an enemy dies to Doom',
   AfterSummon: 'After a summon',
@@ -4368,7 +4370,7 @@ const HOOK_TRIGGER_BINDING = {
   AfterPotionProcured: 'unbound',
   AfterRestSiteHeal: 'player', AfterRestSiteSmith: 'player', AfterShuffle: 'player',
   AfterStarsSpent: 'player', AfterStarsGained: 'player', AfterSummon: 'player',
-  BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
+  BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', AfterCardMilled: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
   AfterForge: 'player', // playerExpr: 'forger.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.AfterForge
   BeforeFlush: 'player', AfterFlush: 'player', // [Round 199] playerExpr: 'player.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.BeforeFlush/AfterFlush
 };
@@ -4503,7 +4505,9 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(!CARD_PLAY_BOUND_TRIGGERS.has(trigger)){
     for(const t of CARD_PLAY_BOUND_ONLY_ACTION_TYPES) hidden.add(t);
   }
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
+  // [Round 377] Mill Cards dispatches the milled trigger itself -- offering it inside that trigger would recurse forever (validate.js rejects it too).
+  if(trigger === 'AfterCardMilled') hidden.add('MillCards');
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4636,14 +4640,14 @@ const TRIGGER_CATEGORIES = [
   { id:'hpdeath', label:'HP / Death / Creatures', color:'#e0576b', triggers:['AfterEnemyAddedToCombat','AfterMyCurrentHpChanged','AfterEnemyCurrentHpChanged','BeforeMyDeath','BeforeEnemyDeath','AfterDiedToDoom','AfterPreventingMyDeath','AfterPreventingEnemyDeath','AfterSummon'] },
   { id:'powers', label:'Statuses', color:'#4a9c4a', triggers:['AfterMyPowerAmountChanged','AfterEnemyPowerAmountChanged','AfterThisPowerStacksAdded','AfterThisPowerStacksRemoved','AfterThisPowerApplied','AfterThisPowerRemoved'] }, // [Round 275] label was 'Powers / Statuses' -- Tyler: "change the category name too" (same wording ask as round 274's two trigger labels). [Round 276] two new self-scoped triggers added to this same category. [Round 277] two more (Applied/Removed) added here too.
   { id:'resources', label:'Energy / Stars / Gold', color:'#c9a227', triggers:['AfterEnergyReset','AfterEnergySpent','AfterGoldGained','AfterStarsSpent','AfterStarsGained'] },
-  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','BeforeFlush','AfterFlush'] },
+  { id:'draw', label:'Draw / Hand / Shuffle', color:'#2f8f8a', triggers:['OnDrawCard','BeforeHandDraw','AfterHandEmptied','AfterPreventingDraw','AfterShuffle','AfterCardMilled','BeforeFlush','AfterFlush'] },
   { id:'turnlifecycle', label:'Turn / Combat Lifecycle', color:'#d97b34', triggers:['OnMyTurnStart','OnEnemyTurnStart','OnMyTurnEnd','OnEnemyTurnEnd','OnCombatStart','AfterActEntered','AfterCombatEnd','AfterCombatVictory','BeforeSideTurnStart','AfterPlayerTurnStart'] },
   { id:'orb', label:'Orb', color:'#3aa8a0', triggers:['AfterOrbChanneled','AfterOrbEvoked'] },
   { id:'restsite', label:'Rest Site', color:'#8fbf4a', triggers:['AfterRestSiteHeal','AfterRestSiteSmith'] },
   { id:'potionsmerchant', label:'Potions / Merchant', color:'#c94f9c', triggers:['BeforePotionUsed','AfterPotionUsed','AfterPotionDiscarded','AfterPotionProcured','AfterItemPurchased'] },
   { id:'misc', label:'Misc', color:'#7a8699', triggers:['Passive','AfterForge'] },
 ];
-const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterThisPowerApplied","AfterThisPowerRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnCombatStart","OnKillEnemy","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnDrawCard","Passive","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterCardMilled","AfterAttack","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterDiedToDoom","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterThisPowerStacksAdded","AfterThisPowerStacksRemoved","AfterThisPowerApplied","AfterThisPowerRemoved","AfterEnergyReset","AfterEnergySpent","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterPreventingDraw","AfterShuffle","AfterActEntered","AfterCombatEnd","AfterCombatVictory","BeforeSideTurnStart","AfterPlayerTurnStart","AfterOrbChanneled","AfterOrbEvoked","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterPotionDiscarded","AfterPotionProcured","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 // Sweep TRIGGER_CATEGORIES against the real union of CARD_TRIGGERS +
 // HOOK_TRIGGERS at load time, so a future trigger added to one list without
 // a matching category entry fails loudly in the console instead of just
@@ -11022,6 +11026,17 @@ const CONDITION_KINDS = [
   // You/Target/Pet exactly like HasStatusStacks. Works everywhere,
   // including inside the Glow section below (resolveGlowSubjectExpr has a
   // real path for it, same as HasStatusStacks).
+  // [Round 377, gap-analysis #54] "Max HP" -- flat max-HP comparison (HpBelowPercent
+  // only does current-as-percent-of-max). Subject-capable, works everywhere
+  // incl. Glow. See backend/compiler.js:conditionToCSharpRaw's MaxHp case.
+  { id:'MaxHp', label:'max HP', real:true,
+    hint:'Checks the chosen creature\'s MAX HP against a number (the HP condition checks current HP as a percentage instead). Works everywhere, including inside the Glow section below.' },
+  // [Round 377, gap-analysis #52] "N% chance" -- no comparator, value is the
+  // percentage. Rolls the game's own seeded RNG each time it is evaluated, so
+  // it is hidden inside Glow/Playability ('anyRealTrigger' -- same gate as
+  // PlayersInRun).
+  { id:'Chance', label:'have a', real:true, requiresTrigger:'anyRealTrigger',
+    hint:'True N% of the time each time this condition is checked (0% never, 100% always). Rolls the game\'s own seeded random numbers, so it stays in sync in co-op. Not available inside Glow/Playability, since those are re-checked constantly.' },
   { id:'InStance', label:'is in stance', real:true,
     hint:'Checks whether the chosen creature currently has a given stance active (one of this character\'s own custom stances, or a vanilla Wrath/Calm/Divinity). Plain yes/no — no comparator/value. Works everywhere, including inside the Glow section below.' },
 ];
@@ -11048,12 +11063,12 @@ const CONDITION_KINDS = [
 // own fallback below exists only as a defensive catch-all for a kind that
 // somehow isn't listed here, never expected to actually fire.
 const CONDITION_KIND_CATEGORIES = [
-  { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','HasBlock','DebuffStacksTotal','InStance'] },
+  { id:'creature', label:'Creature Stats', color:'var(--bb-blue)', kindIds:['HasStatusStacks','HpBelowPercent','MaxHp','HasBlock','DebuffStacksTotal','InStance'] },
   { id:'resources', label:'Your Resources', color:'var(--bb-gold)', kindIds:['EnergyRemaining','StarsRemaining','CardsInHand','CardsPlayedThisTurn','AttacksPlayedThisTurn','OrbSlotCount','HandCardTypeCheck','PlayersInRun'] },
   { id:'relicsCards', label:'Relics & Cards', color:'var(--bb-purple)', kindIds:['HasSpecificRelic','NoCopiesOfCardInHand'] },
   { id:'cardReference', label:'Card Reference', color:'var(--bb-green)', kindIds:['CardPositionInHand','PlayedCardHasKeyword','PlayedCardHasTag','PlayedCardHasType'] },
   { id:'pet', label:'Pet', color:'var(--teal)', kindIds:['PetIsOut','PetPositionIs'] },
-  { id:'combatEvents', label:'Combat Events', color:'var(--bb-red)', kindIds:['DamageBrokeBlock','EnemyIntent'] },
+  { id:'combatEvents', label:'Combat Events', color:'var(--bb-red)', kindIds:['DamageBrokeBlock','EnemyIntent','Chance'] },
 ];
 function conditionKindCategoryFor(kindId){
   return CONDITION_KIND_CATEGORIES.find(cat => cat.kindIds.includes(kindId))
@@ -11152,7 +11167,7 @@ function conditionKindAllowedForTrigger(kindDef, trigger, modifierHook){
 // the other 3 — see backend/compiler.js:TRIGGER_HOOKS' own cardParamExpr
 // comments). Used by conditionKindAllowedForTrigger's 'cardReferenceTrigger'
 // sentinel and by CONDITION_SUBJECTS.ThatCard's onlyForTriggers below.
-const CARD_REFERENCE_TRIGGERS = ['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'OnExhaust'];
+const CARD_REFERENCE_TRIGGERS = ['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'];
 // Comparators used by every condition kind except PlayedCardHasKeyword
 // (which uses `keyword` instead — a has/has-not check, not a threshold).
 const COMPARATORS = [
@@ -11302,7 +11317,7 @@ const THAT_CARD_ONLY_CONDITION_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTa
 // resolveConditionSubjectExpr/resolveGlowSubjectExpr exactly like
 // HasStatusStacks/HpBelowPercent/HasBlock/DebuffStacksTotal, so it belongs
 // in CREATURE_SUBJECT_CONDITION_KINDS below too, not just here.
-const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', 'PetIsOut', 'InStance', ...THAT_CARD_ONLY_CONDITION_KINDS];
+const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'MaxHp', 'HasBlock', 'DebuffStacksTotal', 'CardPositionInHand', 'PetIsOut', 'InStance', ...THAT_CARD_ONLY_CONDITION_KINDS];
 // [Round 308] Tyler, shown the full kind dropdown under subject "Pet":
 // "which ones make sense to have the subject be 'pet'?" Checked against
 // backend/compiler.js's OWN (deliberately narrower) SUBJECT_CAPABLE_
@@ -11332,7 +11347,7 @@ const SUBJECT_CAPABLE_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'H
 // (cond.subject)` uniformly, a real per-creature member on the CARD'S
 // TARGET this time instead of the pet — same real mechanism, different
 // creature, so the same 4-kind list applies unchanged.
-const CREATURE_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'HasBlock', 'DebuffStacksTotal', 'InStance'];
+const CREATURE_SUBJECT_CONDITION_KINDS = ['HasStatusStacks', 'HpBelowPercent', 'MaxHp', 'HasBlock', 'DebuffStacksTotal', 'InStance'];
 // Which subjects are selectable right now for this effect block's current
 // trigger — same filtering pattern as availableConditionKinds below.
 // `eff.trigger === undefined` ONLY happens for the Glow/Playability
@@ -12553,6 +12568,8 @@ function describeCondition(cond, trigger){
     // 2026-08-27 condition-kind expansion round — same plain sentence-
     // fragment convention as every case above.
     case 'HasBlock': return `${subj} ${has} ${cmp} ${cond.value} Block`;
+    case 'MaxHp': return `${subj==='you'?'your':subj+"'s"} max HP is ${cmp} ${cond.value}`;
+    case 'Chance': return `there is a ${cond.value}% chance`;
     case 'DebuffStacksTotal': return `${subj==='you'?'your':subj+"'s"} total debuff stacks ${cond.comparator==='eq'?'is':'are'} ${cmp} ${cond.value}`;
     // [Round 306] No longer subject-based — see CONDITION_KINDS' own
     // PetIsOut entry and blankCondition's comment. `subj`/`has` (computed
@@ -14925,7 +14942,7 @@ function blankCondition(kind){
       stanceVanillaRef: BUILTIN_STANCES[0],
     };
   }
-  const c = { kind, comparator:'gte', value: kind === 'HpBelowPercent' ? 50 : 1 };
+  const c = { kind, comparator:'gte', value: kind === 'HpBelowPercent' ? 50 : kind === 'Chance' ? 25 : kind === 'MaxHp' ? 50 : 1 };
   if(kind === 'HasStatusStacks'){
     // Defaults to 'custom' (the only kind this condition supported before
     // Tyler's follow-up "the condition that checks for statuses should
@@ -15053,7 +15070,7 @@ function availableConditionKinds(eff){
 // [Round 330] PlayersInRun added — "Your players in run" reads naturally
 // enough (like "your party size"/"your squad headcount"), same possessive
 // noun-phrase shape as EnergyRemaining/OrbSlotCount right next to it.
-const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PlayersInRun'];
+const POSSESSIVE_SUBJECT_CONDITION_KINDS = ['HpBelowPercent', 'MaxHp', 'DebuffStacksTotal', 'CardsInHand', 'CardsPlayedThisTurn', 'AttacksPlayedThisTurn', 'EnergyRemaining', 'StarsRemaining', 'OrbSlotCount', 'HandCardTypeCheck', 'PlayersInRun'];
 function subjectOptionLabel(subject, cond){
   // Possessive form ("Your"/"Target's"/"Pet's") only reads naturally in
   // front of a possessed noun — see POSSESSIVE_SUBJECT_CONDITION_KINDS'
@@ -15172,7 +15189,7 @@ function renderConditionRowFields(row, cond, eff){
   // are the original 4; PetIsOut/HandCardTypeCheck/EnemyIntent/
   // HasSpecificRelic/NoCopiesOfCardInHand are the 5 added in the 2026-08-27
   // condition-kind expansion round (see blankCondition's own comment).
-  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs', 'InStance'];
+  const NO_COMPARATOR_KINDS = ['PlayedCardHasKeyword', 'PlayedCardHasTag', 'PlayedCardHasType', 'DamageBrokeBlock', 'PetIsOut', 'HandCardTypeCheck', 'EnemyIntent', 'HasSpecificRelic', 'NoCopiesOfCardInHand', 'CardPositionInHand', 'PetPositionIs', 'InStance', 'Chance'];
   const needsComparatorValue = !NO_COMPARATOR_KINDS.includes(cond.kind);
   const needsStatusRef = cond.kind === 'HasStatusStacks';
   const isVanillaStatus = needsStatusRef && cond.statusKind === 'vanilla';
@@ -15320,6 +15337,7 @@ function renderConditionRowFields(row, cond, eff){
       ${needsStanceRef ? stanceConditionSelectHtml(cond) : ''}
       ${needsComparatorValue ? `<select class="c-comparator">${COMPARATORS.map(c=>`<option value="${c.id}" ${c.id===cond.comparator?'selected':''}>${c.label}</option>`).join('')}</select>` : ''}
       ${needsComparatorValue ? `<input class="c-value" type="number" value="${cond.value??0}">` : ''}
+      ${cond.kind === 'Chance' ? `<input class="c-value" type="number" min="0" max="100" value="${cond.value??25}"><span class="cond-word">% chance</span>` : ''}
       ${cond.kind === 'HpBelowPercent' ? `<span class="cond-word">%</span>` : ''}
       ${needsKeyword ? `<select class="c-keyword">${allKeywordChipDefs().map(k=>`<option value="${k.id}" ${k.id===cond.keyword?'selected':''} title="${escapeAttr(k.hint)}">${k.id}</option>`).join('')}</select>` : ''}
       ${needsTag ? (gameplayTagOptions.length
@@ -19131,7 +19149,7 @@ const POTION_TARGET_SHORT = { Self: 'self', AnyPlayer: 'any player', SingleEnemy
 // lists are identical): every hook trigger whose real signature binds a
 // creature/player (so the potion can consume itself from it), minus the
 // "this status" AfterThisPower* hooks.
-const POTION_AUTO_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterShuffle","AfterPlayerTurnStart","AfterOrbChanneled","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
+const POTION_AUTO_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemyTurnEnd","OnMyDamageTaken","OnEnemyDamageTaken","OnExhaust","OnAnyCardPlayed","AfterCardGeneratedForCombat","AfterCardDiscarded","AfterCardMilled","AfterMyDamageGiven","AfterEnemyDamageGiven","BeforeMyDamageReceived","BeforeEnemyDamageReceived","AfterMyBlockCleared","AfterEnemyBlockCleared","AfterMyBlockGained","AfterEnemyBlockGained","AfterMyBlockBroken","AfterEnemyBlockBroken","AfterEnemyAddedToCombat","AfterMyCurrentHpChanged","AfterEnemyCurrentHpChanged","BeforeMyDeath","BeforeEnemyDeath","AfterPreventingMyDeath","AfterPreventingEnemyDeath","AfterSummon","AfterMyPowerAmountChanged","AfterEnemyPowerAmountChanged","AfterEnergyReset","AfterGoldGained","AfterStarsSpent","AfterStarsGained","BeforeHandDraw","AfterHandEmptied","AfterShuffle","AfterPlayerTurnStart","AfterOrbChanneled","AfterRestSiteHeal","AfterRestSiteSmith","BeforePotionUsed","AfterPotionUsed","AfterItemPurchased","AfterForge","BeforeFlush","AfterFlush"];
 const POTION_ANYTIME_ACTION_TYPES = ['ModifyHp','ModifyGold']; // mirrors backend/validate.js's AnyTime allow-list
 
 function potionTargetsForUsage(usage){
