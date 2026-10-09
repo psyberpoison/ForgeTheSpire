@@ -700,6 +700,8 @@ const PLAYER_ONLY_ACTIONS = [
   // ExhaustCard above. (RemoveBlock is NOT here: it is a real Creature-
   // target action, see its own case.)
   'MillCards', 'RemoveFromCombat', 'ShufflePiles',
+  // [Round 381] BringCardsToHand -- moves cards between the acting player's own piles.
+  'BringCardsToHand',
   // [Round 378] ChannelOrb / EvokeOrb -- orb-queue operations on the acting
   // Player, no Creature-target concept.
   'ChannelOrb', 'EvokeOrb',
@@ -3407,6 +3409,85 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
             await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgMillC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Bottom, null, false); // [BEST EFFORT, composed from VERIFIED pieces] see compiler.js's own comment on this case
             await ForgeActions.DispatchCardMilled(choiceContext, ${mcPlayerExpr}.Creature.CombatState, fgMillC); // [Round 377] fires the "when a card is milled" trigger
         }`;
+    }
+    // [Round 381, gap-analysis] "Bring Matching Combat Cards to Hand" -- move
+    // cards from ONE of the Draw / Discard / Exhaust piles into the hand.
+    // [VERIFIED via direct sts2.dll IL read of NeowsFury's <OnPlay>d__7.MoveNext]
+    // the game's own "put up to N cards from your Discard Pile into your
+    // Hand" card does exactly this:
+    //   room = Math.Min(Cards.IntValue, CardPile.MaxCardsInHand - Hand.Cards.Count)
+    //   picked = await CardSelectCmd.FromCombatPile(choiceContext,
+    //       PileTypeExtensions.GetPile(PileType.Discard, owner), owner,
+    //       new CardSelectorPrefs(<prompt LocString>, 0, room))
+    //   await CardPileCmd.Add(picked, PileType.Hand, CardPilePosition.Bottom, null, false)
+    // Forge generalizes it three ways:
+    //  * source pile: Draw / Discard / Exhaust (author picks one);
+    //  * pick mode: Choose (the exact call above, plus the real 5-arg
+    //    FromCombatPile overload that takes a Func<CardModel,bool> filter),
+    //    Random (RunState.Rng.CombatCardSelection.NextItem, the same RNG
+    //    ExhaustCard/DiscardCard's random mode use), or All;
+    //  * AND-ed filters: card type, keyword, custom tag, energy cost.
+    // The Choose prompt reuses the game's own localization row
+    // cards/NEOWS_FURY.selectionScreenPrompt ("Choose up to {Amount} card(s)
+    // to put into your Hand.") [VERIFIED in the .pck]; LocString.Add(string,
+    // decimal) is real. X-cost cards never satisfy a cost filter
+    // (CardEnergyCost.CostsX). Choose needs choiceContext, so validate.js
+    // rejects it on NO_CHOICE_CONTEXT hooks; Random/All do not use it.
+    // The Choose screen is only opened when at least one card matches, so an
+    // empty filter result never shows an empty selection screen.
+    case 'BringCardsToHand': {
+      const bcPlayerExpr = resolvePlayerExpr(ctx);
+      const bcMode = ['Choose', 'Random', 'All'].includes(action.bringMode) ? action.bringMode : 'Choose';
+      const bcPile = ['Draw', 'Discard', 'Exhaust'].includes(action.pile) ? action.pile : 'Discard';
+      const CE = 'MegaCrit.Sts2.Core.Entities.Cards';
+      const bcClauses = [];
+      if (action.bringCardType) bcClauses.push(`fgBringC.Type == ${CE}.CardType.${action.bringCardType}`);
+      if (action.bringKeyword) bcClauses.push(`fgBringC.Keywords.Contains(${keywordExpr(action.bringKeyword)})`);
+      if (action.bringTag) bcClauses.push(`(fgBringC as IForgeTaggedCard)?.ForgeTags.Contains(${csharpStringLiteral(action.bringTag)}) == true`);
+      if (action.bringCostComparator && Number.isInteger(action.bringCostValue)) {
+        const bcOp = { lt: '<', lte: '<=', eq: '==', gte: '>=', gt: '>' }[action.bringCostComparator] || '>=';
+        bcClauses.push(`!fgBringC.EnergyCost.CostsX && fgBringC.EnergyCost.GetResolved() ${bcOp} ${action.bringCostValue}`);
+      }
+      const bcFilterBody = bcClauses.length ? bcClauses.map(c => `(${c})`).join(' && ') : 'true';
+      const bcCount = bcMode === 'All' ? 'int.MaxValue' : `System.Math.Max(0, (int)(${resolveAmountExpr(action, ctx)}))`;
+      const bcLines = [
+        `        {`,
+        `            var fgBringPlayer = ${bcPlayerExpr};`,
+        `            int fgBringRoom = System.Math.Min(${bcCount}, ${CE}.CardPile.MaxCardsInHand - ${CE}.PileTypeExtensions.GetPile(${CE}.PileType.Hand, fgBringPlayer).Cards.Count); // [VERIFIED] same hand-size cap NeowsFury applies`,
+        `            System.Func<CardModel, bool> fgBringFilter = fgBringC => ${bcFilterBody};`,
+        `            var fgBringPile = ${CE}.PileTypeExtensions.GetPile(${CE}.PileType.${bcPile}, fgBringPlayer);`,
+        `            if (fgBringRoom > 0 && fgBringPile.Cards.Any(fgBringFilter))`,
+        `            {`,
+      ];
+      if (bcMode === 'Choose') {
+        bcLines.push(
+          `                var fgBringLoc = new MegaCrit.Sts2.Core.Localization.LocString("cards", "NEOWS_FURY.selectionScreenPrompt"); // [VERIFIED] the game's own "Choose up to {Amount} cards to put into your Hand." row`,
+          `                fgBringLoc.Add("Amount", (decimal)fgBringRoom);`,
+          `                var fgBringPicked = (await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromCombatPile(choiceContext, fgBringPile, fgBringPlayer, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(fgBringLoc, 0, fgBringRoom), fgBringFilter)).ToList(); // [VERIFIED] 5-arg overload with filter`,
+        );
+      } else if (bcMode === 'Random') {
+        bcLines.push(
+          `                var fgBringPool = fgBringPile.Cards.Where(fgBringFilter).ToList();`,
+          `                var fgBringPicked = new List<CardModel>();`,
+          `                while (fgBringPicked.Count < fgBringRoom && fgBringPool.Count > 0)`,
+          `                {`,
+          `                    var fgBringPick = fgBringPlayer.RunState.Rng.CombatCardSelection.NextItem(fgBringPool);`,
+          `                    fgBringPicked.Add(fgBringPick);`,
+          `                    fgBringPool.Remove(fgBringPick);`,
+          `                }`,
+        );
+      } else {
+        bcLines.push(`                var fgBringPicked = fgBringPile.Cards.Where(fgBringFilter).Take(fgBringRoom).ToList();`);
+      }
+      bcLines.push(
+        `                if (fgBringPicked.Count > 0)`,
+        `                {`,
+        `                    await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgBringPicked, ${CE}.PileType.Hand, ${CE}.CardPilePosition.Bottom, null, false); // [VERIFIED] IEnumerable<CardModel> overload, same call NeowsFury makes`,
+        `                }`,
+        `            }`,
+        `        }`,
+      );
+      return bcLines.join('\n');
     }
     // [Round 376, gap-analysis #42] "Remove This Card From Combat" -- the
     // card vanishes for the rest of the combat WITHOUT being exhausted.

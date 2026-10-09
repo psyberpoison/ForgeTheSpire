@@ -4718,7 +4718,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4882,6 +4882,8 @@ const ACTION_TYPE_LABELS = {
   // [Round 378] see backend/compiler.js's ChannelOrb/EvokeOrb cases.
   ChannelOrb: 'Channel Orb',
   EvokeOrb: 'Evoke Orb',
+  // [Round 381]
+  BringCardsToHand: 'Bring Cards to Hand',
 };
 // [Round 376] Hover text for action types that need a clarifying note.
 // Shown as the <option>'s native title and again on the action's own
@@ -4893,6 +4895,7 @@ const ACTION_TYPE_TOOLTIPS = {
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
+  BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
   GainTempHp: 'Gives you Temporary HP: shown as "+N" next to your health (e.g. 95/100 +5). It soaks up HP loss that gets past your Block, one for one, then is used up. Stacks across gains and lasts until the end of combat. Does not stop HP lost directly (e.g. by a Lose HP effect).',
   RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
 };
@@ -4955,7 +4958,7 @@ const ACTION_TYPE_GROUPS = [
   // Cards" keeps the old group's purple (TRIGGER_CATEGORIES.cardplay) --
   // it's still fundamentally card-play-time manipulation, same category
   // that color always meant here.
-  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat'] },
+  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat', 'BringCardsToHand'] },
   { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
@@ -5015,6 +5018,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ShufflePiles: 'shuffle hand discard draw pile',
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
+  BringCardsToHand: 'bring cards to hand from discard draw exhaust pile retrieve return recover fetch search tutor',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
 // BUILTIN_POWER_CLASS_MAP, the full reflect-baselib-confirmed list of 247
@@ -5325,7 +5329,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12499,6 +12503,16 @@ function describeAction(act){
       return `Channel ${n} ${orbName} orb${n===1?'':'s'}`;
     }
     case 'EvokeOrb': return `Evoke your ${act.evokeWhich === 'Last' ? 'last' : 'first'} orb ${n} time${n===1?'':'s'}${act.keepOrb ? ' (keeps it)' : ''}`;
+    case 'BringCardsToHand': {
+      const bPile = ({Draw:'Draw pile',Discard:'Discard pile',Exhaust:'Exhaust pile'})[act.pile] || 'Discard pile';
+      const bMode = act.bringMode === 'Random' ? 'Randomly put' : act.bringMode === 'All' ? 'Put all' : 'Choose up to';
+      const bExtra = [];
+      if(act.bringKeyword) bExtra.push(`with ${act.bringKeyword}`);
+      if(act.bringTag) bExtra.push(`tagged ${act.bringTag}`);
+      if(act.bringCostComparator) bExtra.push(`cost ${({lt:'<',lte:'\u2264',eq:'=',gte:'\u2265',gt:'>'})[act.bringCostComparator]} ${act.bringCostValue}`);
+      const bNoun = `${act.bringCardType ? act.bringCardType + ' ' : ''}card${act.bringMode === 'All' || n !== 1 ? 's' : ''}`;
+      return `${bMode}${act.bringMode === 'All' ? '' : ' ' + n} ${bNoun}${bExtra.length ? ' (' + bExtra.join(', ') + ')' : ''} from your ${bPile} into your hand`;
+    }
     case 'RemoveFromCombat': return `Remove this card from combat (not exhausted)`;
     case 'ShufflePiles': return `Shuffle your ${act.shuffleSource === 'Hand' ? 'Hand' : act.shuffleSource === 'HandAndDiscard' ? 'Hand and Discard pile' : 'Discard pile'} into your Draw pile`;
     case 'TransformDeckCards': {
@@ -14454,6 +14468,10 @@ const WHILE_IN_HAND_TRIGGERS = [
 // renderEffectsList's own pile-picker wiring below.
 const PILE_TYPES = ['Hand', 'Discard', 'Draw', 'Exhaust'];
 const PILE_TYPE_LABELS = { Hand: 'Hand', Discard: 'Discard Pile', Draw: 'Draw Pile', Exhaust: 'Exhaust' };
+// [Round 381] BringCardsToHand: source piles (Hand is the destination) and the cost-filter comparators.
+const BRING_SOURCE_PILES = ['Draw', 'Discard', 'Exhaust'];
+const BRING_COST_COMPARATORS = ['lt', 'lte', 'eq', 'gte', 'gt'];
+const BRING_COST_LABELS = { lt: 'cost <', lte: 'cost \u2264', eq: 'cost =', gte: 'cost \u2265', gt: 'cost >' };
 function pileOptList(selected){
   return PILE_TYPES.map(v=>`<option value="${v}" ${v===(selected||'Hand')?'selected':''}>${PILE_TYPE_LABELS[v]}</option>`).join('');
 }
@@ -15621,7 +15639,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16582,6 +16600,19 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef;
   }
+  // [Round 381] BringCardsToHand's mode + AND-ed filters. Self-heals filters that point at
+  // something that no longer exists (a deleted custom keyword / tag), like the cap's self-heal.
+  if(act.type === 'BringCardsToHand'){
+    if(!['Choose','Random','All'].includes(act.bringMode)) act.bringMode = 'Choose';
+    if(!['Attack','Skill','Power','Status','Curse'].includes(act.bringCardType)) delete act.bringCardType;
+    if(act.bringKeyword && !allKeywordChipDefs().some(k => k.id === act.bringKeyword)) delete act.bringKeyword;
+    if(act.bringTag && !allGameplayTags().some(t => t.toLowerCase() === String(act.bringTag).toLowerCase())) delete act.bringTag;
+    if(!BRING_COST_COMPARATORS.includes(act.bringCostComparator) || !Number.isInteger(act.bringCostValue) || act.bringCostValue < 0){
+      delete act.bringCostComparator; delete act.bringCostValue;
+    }
+  } else {
+    delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
+  }
   if(act.type === 'EvokeOrb'){
     if(!['First','Last'].includes(act.evokeWhich)) act.evokeWhich = 'First';
     if(!act.keepOrb) delete act.keepOrb;
@@ -16759,6 +16790,9 @@ function ensureActionRefDefaults(act){
   // "RandomFromPile" -- same shared field, not a duplicate.
   if(act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')){
     if(!PILE_TYPES.includes(act.pile)) act.pile = 'Hand';
+  } else if(act.type === 'BringCardsToHand'){
+    // [Round 381] source pile: Draw / Discard / Exhaust only (Hand is the destination).
+    if(!BRING_SOURCE_PILES.includes(act.pile)) act.pile = 'Discard';
   } else {
     delete act.pile;
   }
@@ -16889,7 +16923,8 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // multiplicative mechanic (see compiler.js's "ModifyEnergy" case).
   const hideAmountForDoubleEnergy = act.type === 'ModifyEnergy' && !!act.doubleEnergy;
   const hideAmountForRemoveAllBlock = act.type === 'RemoveBlock' && !!act.removeAll;
-  const needsAmount = actionNeedsAmount(act.type) && !hideAmountForDoubleEnergy && !hideAmountForRemoveAllBlock;
+  const hideAmountForBringAll = act.type === 'BringCardsToHand' && act.bringMode === 'All';
+  const needsAmount = actionNeedsAmount(act.type) && !hideAmountForDoubleEnergy && !hideAmountForRemoveAllBlock && !hideAmountForBringAll;
   // [Round 329] amountFormula — Tyler's structured multi-term scaling
   // builder (see AMOUNT_FORMULA_SOURCES' own comment for the full
   // evidence trail). Eligible everywhere "Use X" already is (needsAmount,
@@ -17515,6 +17550,32 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
       sentenceHtml = `<span class="cond-word">Evoke your</span> ${eoSel} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.EvokeOrb)}">orb</span>${amountHtml}${useXAmountHtml}<span class="cond-word">time(s).</span>`;
       break;
     }
+    // [Round 381] Bring Cards to Hand -- mode / [N] / type / source pile in the sentence, the
+    // keyword / tag / cost filters in a row below it (Tyler's below-the-sentence convention).
+    case 'BringCardsToHand': {
+      const noChoice = NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger);
+      // Choose needs the game's selection screen (a PlayerChoiceContext), which a few hooks lack.
+      if(noChoice && act.bringMode === 'Choose') act.bringMode = 'Random';
+      const bModes = [['Choose','Choose up to'],['Random','Randomly put'],['All','Put all']].filter(([v]) => !(noChoice && v === 'Choose'));
+      const bModeSel = `<select class="a-bring-mode" title="${escapeAttr(noChoice ? 'Choosing needs a selection screen, which this trigger cannot open.' : 'How the cards are picked.')}">${bModes.map(([v,l])=>`<option value="${v}" ${act.bringMode===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      const bTypeSel = `<select class="a-bring-type">${[['','any type']].concat(['Attack','Skill','Power','Status','Curse'].map(t=>[t,t])).map(([v,l])=>`<option value="${v}" ${(act.bringCardType||'')===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      const bPileSel = `<select class="a-pile">${BRING_SOURCE_PILES.map(v=>`<option value="${v}" ${act.pile===v?'selected':''}>${PILE_TYPE_LABELS[v]}</option>`).join('')}</select>`;
+      const bKwSel = `<select class="a-bring-keyword">${[['','any']].concat(allKeywordChipDefs().map(k=>[k.id,k.id])).map(([v,l])=>`<option value="${escapeAttr(v)}" ${(act.bringKeyword||'')===v?'selected':''}>${escapeHtml(l)}</option>`).join('')}</select>`;
+      const bTags = allGameplayTags();
+      const bTagSel = bTags.length
+        ? `<select class="a-bring-tag">${[['','any']].concat(bTags.map(t=>[t,t])).map(([v,l])=>`<option value="${escapeAttr(v)}" ${(act.bringTag||'').toLowerCase()===v.toLowerCase()?'selected':''}>${escapeHtml(l)}</option>`).join('')}</select>`
+        : `<span class="hint-small" title="Give a card a gameplay tag (Card editor) to filter by it.">(no tags yet)</span>`;
+      const bCostSel = `<select class="a-bring-cost-cmp">${[['','any cost']].concat(BRING_COST_COMPARATORS.map(c=>[c,BRING_COST_LABELS[c]])).map(([v,l])=>`<option value="${v}" ${(act.bringCostComparator||'')===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      const bCostVal = act.bringCostComparator ? `<input class="a-bring-cost-val" type="number" min="0" style="width:64px" value="${act.bringCostValue ?? 0}">` : '';
+      afflictOptionsBlockHtml = `<div class="action-row-usex"><span class="hint-small" title="All of these have to match (cards that fail any of them are ignored).">Only cards with keyword</span> ${bKwSel} <span class="hint-small">tag</span> ${bTagSel} <span class="hint-small">and</span> ${bCostSel}${bCostVal}</div>`;
+      const bTip = escapeAttr(ACTION_TYPE_TOOLTIPS.BringCardsToHand);
+      sentenceHtml = act.bringMode === 'All'
+        ? `${bModeSel} ${bTypeSel} <span class="cond-word" title="${bTip}">cards from your</span> ${bPileSel} <span class="cond-word" title="${bTip}">into your hand.</span>`
+        : act.bringMode === 'Random'
+        ? `${bModeSel}${amountHtml}${useXAmountHtml} ${bTypeSel} <span class="cond-word" title="${bTip}">card(s) from your</span> ${bPileSel} <span class="cond-word" title="${bTip}">into your hand.</span>`
+        : `${bModeSel}${amountHtml}${useXAmountHtml} ${bTypeSel} <span class="cond-word" title="${bTip}">card(s) from your</span> ${bPileSel} <span class="cond-word" title="${bTip}">to put into your hand.</span>`;
+      break;
+    }
     case 'MillCards':
       sentenceHtml = `<span class="cond-word">Mill</span>${amountHtml}${useXAmountHtml}<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.MillCards)}">card(s) from the top of your Draw pile to your Discard pile.</span>`;
       break;
@@ -17889,6 +17950,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
     delete act.removeAll; delete act.shuffleSource;
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
+    delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -18048,6 +18110,34 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
   // either way.
   const pileSelect = row.querySelector('.a-pile');
   if(pileSelect) pileSelect.onchange = e=> act.pile = e.target.value;
+  // [Round 381] BringCardsToHand. The mode and cost-comparator selects change which sibling controls show
+  // (amount hidden for "Put all"; cost number only with a comparator), so those two re-render.
+  const bringRerender = ()=>{
+    ensureActionRefDefaults(act);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  const bringModeSel = row.querySelector('.a-bring-mode');
+  if(bringModeSel) bringModeSel.onchange = e=>{ act.bringMode = e.target.value; bringRerender(); };
+  const bringSetOrDelete = (cls, field)=>{
+    const el = row.querySelector(cls);
+    if(el) el.onchange = e=>{ if(e.target.value) act[field] = e.target.value; else delete act[field]; };
+  };
+  bringSetOrDelete('.a-bring-type', 'bringCardType');
+  bringSetOrDelete('.a-bring-keyword', 'bringKeyword');
+  bringSetOrDelete('.a-bring-tag', 'bringTag');
+  const bringCostCmp = row.querySelector('.a-bring-cost-cmp');
+  if(bringCostCmp) bringCostCmp.onchange = e=>{
+    if(e.target.value){ act.bringCostComparator = e.target.value; if(!Number.isInteger(act.bringCostValue)) act.bringCostValue = 1; }
+    else { delete act.bringCostComparator; delete act.bringCostValue; }
+    bringRerender();
+  };
+  const bringCostVal = row.querySelector('.a-bring-cost-val');
+  if(bringCostVal) bringCostVal.onchange = e=>{
+    const v = parseInt(e.target.value, 10);
+    act.bringCostValue = Number.isFinite(v) && v >= 0 ? v : 0;
+    e.target.value = act.bringCostValue;
+  };
   // [Round 339, 2026-09-30] AfflictCard's own target-kind select -- DOES
   // need a re-render (same "toggling swaps which sibling controls this
   // row shows" reasoning modeSelect/doubleEnergy above already follow):

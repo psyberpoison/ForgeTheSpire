@@ -302,6 +302,8 @@ const ACTION_TYPES = [
   'RemoveBlock', 'MillCards', 'RemoveFromCombat', 'ShufflePiles',
   // [Round 378] ChannelOrb / EvokeOrb -- see compiler.js's actionToCSharp cases.
   'ChannelOrb', 'EvokeOrb',
+  // [Round 381] BringCardsToHand -- see compiler.js's actionToCSharp case.
+  'BringCardsToHand',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -448,6 +450,8 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // validateActions' ~15 call sites, same trade-off compiler.js's currentPetById makes.
 const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
 let currentOrbIds = new Set();
+// [Round 381] This character's custom card-keyword words (character.cardKeywords[].word), for BringCardsToHand's bringKeyword check. Module-level for the same reason as currentOrbIds.
+let currentCustomKeywordWords = new Set();
 // [Round 379] An orb's own two behaviors -- see compiler.js's TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke.
 const ORB_TRIGGERS = ['OnOrbPassive', 'OnOrbEvoke'];
 function validateConditions(conditions, path, errors, mechanicIds, cardIds, relicIds, trigger, gameplayTagsInUse, modifierHook, petIds, stanceIds) {
@@ -937,6 +941,12 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // PlayerChoiceContext as their first parameter (verified via IL) --
       // this hook's real signature has none.
       errors.push(`${p}: action "${act.type}" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which orb commands need to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that has one.`);
+    } else if (act.type === 'BringCardsToHand' && (act.bringMode === undefined || act.bringMode === 'Choose') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+      // [Round 381] Choose mode opens the game's pile-selection screen
+      // (CardSelectCmd.FromCombatPile), whose first parameter is a real
+      // PlayerChoiceContext -- this hook's real signature has none. Random
+      // and All modes need no choice context and stay allowed.
+      errors.push(`${p}: action "BringCardsToHand" in Choose mode can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the card-selection screen needs. Switch it to Random or All matching, or use a different trigger (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS).`);
     } else if (act.type === 'MillCards' && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 377] MillCards dispatches Forge's "when a card is milled"
       // trigger, which needs a real PlayerChoiceContext to push models onto
@@ -1299,6 +1309,26 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       if (!['Hand', 'Discard', 'HandAndDiscard'].includes(act.shuffleSource)) errors.push(`${p}.shuffleSource "${act.shuffleSource}" is not one of: Hand, Discard, HandAndDiscard.`);
       if (act.type !== 'ShufflePiles') errors.push(`${p}: shuffleSource is only meaningful on "ShufflePiles" — action type is "${act.type}".`);
     }
+    // [Round 381] BringCardsToHand: bringMode + filters (type / keyword / tag / cost).
+    const BRING_FIELDS = ['bringMode', 'bringCardType', 'bringKeyword', 'bringTag', 'bringCostComparator', 'bringCostValue'];
+    if (act.type === 'BringCardsToHand') {
+      if (act.bringMode !== undefined && !['Choose', 'Random', 'All'].includes(act.bringMode)) errors.push(`${p}.bringMode "${act.bringMode}" is not one of: Choose, Random, All.`);
+      if (act.bringCardType !== undefined && !CARD_TYPES.includes(act.bringCardType)) errors.push(`${p}.bringCardType "${act.bringCardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
+      if (act.bringKeyword !== undefined) {
+        if (typeof act.bringKeyword !== 'string' || !act.bringKeyword) errors.push(`${p}.bringKeyword must be a non-empty string if present.`);
+        else if (!CARD_KEYWORDS.includes(act.bringKeyword) && !currentCustomKeywordWords.has(act.bringKeyword)) errors.push(`${p}.bringKeyword "${act.bringKeyword}" is not one of the built-in keywords (${CARD_KEYWORDS.join(', ')}) or a keyword defined in this character's custom keywords.`);
+      }
+      if (act.bringTag !== undefined) {
+        if (typeof act.bringTag !== 'string' || !act.bringTag.length || act.bringTag.length > 40) errors.push(`${p}.bringTag must be a non-empty string of at most 40 characters if present.`);
+        else if (xContext.gameplayTagsInUse && !xContext.gameplayTagsInUse.has(act.bringTag.toLowerCase())) errors.push(`${p}.bringTag "${act.bringTag}" doesn't match any card.gameplayTags value used anywhere in this character.`);
+      }
+      const hasCmp = act.bringCostComparator !== undefined, hasVal = act.bringCostValue !== undefined;
+      if (hasCmp !== hasVal) errors.push(`${p}: bringCostComparator and bringCostValue must be set together (got only ${hasCmp ? 'bringCostComparator' : 'bringCostValue'}).`);
+      if (hasCmp && !COMPARATORS.includes(act.bringCostComparator)) errors.push(`${p}.bringCostComparator "${act.bringCostComparator}" is not one of: ${COMPARATORS.join(', ')}.`);
+      if (hasVal && (!Number.isInteger(act.bringCostValue) || act.bringCostValue < 0)) errors.push(`${p}.bringCostValue must be a whole number >= 0.`);
+    } else {
+      BRING_FIELDS.forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "BringCardsToHand" — action type is "${act.type}".`); });
+    }
     // [Round 378] ChannelOrb: orbKind/orbRef/orbVanillaRef -- same
     // custom/vanilla dual-field shape as stanceKind/stanceRef/
     // stanceVanillaRef below. EvokeOrb: evokeWhich/keepOrb.
@@ -1504,12 +1534,17 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // above) -- same "must be one of PILE_TYPES, or omitted (defaults to
     // Hand)" shape whileInHand's own .pile field already uses (see its own
     // check further below).
-    if (act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')) {
+    if (act.type === 'BringCardsToHand') {
+      // [Round 381] Source pile: Draw / Discard / Exhaust only (Hand is the destination). Omitted reads as "Discard".
+      if (act.pile !== undefined && !['Draw', 'Discard', 'Exhaust'].includes(act.pile)) {
+        errors.push(`${p}.pile is "${act.pile}" — "BringCardsToHand" must take cards from one of: Draw, Discard, Exhaust (or omitted, which defaults to "Discard").`);
+      }
+    } else if (act.type === 'ClearAfflictionFromPile' || (act.type === 'AfflictCard' && act.afflictTargetKind === 'RandomFromPile')) {
       if (act.pile !== undefined && !PILE_TYPES.includes(act.pile)) {
         errors.push(`${p}.pile is "${act.pile}" — must be one of: ${PILE_TYPES.join(', ')} (or omitted, which defaults to "Hand").`);
       }
     } else if (act.pile !== undefined) {
-      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile"/"AfflictCard" (RandomFromPile mode) — action type is "${act.type}".`);
+      errors.push(`${p}: pile is only meaningful on "ClearAfflictionFromPile"/"AfflictCard" (RandomFromPile mode)/"BringCardsToHand" — action type is "${act.type}".`);
     }
     if (act.type === 'EnchantCard') {
       if (act.enchantmentRef === '' || act.enchantmentRef === undefined) {
@@ -2320,6 +2355,7 @@ function validateCharacterPackage(pkg) {
   // validateActions/validateModifiers/validateAdvancedOptions exactly like
   // petIds was).
   currentOrbIds = new Set((Array.isArray(pkg.orbs) ? pkg.orbs : []).map(o => o && o.id).filter(Boolean));
+  currentCustomKeywordWords = new Set((pkg.character && Array.isArray(pkg.character.cardKeywords) ? pkg.character.cardKeywords : []).map(k => k && k.word).filter(w => typeof w === 'string' && w));
   const stanceIds = new Set((Array.isArray(pkg.stances) ? pkg.stances : []).map(s => s && s.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
   // built up front (before any effect blocks are validated) so a
