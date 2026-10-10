@@ -713,6 +713,8 @@ const PLAYER_ONLY_ACTIONS = [
   'PlaySound',
   // [Round 387] TriggerOrbPassive -- fires the acting Player's orb passives, no Creature target.
   'TriggerOrbPassive',
+  // [Round 392] raises a mechanic's cap on the acting player; no Creature-target concept.
+  'RaiseStatusMax',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -3819,6 +3821,18 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         {
             await MegaCrit.Sts2.Core.Commands.OrbCmd.Channel<${choCls}>(choiceContext, ${resolvePlayerExpr(ctx)}); // [VERIFIED via direct sts2.dll IL read, round 378]
         }`;
+    }
+    // [Round 392] "Raise [status]'s maximum by N this fight". The cap itself is the Round 285
+    // Harmony prefix on PowerModel.SetAmount (see generateMaxStacksSupportFile); this just
+    // records a per-fight, per-owner bonus the prefix adds to the fixed cap. Creature =
+    // the acting player's creature (PlayerCombatState owner), the same one status
+    // actions target with "Self". Validation (validate.js) guarantees the mechanic
+    // exists and really has a cap, which is also what makes Generated/ForgeMaxStacksSupport.cs
+    // get written at all.
+    case 'RaiseStatusMax': {
+      if (!action.raiseMaxStatusRef) throw new Error('Action "RaiseStatusMax" needs raiseMaxStatusRef (a status with a Max stacks cap).');
+      const rsmPlayerExpr = resolvePlayerExpr(ctx);
+      return `        ForgeMaxStacksBonus.Add(typeof(${mechanicClassName(action.raiseMaxStatusRef)}), ${rsmPlayerExpr}.Creature, (int)(${resolveAmountExpr(action, ctx)})); // [Round 392] see compiler.js's own comment on this case`;
     }
     case 'TriggerOrbPassive': {
       // [Round 387 -- VERIFIED via direct sts2.dll IL read] OrbCmd.Passive(
@@ -8840,7 +8854,47 @@ internal static class ForgeMaxStacksPatch
         int cap = 0;
         if (false) { }
 ${capAssignments}
+        // [Round 392] a "Raise max" effect adds room for the rest of THIS fight (see ForgeMaxStacksBonus).
+        if (cap > 0) cap += ForgeMaxStacksBonus.Get(__instance);
         if (cap > 0 && amount > cap) amount = cap;
+    }
+}
+
+// [Round 392] Per-fight, per-owner extra room added on top of each status's fixed maxStacks.
+// Verified from the installed sts2.dll: CombatManager.Instance.CurrentCombatId is a real
+// Nullable<CombatId> (it is what CardModel.OnPlayWrapper compares to detect "combat changed"),
+// and PowerModel.Owner is the Creature carrying the power. Keying the table by the combat id
+// means a bonus can never outlive its fight -- the first lookup in a different combat clears it.
+public static class ForgeMaxStacksBonus
+{
+    private static readonly System.Collections.Generic.Dictionary<(System.Type, MegaCrit.Sts2.Core.Entities.Creatures.Creature), int> _bonus = new System.Collections.Generic.Dictionary<(System.Type, MegaCrit.Sts2.Core.Entities.Creatures.Creature), int>();
+    private static MegaCrit.Sts2.Core.Combat.CombatId? _combat;
+
+    private static void Sync()
+    {
+        var current = MegaCrit.Sts2.Core.Combat.CombatManager.Instance.CurrentCombatId;
+        if (!System.Collections.Generic.EqualityComparer<MegaCrit.Sts2.Core.Combat.CombatId?>.Default.Equals(current, _combat))
+        {
+            _bonus.Clear();
+            _combat = current;
+        }
+    }
+
+    public static void Add(System.Type powerType, MegaCrit.Sts2.Core.Entities.Creatures.Creature owner, int by)
+    {
+        if (owner == null || by <= 0) return;
+        Sync();
+        var key = (powerType, owner);
+        _bonus.TryGetValue(key, out var existing);
+        _bonus[key] = existing + by;
+    }
+
+    public static int Get(PowerModel power)
+    {
+        var owner = power.Owner;
+        if (owner == null) return 0;
+        Sync();
+        return _bonus.TryGetValue((power.GetType(), owner), out var bonus) ? bonus : 0;
     }
 }
 `;

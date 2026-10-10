@@ -4741,7 +4741,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound","TriggerOrbPassive"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound","TriggerOrbPassive","RaiseStatusMax"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4906,6 +4906,7 @@ const ACTION_TYPE_LABELS = {
   ChannelOrb: 'Channel Orb',
   EvokeOrb: 'Evoke Orb',
   TriggerOrbPassive: 'Trigger Orb Passive',
+  RaiseStatusMax: 'Raise Status Max Stacks',
   // [Round 381]
   BringCardsToHand: 'Bring Cards to Hand',
   // [Round 382]
@@ -4922,6 +4923,7 @@ const ACTION_TYPE_TOOLTIPS = {
   MillCards: 'Moves cards from the top of your Draw pile straight to your Discard pile without drawing them. They are not "discarded" (no on-discard effects trigger). Does nothing if the Draw pile is empty.',
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
+  RaiseStatusMax: "Raises the maximum stack count of one of YOUR statuses (one that already has a Max stacks set) by an amount for the rest of this fight. It only makes room; it does not add stacks. The extra room is forgotten when the fight ends.",
   TriggerOrbPassive: "Fires the passive effect of your channeled orbs right now, without waiting for end of turn: your first orb (like the Loop power), your last orb, all of them, or every orb of one type (like Tesla Coil and Darkness do). The amount is how many times it fires. Optionally counts relic/power bonuses that make orb passives trigger extra times.",
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
@@ -4967,7 +4969,7 @@ const ACTION_TYPE_TOOLTIPS = {
 const ACTION_TYPE_GROUPS = [
   { label: 'Damage', color: '#c65a48', types: ['DealDamage', 'StunEnemy', 'ChangeEnemyIntent'] },
   { label: 'Defense', color: '#4b93dd', types: ['GainBlock', 'GainTempHp', 'RemoveBlock'] },
-  { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
+  { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses', 'RaiseStatusMax'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
   // [Round 378] Orb queue actions -- Defect-style channel/evoke.
@@ -5051,6 +5053,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
   TriggerOrbPassive: 'trigger orb passive loop tesla coil darkness emotion chip fire orbs',
+  RaiseStatusMax: 'raise increase max maximum stacks cap limit status mechanic',
   AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
   ChangeEnemyIntent: 'change enemy intent switch move attack defend buff debuff telegraph plan',
   PlaySound: 'play sound sfx audio noise music effect custom upload',
@@ -5365,7 +5368,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound","TriggerOrbPassive"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound","TriggerOrbPassive","RaiseStatusMax"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12663,6 +12666,10 @@ function describeAction(act){
         : ((state.orbs.find(o=>o.id===act.orbRef) || {}).name || 'an');
       return `Channel ${n} ${orbName} orb${n===1?'':'s'}`;
     }
+    case 'RaiseStatusMax': {
+      const rsmName = (state.mechanics.find(m=>m.id===act.raiseMaxStatusRef) || {}).name || 'a status';
+      return `Raise ${rsmName}'s maximum stacks by ${n} this fight`;
+    }
     case 'TriggerOrbPassive': {
       const tpWho = act.passiveWhich === 'Last' ? 'your last orb' : act.passiveWhich === 'All' ? 'all your orbs'
         : act.passiveWhich === 'OfType' ? ('every ' + (act.orbKind === 'vanilla' ? (act.orbVanillaRef || 'chosen') : ((state.orbs.find(o=>o.id===act.orbRef) || {}).name || 'chosen')) + ' orb') : 'your first orb';
@@ -15916,7 +15923,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand', 'AddReplay', 'TriggerOrbPassive'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'RaiseStatusMax', 'BringCardsToHand', 'AddReplay', 'TriggerOrbPassive'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16864,6 +16871,13 @@ function ensureActionRefDefaults(act){
   // [Round 378] ChannelOrb's orb picker -- same self-healing shape as the
   // EnterStance picker below (custom orbs first, vanilla when none exist);
   // EvokeOrb's evokeWhich/keepOrb. Everything is dropped on any other type.
+  // [Round 392] RaiseStatusMax: pick a status that really has a cap (default = first capped one, else none).
+  if(act.type === 'RaiseStatusMax'){
+    const capped = state.mechanics.filter(m=>m.maxStacks > 0);
+    if(!capped.some(m=>m.id===act.raiseMaxStatusRef)) act.raiseMaxStatusRef = capped.length ? capped[0].id : '';
+  } else {
+    delete act.raiseMaxStatusRef;
+  }
   // [Round 387] TriggerOrbPassive: which orbs (default First) + the "counts bonuses" flag; the orb picker below is shared.
   if(act.type === 'TriggerOrbPassive'){
     if(!['First','Last','All','OfType'].includes(act.passiveWhich)) act.passiveWhich = 'First';
@@ -17874,6 +17888,15 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'ChannelOrb':
       sentenceHtml = `<span class="cond-word">Channel</span>${amountHtml}${useXAmountHtml}${orbSelectHtml(act)} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ChannelOrb)}">orb(s).</span>`;
       break;
+    // [Round 392] "Raise the maximum stacks of [status] by [n] this fight."
+    case 'RaiseStatusMax': {
+      const rsmCapped = state.mechanics.filter(m=>m.maxStacks > 0);
+      const rsmSel = rsmCapped.length
+        ? `<select class="a-raise-ref">${rsmCapped.map(m=>`<option value="${escapeAttr(m.id)}" ${act.raiseMaxStatusRef===m.id?'selected':''}>${escapeHtml(m.name || m.id)} (max ${m.maxStacks})</option>`).join('')}</select>`
+        : `<span class="hint-small" style="color:var(--danger-bright)">No status has a Max stacks set yet (Statuses section), so there is nothing to raise.</span>`;
+      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.RaiseStatusMax)}">Raise the maximum stacks of</span> ${rsmSel} <span class="cond-word">by</span> ${amountHtml}${useXAmountHtml}<span class="cond-word">for the rest of this fight.</span>`;
+      break;
+    }
     case 'TriggerOrbPassive': {
       const tpWhichSel = `<select class="a-passive-which">${[['First','your first orb'],['Last','your last orb'],['All','all your orbs'],['OfType','every orb of a type']].map(([v,l])=>`<option value="${v}" ${(act.passiveWhich||'First')===v?'selected':''}>${l}</option>`).join('')}</select>`;
       const tpTypeSel = act.passiveWhich === 'OfType' ? orbSelectHtml(act) : '';
@@ -18300,7 +18323,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
     delete act.removeAll; delete act.shuffleSource;
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
-    delete act.passiveWhich; delete act.passiveCountHooks;
+    delete act.passiveWhich; delete act.passiveCountHooks; delete act.raiseMaxStatusRef;
     delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
     delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout; delete act.newIntentKind;
     delete act.soundKind; delete act.soundRef; delete act.soundVanillaRef; delete act.soundVolume;
@@ -18381,6 +18404,8 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
+  const raiseRefSel = row.querySelector('.a-raise-ref');
+  if(raiseRefSel) raiseRefSel.onchange = e=>{ act.raiseMaxStatusRef = e.target.value; };
   const passiveHooksCheck = row.querySelector('.a-passive-hooks');
   if(passiveHooksCheck) passiveHooksCheck.onchange = e=>{ if(e.target.checked) act.passiveCountHooks = true; else delete act.passiveCountHooks; };
   const evokeWhichSelect = row.querySelector('.a-evoke-which');

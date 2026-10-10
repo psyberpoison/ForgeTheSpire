@@ -314,6 +314,8 @@ const ACTION_TYPES = [
   'PlaySound',
   // [Round 387] TriggerOrbPassive -- see compiler.js's actionToCSharp case.
   'TriggerOrbPassive',
+  // [Round 392] raise a mechanic's stack cap for the fight -- see compiler.js's case.
+  'RaiseStatusMax',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -460,6 +462,8 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // validateActions' ~15 call sites, same trade-off compiler.js's currentPetById makes.
 const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
 let currentOrbIds = new Set();
+// [Round 392] mechanic id -> maxStacks (only entries with a real cap > 0), for RaiseStatusMax's raiseMaxStatusRef check.
+let currentCappedMechanicIds = new Set();
 // [Round 386] ids of this character's uploaded sound effects (assets[] of kind "actionSfx") -- PlaySound's soundRef check.
 let currentSfxAssetIds = new Set();
 // [Round 381] This character's custom card-keyword words (character.cardKeywords[].word), for BringCardsToHand's bringKeyword check. Module-level for the same reason as currentOrbIds.
@@ -1416,6 +1420,18 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     } else {
       if (act.orbRef !== undefined) errors.push(`${p}: orbRef is only meaningful on "ChannelOrb" / "TriggerOrbPassive" (type: Of a type) — action type is "${act.type}".`);
       if (act.orbVanillaRef !== undefined) errors.push(`${p}: orbVanillaRef is only meaningful on "ChannelOrb" / "TriggerOrbPassive" (type: Of a type) — action type is "${act.type}".`);
+    }
+    // [Round 392] RaiseStatusMax: needs one of this character's own mechanics that actually has a stack cap.
+    if (act.type === 'RaiseStatusMax') {
+      if (typeof act.raiseMaxStatusRef !== 'string' || !act.raiseMaxStatusRef) {
+        errors.push(`${p}: action "RaiseStatusMax" needs raiseMaxStatusRef -- pick one of your statuses that has a Max stacks set.`);
+      } else if (!mechanicIds.has(act.raiseMaxStatusRef)) {
+        errors.push(`${p}.raiseMaxStatusRef "${act.raiseMaxStatusRef}" doesn't match any defined mechanic id.`);
+      } else if (!currentCappedMechanicIds.has(act.raiseMaxStatusRef)) {
+        errors.push(`${p}.raiseMaxStatusRef "${act.raiseMaxStatusRef}" has no Max stacks cap (maxStacks is 0/unset), so there is no maximum to raise. Set a cap on that status first.`);
+      }
+    } else if (act.raiseMaxStatusRef !== undefined) {
+      errors.push(`${p}: raiseMaxStatusRef is only meaningful on "RaiseStatusMax" -- action type is "${act.type}".`);
     }
     // [Round 387] TriggerOrbPassive: passiveWhich / passiveCountHooks.
     if (act.type === 'TriggerOrbPassive') {
@@ -2471,6 +2487,7 @@ function validateCharacterPackage(pkg) {
     }
   });
   currentOrbIds = new Set((Array.isArray(pkg.orbs) ? pkg.orbs : []).map(o => o && o.id).filter(Boolean));
+  currentCappedMechanicIds = new Set((Array.isArray(pkg.mechanics) ? pkg.mechanics : []).filter(m => m && m.id && typeof m.maxStacks === 'number' && m.maxStacks > 0).map(m => m.id));
   currentCustomKeywordWords = new Set((pkg.character && Array.isArray(pkg.character.cardKeywords) ? pkg.character.cardKeywords : []).map(k => k && k.word).filter(w => typeof w === 'string' && w));
   const stanceIds = new Set((Array.isArray(pkg.stances) ? pkg.stances : []).map(s => s && s.id).filter(Boolean));
   // Every gameplayTags value used anywhere in this character, lowercased —
