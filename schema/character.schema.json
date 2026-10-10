@@ -832,6 +832,15 @@
               "description": "\"the ability to add effects that happen while the card is in your hand.\" Each entry is cardEffectBlock-shaped (same conditions/actions/elseActions), trigger \"OnTurnEndInHand\" (the closest real analog to a continuous while-in-hand hook \u2014 a TRUE continuous hook is an explicitly open research gap, see claude/feature-backlog.md group C) or, as of round 195, \"OnAnyCardPlayed\" (\"whenever you play a card\") or one of the 15 PILE_TRIGGER_HOOK_IDS (\"while in a pile\" \u2014 see compiler.js:PILE_TRIGGER_OWNER_GUARD). Every entry gets a `pile` field (Hand/Discard/Draw/Exhaust, default Hand) gating it to a real this.Pile?.Type == X check, EXCEPT OnTurnEndInHand, where `pile` is decorative/ignored (that hook is inherently hand-only already \u2014 round 156). OnTurnEndInHand and OnAnyCardPlayed both merge into the SAME override any card.effects[] block on that trigger already uses (backend/compiler.js:whileInHandMergeLines, round 195 \u2014 that round also fixed a real bug where OnTurnEndInHand entries here used to compile to a silently empty, no-op override, never actually reading this array at all despite this field's own prior description claiming otherwise).",
               "items": { "$ref": "#/definitions/cardEffectBlock" }
             },
+            "energyCoverage": {
+              "type": "object",
+              "required": ["mode"],
+              "additionalProperties": false,
+              "description": "[Round 391] Energy coverage -- this card can be played with too little energy: each missing point of energy is paid by exhausting (mode 'Exhaust') or discarding (mode 'Discard') one OTHER card from the hand, chosen by the player on the game's own hand-selection screen. Not allowed on X-cost cards or 0-cost cards (nothing to cover). The game has no card-level hook for this, so the export includes Generated/ForgeEnergyCoverage.cs with three Harmony patches (HasEnoughResourcesFor postfix makes the card playable; SpendResources prefix records the uncovered shortfall; OnPlayWrapper prefix runs the selection with the real choice context, then the real play). Cards that pay the excess with stars via a relic/power hook are left to that hook. All signatures/orderings verified by direct sts2.dll IL reads -- see the template's header. NOT yet exercised in the live game.",
+              "properties": {
+                "mode": { "type": "string", "enum": ["Exhaust", "Discard"] }
+              }
+            },
             "duplicateOnAcquire": {
               "type": "integer",
               "minimum": 1,

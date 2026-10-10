@@ -7679,9 +7679,21 @@ function generateDuplicateOnAcquireOverride(card) {
     }`;
 }
 
+// [Round 391] Energy coverage -- the card side: it implements the marker
+// interface Generated/ForgeEnergyCoverage.cs's three Harmony patches look for
+// (see ForgeEnergyCoverage.cs.template's header for the full design/evidence).
+function generateEnergyCoverageMembers(card) {
+  const ec = card.advancedOptions && card.advancedOptions.energyCoverage;
+  if (!ec) return '';
+  return `    // [Round 391] Energy coverage (${ec.mode}) -- see ForgeEnergyCoverage.cs.template's header
+    public bool ForgeCoverExhausts => ${ec.mode === 'Exhaust' ? 'true' : 'false'};`;
+}
+
 function generateAdvancedOptionsNotes(card) {
   const opts = card.advancedOptions || {};
   const parts = [];
+  const energyCoverageMembers = generateEnergyCoverageMembers(card);
+  if (energyCoverageMembers) parts.push(energyCoverageMembers);
   const dupOverride = generateDuplicateOnAcquireOverride(card);
   if (dupOverride) parts.push(dupOverride);
   const wearsOutDescOverride = generateWearsOutDescriptionOverride(card);
@@ -8405,7 +8417,7 @@ ${resolvedTiers.map((t, i) => `            case ${i + 1}: ${t.costDelta ? `Energ
     // header. Only added for an Attack-type card with the checkbox on
     // (backend/validate.js already rejects the checkbox on a non-Attack
     // card, so no extra guard needed here beyond mirroring that same rule).
-    extraInterfaces: (card.advancedOptions && card.advancedOptions.heavyAttackAnimation && card.type === 'Attack') ? ', IHeavyAttackCard' : '',
+    extraInterfaces: ((card.advancedOptions && card.advancedOptions.heavyAttackAnimation && card.type === 'Attack') ? ', IHeavyAttackCard' : '') + ((card.advancedOptions && card.advancedOptions.energyCoverage) ? ', IForgeEnergyCoverage' : ''),
   });
 }
 
@@ -13629,6 +13641,9 @@ function generateProject(characterPackage, outDir, opts = {}) {
     : '';
   if ((characterPackage.cards || []).some(c => c && c.advancedOptions && c.advancedOptions.duplicateOnAcquire)) {
     write('Generated/ForgeDuplicateOnAcquire.cs', fillTemplate(loadTemplate('ForgeDuplicateOnAcquire.cs.template'), { namespace }));
+  }
+  if ((characterPackage.cards || []).some(c => c && c.advancedOptions && c.advancedOptions.energyCoverage)) {
+    write('Generated/ForgeEnergyCoverage.cs', fillTemplate(loadTemplate('ForgeEnergyCoverage.cs.template'), { namespace }));
   }
   if (anyWearsOut) write('Generated/ForgeWearsOut.cs', fillTemplate(loadTemplate('ForgeWearsOut.cs.template'), { namespace }));
   write('ModEntry.cs', fillTemplate(loadTemplate('ModEntry.cs.template'), { harmonyId: `${modId.toLowerCase()}.patch`, chronicleRegistrarCall, wearsOutInitCall }));

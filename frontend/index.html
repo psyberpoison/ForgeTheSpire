@@ -13018,6 +13018,8 @@ function generateCardDescription(effects, keywords, advancedOptions){
     (ao.whileInHand||[]).forEach(entry=>{ const t = describePileTriggerEntry(entry); if(t) extra.push(t); });
     // [Round 389] {Expiry} is supplied in game by the generated AddExtraArgsToDescription override.
     if(ao.wearsOut) extra.push('Uses left: {Expiry}.');
+    // [Round 391]
+    if(ao.energyCoverage) extra.push(`Can be played without enough energy: ${ao.energyCoverage.mode === 'Discard' ? 'discard' : 'exhaust'} a card from your hand for each missing energy.`);
     // [Round 390]
     if(ao.duplicateOnAcquire) extra.push(`When added to your deck, adds ${ao.duplicateOnAcquire} extra ${ao.duplicateOnAcquire === 1 ? 'copy' : 'copies'}.`);
     const extraText = extra.map(s=>{
@@ -15078,6 +15080,17 @@ function renderAdvancedOptions(card){
     </div>
     ${glowSection.html}
     ${playabilitySection.html}
+    <div class="adv-section" id="adv-cover-section">
+      <label>Energy coverage</label>
+      <div class="adv-wearsout-row">
+        <label class="a-check-label" title="Lets you play this card even when you can't afford it: every missing point of energy is paid by sacrificing one OTHER card from your hand, which you choose on the game's card-selection screen. Needs a card that costs at least 1 and is not an X-cost card."><input type="checkbox" id="adv-cover-on" ${ao.energyCoverage ? 'checked' : ''}> Playable without enough energy: for each missing energy,</label>
+        <select id="adv-cover-mode" ${ao.energyCoverage ? '' : 'disabled'}>
+          <option value="Exhaust" ${ao.energyCoverage && ao.energyCoverage.mode === 'Exhaust' ? 'selected' : ''}>exhaust a card from your hand</option>
+          <option value="Discard" ${ao.energyCoverage && ao.energyCoverage.mode === 'Discard' ? 'selected' : ''}>discard a card from your hand</option>
+        </select>
+      </div>
+      <div class="hint-small">You pick which cards on the game's own selection screen (the played card can't pay for itself). Not available on X-cost or 0-cost cards. This one patches the game's card-playing code, so it is not exercised in-game yet.</div>
+    </div>
     <div class="adv-section" id="adv-dup-section">
       <label>Duplicate on acquisition</label>
       <div class="adv-wearsout-row">
@@ -15117,6 +15130,17 @@ function renderAdvancedOptions(card){
   playabilitySection.wire();
 
   // [Round 389] Wears Out controls -- ao.wearsOut is absent when off.
+  // [Round 391] Energy coverage -- ao.energyCoverage is absent when off.
+  const coverOn = document.getElementById('adv-cover-on');
+  const coverMode = document.getElementById('adv-cover-mode');
+  const syncCover = ()=>{
+    if(coverOn.checked) ao.energyCoverage = { mode: coverMode.value === 'Discard' ? 'Discard' : 'Exhaust' };
+    else delete ao.energyCoverage;
+    coverMode.disabled = !coverOn.checked;
+    updateAdvancedOptionsSummary(card);
+  };
+  coverOn.onchange = syncCover; coverMode.onchange = syncCover;
+
   // [Round 390] Duplicate on acquisition -- ao.duplicateOnAcquire is absent when off.
   const dupOn = document.getElementById('adv-dup-on');
   const dupN = document.getElementById('adv-dup-n');
@@ -15192,6 +15216,7 @@ function updateAdvancedOptionsSummary(card){
     if(ao.whileInHand.length) parts.push('Pile trigger set');
     if(ao.wearsOut) parts.push('Wears out set');
     if(ao.duplicateOnAcquire) parts.push('Duplicate on acquisition set');
+    if(ao.energyCoverage) parts.push('Energy coverage set');
     summaryEl.textContent = parts.length ? `Advanced Options — ${parts.join(', ')}` : 'Advanced Options';
   }
   if(activeCardEditorRefreshPreview) activeCardEditorRefreshPreview();

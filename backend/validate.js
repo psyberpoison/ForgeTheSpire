@@ -2389,6 +2389,18 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
     });
   }
 
+  // energyCoverage [Round 391] -- pay missing energy by exhausting/discarding other hand cards.
+  if (opts.energyCoverage !== undefined) {
+    const ec = opts.energyCoverage;
+    if (!ec || typeof ec !== 'object' || Array.isArray(ec)) {
+      errors.push(`${p}.advancedOptions.energyCoverage must be an object { mode } if present.`);
+    } else {
+      if (ec.mode !== 'Exhaust' && ec.mode !== 'Discard') errors.push(`${p}.advancedOptions.energyCoverage.mode must be "Exhaust" or "Discard".`);
+      Object.keys(ec).forEach(k => { if (k !== 'mode') errors.push(`${p}.advancedOptions.energyCoverage has an unknown field "${k}".`); });
+      if (card.costsX) errors.push(`${p}.advancedOptions.energyCoverage can't be used on an X-cost card -- its cost is whatever energy you have, so there is never a shortfall to cover.`);
+      else if (typeof card.cost === 'number' && card.cost < 1) errors.push(`${p}.advancedOptions.energyCoverage needs a card that costs at least 1 energy (this card costs ${card.cost}) -- there would be nothing to cover.`);
+    }
+  }
   // duplicateOnAcquire [Round 390] -- N extra copies when the card joins the deck.
   if (opts.duplicateOnAcquire !== undefined) {
     if (!Number.isInteger(opts.duplicateOnAcquire) || opts.duplicateOnAcquire < 1 || opts.duplicateOnAcquire > 9) {
