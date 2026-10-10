@@ -443,6 +443,14 @@ public static class ForgeActions
     // like Strength/Dexterity. Compiles so one uncertain action doesn't
     // block the whole card from building, but throws clearly if actually
     // reached, instead of pretending to work.
+    // [Round 386] PlaySound helpers -- see compiler.js's playSoundToCSharp for the evidence trail.
+    // Custom: BaseLib's ModAudio plays a Godot-imported audio file from the pack (res:// path).
+    public static void PlayCustomSound(string resPath, float volume) =>
+        BaseLib.Audio.ModAudio.PlaySoundGlobal(new BaseLib.Audio.ModSound(resPath, BaseLib.Audio.ModAudio.SoundType.Sfx), 0f, volume, 0f, 1f);
+    // Vanilla: the game's own one-shot FMOD event call.
+    public static void PlayGameSound(string eventPath, float volume) =>
+        MegaCrit.Sts2.Core.Commands.SfxCmd.Play(eventPath, volume);
+
     public static void Todo(string what) =>
         throw new NotImplementedException(
             $"Forge: \"{what}\" has no verified STS2/BaseLib API mapping yet. " +

@@ -310,6 +310,8 @@ const ACTION_TYPES = [
   'AddReplay',
   // [Round 384] ChangeEnemyIntent -- see compiler.js's actionToCSharp case.
   'ChangeEnemyIntent',
+  // [Round 386] PlaySound -- see compiler.js's playSoundToCSharp.
+  'PlaySound',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -333,7 +335,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { CHANGE_INTENT_KINDS, PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+const { CHANGE_INTENT_KINDS, VANILLA_SOUND_EVENTS, PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
 // [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
 // one real Discovery card's own default pool) plus every real
 // CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
@@ -456,6 +458,8 @@ function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 // validateActions' ~15 call sites, same trade-off compiler.js's currentPetById makes.
 const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
 let currentOrbIds = new Set();
+// [Round 386] ids of this character's uploaded sound effects (assets[] of kind "actionSfx") -- PlaySound's soundRef check.
+let currentSfxAssetIds = new Set();
 // [Round 381] This character's custom card-keyword words (character.cardKeywords[].word), for BringCardsToHand's bringKeyword check. Module-level for the same reason as currentOrbIds.
 let currentCustomKeywordWords = new Set();
 // [Round 379] An orb's own two behaviors -- see compiler.js's TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke.
@@ -1361,6 +1365,23 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       }
     } else {
       ['replayTargetKind', 'replayRandomCount', 'replayOnlyWithout'].forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "AddReplay" — action type is "${act.type}".`); });
+    }
+    // [Round 386] PlaySound: soundKind (custom upload | vanilla game sound) + its ref + volume.
+    const SOUND_FIELDS = ['soundKind', 'soundRef', 'soundVanillaRef', 'soundVolume'];
+    if (act.type === 'PlaySound') {
+      if (act.soundKind !== 'custom' && act.soundKind !== 'vanilla') {
+        errors.push(`${p}.soundKind must be "custom" or "vanilla".`);
+      } else if (act.soundKind === 'custom') {
+        if (typeof act.soundRef !== 'string' || !act.soundRef) errors.push(`${p}.soundRef is required when soundKind is "custom" -- pick one of the sounds uploaded under Character & Art > Advanced Options > Custom sounds.`);
+        else if (!currentSfxAssetIds.has(act.soundRef)) errors.push(`${p}.soundRef "${act.soundRef}" is not one of this character's uploaded sound effects (was it removed?).`);
+        if (act.soundVanillaRef !== undefined) errors.push(`${p}: soundVanillaRef is only meaningful when soundKind is "vanilla".`);
+      } else {
+        if (!VANILLA_SOUND_EVENTS.includes(act.soundVanillaRef)) errors.push(`${p}.soundVanillaRef "${act.soundVanillaRef}" is not one of the supported game sounds.`);
+        if (act.soundRef !== undefined) errors.push(`${p}: soundRef is only meaningful when soundKind is "custom".`);
+      }
+      if (act.soundVolume !== undefined && (!Number.isInteger(act.soundVolume) || act.soundVolume < 1 || act.soundVolume > 200)) errors.push(`${p}.soundVolume must be a whole number from 1 to 200 (percent).`);
+    } else {
+      SOUND_FIELDS.forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "PlaySound" -- action type is "${act.type}".`); });
     }
     // [Round 384] ChangeEnemyIntent: newIntentKind (required, curated set).
     if (act.type === 'ChangeEnemyIntent') {
@@ -2393,6 +2414,12 @@ function validateCharacterPackage(pkg) {
   // follow (threaded through validateEffects/validateConditions/
   // validateActions/validateModifiers/validateAdvancedOptions exactly like
   // petIds was).
+  currentSfxAssetIds = new Set((Array.isArray(pkg.assets) ? pkg.assets : []).filter(a => a && a.kind === 'actionSfx' && a.id && typeof a.dataUrl === 'string' && a.dataUrl).map(a => a.id));
+  (Array.isArray(pkg.assets) ? pkg.assets : []).forEach((a, i) => {
+    if (a && a.kind === 'actionSfx' && !/^data:(audio\/(wav|x-wav|wave|vnd\.wave|mpeg|mp3|ogg|vorbis)|application\/ogg)[;,]/i.test(a.dataUrl || '')) {
+      errors.push(`assets[${i}] (sound effect "${a.name || a.id}"): must be a WAV, MP3 or OGG audio file.`);
+    }
+  });
   currentOrbIds = new Set((Array.isArray(pkg.orbs) ? pkg.orbs : []).map(o => o && o.id).filter(Boolean));
   currentCustomKeywordWords = new Set((pkg.character && Array.isArray(pkg.character.cardKeywords) ? pkg.character.cardKeywords : []).map(k => k && k.word).filter(w => typeof w === 'string' && w));
   const stanceIds = new Set((Array.isArray(pkg.stances) ? pkg.stances : []).map(s => s && s.id).filter(Boolean));

@@ -2867,6 +2867,11 @@
   .sfx-field-row audio{height:32px; max-width:220px;}
   .sfx-field-name{font-size:11px; color:var(--parchment-dim); word-break:break-all; flex:1 1 auto; min-width:80px;}
   .sfx-field-actions{display:flex; align-items:center; gap:4px; flex:0 0 auto;}
+  /* [Round 386] Sound effects library rows (Play Sound action) */
+  .sfx-lib-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; padding:8px; border:1px solid var(--line, #2a3a52); border-radius:6px;}
+  .sfx-lib-row audio{height:32px; max-width:200px;}
+  .sfx-lib-row .sfx-lib-name{flex:1 1 120px; min-width:100px; margin:0;}
+  .sfx-lib-uses{font-size:11px; color:var(--parchment-dim); flex:0 0 auto;}
   /* [Round 97] Optional art bar — a full-width collapsed-by-default drawer
      across the bottom of the whole Character & Art panel, holding Rest
      sprite, Shop sprite, and Hand art (see the HTML comment above this
@@ -3626,6 +3631,17 @@
                 <input type="file" class="art-upload-input" id="death-sfx-upload" accept="audio/wav,audio/x-wav,audio/mpeg,.wav,.mp3">
                 <div class="art-field-error" id="death-sfx-error"></div>
               </div>
+            </div>
+            <!-- [Round 386] Sound effects library for the "Play Sound" action. Same
+                 upload + <audio> preview shape as the two slots above, but a list:
+                 add as many as you like; actions pick them by name. Stored in
+                 state.assets as kind "actionSfx" (see wireSfxLibrary in the JS). -->
+            <div class="sfx-library" id="sfx-library">
+              <label style="margin-top:14px">Sound effects <span class="dim-hint">(for "Play Sound" actions - wav/mp3/ogg)</span></label>
+              <div id="sfx-library-list"></div>
+              <button class="secondary art-add-btn" id="sfx-library-add" type="button">+ Add Sound Effect</button>
+              <input type="file" class="art-upload-input" id="sfx-library-upload" accept="audio/wav,audio/x-wav,audio/mpeg,audio/ogg,.wav,.mp3,.ogg" multiple>
+              <div class="art-field-error" id="sfx-library-error"></div>
             </div>
           </div>
 
@@ -4721,7 +4737,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4890,6 +4906,7 @@ const ACTION_TYPE_LABELS = {
   // [Round 382]
   AddReplay: 'Add Replay to Card',
   ChangeEnemyIntent: 'Change Enemy Intent',
+  PlaySound: 'Play Sound',
 };
 // [Round 376] Hover text for action types that need a clarifying note.
 // Shown as the <option>'s native title and again on the action's own
@@ -4902,6 +4919,7 @@ const ACTION_TYPE_TOOLTIPS = {
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
+  PlaySound: "Plays a sound when this effect fires: one of your own uploaded sounds (add them in Character & Art > Advanced Options > Custom sounds) or one of the game's built-in sounds. Volume is a percentage of the sound's normal level. Uploaded sounds follow the game's sound volume settings.",
   ChangeEnemyIntent: "Switches an enemy's telegraphed next move to one of a different intent type (e.g. turn an Attack into a Defend). Forge looks through that enemy's own moves for ones with the chosen intent and picks one at random if several match. Does nothing if the enemy is already showing that intent or has no move like that, and it won't interrupt an enemy that must finish its current move first.",
   AddReplay: "Gives a card Replay: it is played that many extra times each time you play it, for the rest of this combat. Add it to this card, or to random cards in one of your piles (like the game's Hidden Gem, which gives Replay to a random card in the Draw pile). Random picks skip Unplayable cards, Curses and Quests, and can be limited to cards that don't already have Replay. Stacks on top of any Replay the card already has.",
   GainTempHp: 'Gives you Temporary HP: shown as "+N" next to your health (e.g. 95/100 +5). It soaks up HP loss that gets past your Block, one for one, then is used up. Stacks across gains and lasts until the end of combat. Does not stop HP lost directly (e.g. by a Lose HP effect).',
@@ -4980,7 +4998,7 @@ const ACTION_TYPE_GROUPS = [
   // unused elsewhere in this array, and a stance swap is a real combat-
   // lifecycle-adjacent state change, same category of concept.
   { label: 'Stances', color: '#d97b34', types: ['EnterStance', 'ExitStance'] },
-  { label: 'Misc', color: '#7a8699', types: ['EndTurn'] },
+  { label: 'Misc', color: '#7a8699', types: ['EndTurn', 'PlaySound'] },
 ];
 // Human-readable search text per action type — backs the card board's
 // effect search (see cardEffectSearchText/cardMatchesSearch below).
@@ -5028,6 +5046,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   EvokeOrb: 'evoke orb trigger activate',
   AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
   ChangeEnemyIntent: 'change enemy intent switch move attack defend buff debuff telegraph plan',
+  PlaySound: 'play sound sfx audio noise music effect custom upload',
   BringCardsToHand: 'bring cards to hand from discard draw exhaust pile retrieve return recover fetch search tutor',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
@@ -5339,7 +5358,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -5360,6 +5379,47 @@ const ALLY_CREATURE_TARGETABLE_ACTIONS = ["DealDamage","ModifyStatus","RemoveAll
 const ENEMY_ONLY_ACTIONS = ["ChangeEnemyIntent"];
 const CHANGE_INTENT_KINDS = ["Attack","Defend","Buff","Debuff","Heal","Summon","Status","CardDebuff","Sleep"];
 const CHANGE_INTENT_LABELS = {Attack:"Attack",Defend:"Defend",Buff:"Buff",Debuff:"Debuff",Heal:"Heal",Summon:"Summon",Status:"Status (adds junk cards)",CardDebuff:"Card debuff",Sleep:"Sleep"};
+
+// [Round 386] Mirrors compiler.js:VANILLA_SOUND_EVENTS exactly (string literals found in sts2.dll; one-shot sfx only).
+const VANILLA_SOUND_EVENTS = ["event:/sfx/block_break", "event:/sfx/block_gain", "event:/sfx/block_hit", "event:/sfx/buff", "event:/sfx/byrdpip/byrdpip_attack", "event:/sfx/characters/attack_fire", "event:/sfx/characters/defect/defect_dark_channel", "event:/sfx/characters/defect/defect_frost_channel", "event:/sfx/characters/defect/defect_glass_channel", "event:/sfx/characters/defect/defect_hyperbeam", "event:/sfx/characters/defect/defect_lightning_channel", "event:/sfx/characters/defect/defect_lightning_evoke", "event:/sfx/characters/defect/defect_lightning_passive", "event:/sfx/characters/defect/defect_plasma_channel", "event:/sfx/characters/ironclad/ironclad_bloodwall", "event:/sfx/characters/ironclad/ironclad_hellraiser", "event:/sfx/characters/ironclad/ironclad_whirlwind", "event:/sfx/characters/necrobinder/necrobinder_doom_kill", "event:/sfx/characters/necrobinder/necrobinder_summon", "event:/sfx/characters/osty/osty_attack", "event:/sfx/characters/osty/osty_die", "event:/sfx/characters/regent/regent_forge", "event:/sfx/characters/regent/regent_guiding_star", "event:/sfx/characters/regent/regent_refine", "event:/sfx/characters/regent/regent_sovereign_blade", "event:/sfx/characters/silent/silent_dagger_spray", "event:/sfx/characters/silent/silent_fan_of_knives", "event:/sfx/debuff", "event:/sfx/enemy/enemy_attacks/axebot/axebot_attack_spin", "event:/sfx/enemy/enemy_attacks/axebot/axebot_buff", "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_attack", "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_burrow", "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_die", "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_hidden_attack", "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_hurt", "event:/sfx/enemy/enemy_attacks/byrdonis/byrdonis_die", "event:/sfx/enemy/enemy_attacks/byrdonis/byrdonis_hurt", "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_die", "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_plow", "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_plow_end", "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_shrill", "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_stun", "event:/sfx/enemy/enemy_attacks/chomper/chomper_hurt", "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_attack", "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_attack_light", "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_die", "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_ravenous", "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_ravenous_up_double", "event:/sfx/enemy/enemy_attacks/crossbow_ruby_raider/crossbow_ruby_raider_reload", "event:/sfx/enemy/enemy_attacks/cubex_construct/cubex_construct_burrow", "event:/sfx/enemy/enemy_attacks/cubex_construct/cubex_construct_charge_attack", "event:/sfx/enemy/enemy_attacks/cultists/cultists_attack", "event:/sfx/enemy/enemy_attacks/cultists/cultists_buff_calcified", "event:/sfx/enemy/enemy_attacks/cultists/cultists_buff_damp", "event:/sfx/enemy/enemy_attacks/cultists/cultists_die_calcified", "event:/sfx/enemy/enemy_attacks/cultists/cultists_die_damp", "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_buff", "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_triple", "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_weaken", "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_die", "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_heal", "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_attack", "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_die", "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_lay", "event:/sfx/enemy/enemy_attacks/entomancer/entomancer_attack_ranged", "event:/sfx/enemy/enemy_attacks/entomancer/entomancer_die", "event:/sfx/enemy/enemy_attacks/fabricator/fabricator_hurt", "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_flail", "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_ram", "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_war_chant", "event:/sfx/enemy/enemy_attacks/fogmog/fogmog_summon", "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_buff", "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_double", "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_single", "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_hurt", "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_buff", "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_charge", "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_tongue_lash", "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_attack", "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_attack_web", "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_curl", "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_die", "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_uncurl", "event:/sfx/enemy/enemy_attacks/globe_head/globe_head_charge", "event:/sfx/enemy/enemy_attacks/globe_head/globe_head_slap", "event:/sfx/enemy/enemy_attacks/gremlin_merc/fat_gremlin_die", "event:/sfx/enemy/enemy_attacks/gremlin_merc/fat_gremlin_escape", "event:/sfx/enemy/enemy_attacks/gremlin_merc/gremlin_merc_attack_buff", "event:/sfx/enemy/enemy_attacks/gremlin_merc/sneaky_gremlin_attack", "event:/sfx/enemy/enemy_attacks/gremlin_merc/sneaky_gremlin_die", "event:/sfx/enemy/enemy_attacks/hunter_killer/hunter_killer_die", "event:/sfx/enemy/enemy_attacks/hunter_killer/hunter_killer_hurt", "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack", "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack_defend", "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack_spin", "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_buff", "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_die", "event:/sfx/enemy/enemy_attacks/inklet/inklet_attack_triple", "event:/sfx/enemy/enemy_attacks/inklet/inklet_hurt", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_attack_slam", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_scissor", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_scoop", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_slam", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_buff", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_die", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_attack_slam", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_attack_snap", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_buff", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_die", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_regrow", "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_rocket", "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_clap", "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_flame", "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_slap", "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_attack_stab", "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_awaken", "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_cast", "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_slam", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_attack_blow", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_die", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_explode", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_minion_appear", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_minion_die", "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_summon", "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_attack_bomb", "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_attack_ram", "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_cast_shield", "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_hurt", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_buff", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_dash", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_die", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_flamethrower", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_heavy_attack", "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_hurt", "event:/sfx/enemy/enemy_attacks/mite/mite_attack", "event:/sfx/enemy/enemy_attacks/mite/mite_cast", "event:/sfx/enemy/enemy_attacks/mite/mite_die", "event:/sfx/enemy/enemy_attacks/mite/mite_suck", "event:/sfx/enemy/enemy_attacks/nibbit/nibbit_die", "event:/sfx/enemy/enemy_attacks/obscura/obscura_attack", "event:/sfx/enemy/enemy_attacks/obscura/obscura_buff", "event:/sfx/enemy/enemy_attacks/obscura/obscura_die", "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_attack", "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_die", "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_heal", "event:/sfx/enemy/enemy_attacks/obscura/obscura_summon", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_attack_dive", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_attack_peck", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_die", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_die_flying", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_hurt", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_hurt_flying", "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_take_off", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_attack_bite", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_attack_lick", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_buff", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_die", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_extend", "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_retract", "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_attack_double", "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_attack_single", "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_buff", "event:/sfx/enemy/enemy_attacks/queen/queen_arms_attack", "event:/sfx/enemy/enemy_attacks/queen/queen_cast", "event:/sfx/enemy/enemy_attacks/roaches/roaches_attack", "event:/sfx/enemy/enemy_attacks/roaches/roaches_attack_heavy", "event:/sfx/enemy/enemy_attacks/roaches/roaches_buff", "event:/sfx/enemy/enemy_attacks/roaches/roaches_die", "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_bite", "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_bite_double", "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_buff", "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_die", "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_buff", "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_hurt", "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_kick", "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_kick_multi", "event:/sfx/enemy/enemy_attacks/sewer_clam/sewer_clam_buff", "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_hurt", "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_kick", "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_slap", "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_spin", "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_thrust", "event:/sfx/enemy/enemy_attacks/slimed_berserker/slimed_berserker_buff", "event:/sfx/enemy/enemy_attacks/slimed_berserker/slimed_berserker_slime", "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_attack_headbutt", "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_cast", "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_tail", "event:/sfx/enemy/enemy_attacks/sludge_spinner/sludge_spinner_attack_dash", "event:/sfx/enemy/enemy_attacks/sludge_spinner/sludge_spinner_attack_spin", "event:/sfx/enemy/enemy_attacks/slumbering_beetle/slumbering_beetle_roll", "event:/sfx/enemy/enemy_attacks/slumbering_beetle/slumbering_beetle_wake_up", "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_beckon", "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_hurt", "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_intangible", "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_reappear", "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_wave", "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_hex", "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_soul_flame", "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_soul_slash", "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_die", "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_explode", "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_lick", "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_protrude", "event:/sfx/enemy/enemy_attacks/terror_eel/terror_eel_attack_multi", "event:/sfx/enemy/enemy_attacks/terror_eel/terror_eel_debuff", "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_bite", "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_knock_out", "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_revive_three_heads", "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_revive_two_heads", "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_slash", "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_finisher", "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_liquify_ground", "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_lunging_bite", "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_salivate", "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_thrash", "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_boomerang_slash", "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_buff", "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_die", "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_quick_slash", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_cast", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_die", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_hurt", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_rally", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_soul_beam", "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_soul_grenade", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_attack", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_attack_hover", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_die", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_flee", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_flee_hover", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_hurt_hover", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_steal", "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_take_off", "event:/sfx/enemy/enemy_attacks/toadpole/toadpole_attack_spin", "event:/sfx/enemy/enemy_attacks/torch_head_amalgam/torch_head_amalgam_beam", "event:/sfx/enemy/enemy_attacks/tough_egg/hatchling_die", "event:/sfx/enemy/enemy_attacks/tough_egg/tough_egg_die", "event:/sfx/enemy/enemy_attacks/tough_egg/tough_egg_hatch", "event:/sfx/enemy/enemy_attacks/turret_operator/turret_operator_buff", "event:/sfx/enemy/enemy_attacks/turret_operator/turret_operator_hurt", "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_attack_bite", "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_attack_hands", "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_die", "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_hurt", "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_summon", "event:/sfx/enemy/enemy_attacks/vantom/vantom_buff", "event:/sfx/enemy/enemy_attacks/vantom/vantom_dismember", "event:/sfx/enemy/enemy_attacks/vantom/vantom_extend_1", "event:/sfx/enemy/enemy_attacks/vantom/vantom_extend_2", "event:/sfx/enemy/enemy_attacks/vantom/vantom_inky_lance", "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_cast", "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_chomp", "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_defensive_swipe", "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_attack_kick", "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_attack_stomp", "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_eruption", "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_knockout", "event:/sfx/enemy/enemy_attacks/workbug_egg/workbug_egg_attack", "event:/sfx/enemy/enemy_attacks/workbug_egg/workbug_egg_die", "event:/sfx/enemy/enemy_attacks/workbug_goop/workbug_goop_die", "event:/sfx/enemy/enemy_attacks/workbug_goop/workbug_goop_spit", "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_attack", "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_die", "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_stun", "event:/sfx/enemy/enemy_attacks/workbug_silk/workbug_silk_die", "event:/sfx/enemy/enemy_attacks/workbug_silk/workbug_silk_spit", "event:/sfx/enemy/enemy_fade", "event:/sfx/heal", "event:/sfx/npcs/darv/darv_endeared", "event:/sfx/npcs/darv/darv_excited", "event:/sfx/npcs/darv/darv_fear", "event:/sfx/npcs/darv/darv_introduction", "event:/sfx/npcs/darv/darv_outta_the_way", "event:/sfx/npcs/darv/darv_pain", "event:/sfx/npcs/merchant/merchant_dissapointment", "event:/sfx/npcs/merchant/merchant_passive", "event:/sfx/npcs/merchant/merchant_thank_yous", "event:/sfx/npcs/merchant/merchant_welcome", "event:/sfx/npcs/neow/neow_curious", "event:/sfx/npcs/neow/neow_sleepy", "event:/sfx/npcs/neow/neow_welcome", "event:/sfx/npcs/nonupeipe/nonupeipe_eeked", "event:/sfx/npcs/nonupeipe/nonupeipe_giggle", "event:/sfx/npcs/nonupeipe/nonupeipe_grossed_out", "event:/sfx/npcs/nonupeipe/nonupeipe_welcome", "event:/sfx/npcs/reverse_merchant/reverse_merchant_die", "event:/sfx/npcs/reverse_merchant/reverse_merchant_hurt", "event:/sfx/npcs/reverse_merchant/reverse_merchant_laugh", "event:/sfx/npcs/tanx/tanx_curiosity", "event:/sfx/npcs/tanx/tanx_laugh", "event:/sfx/npcs/tanx/tanx_roar", "event:/sfx/ui/cards/card_impact_into_multi", "event:/sfx/ui/cards/card_impact_into_single", "event:/sfx/ui/cards/card_movement_B_into_deck", "event:/sfx/ui/cards/card_movement_B_into_discard", "event:/sfx/ui/cards/card_movement_B_into_draw", "event:/sfx/ui/cards/card_movement_B_play_into_discard", "event:/sfx/ui/cards/card_movement_B_power", "event:/sfx/ui/cards/card_transform", "event:/sfx/ui/clicks/ui_back", "event:/sfx/ui/clicks/ui_checkbox_off", "event:/sfx/ui/clicks/ui_checkbox_on", "event:/sfx/ui/clicks/ui_click", "event:/sfx/ui/clicks/ui_hover", "event:/sfx/ui/enchant_shimmer", "event:/sfx/ui/enchant_simple", "event:/sfx/ui/gain_energy", "event:/sfx/ui/gold/gold_1", "event:/sfx/ui/gold/gold_2", "event:/sfx/ui/gold/gold_3", "event:/sfx/ui/map/map_close", "event:/sfx/ui/map/map_erase", "event:/sfx/ui/map/map_open", "event:/sfx/ui/map/map_select", "event:/sfx/ui/relic_activate_draw", "event:/sfx/ui/relic_activate_general", "event:/sfx/ui/treasure/treasure_act1", "event:/sfx/ui/treasure/treasure_act2", "event:/sfx/ui/treasure/treasure_act3"];
+// Groups the flat event list for the Play Sound picker: Combat / Character skills / Cards & UI / NPC voices / one group per enemy.
+function vanillaSoundInfo(ev){
+  const rest = ev.replace('event:/sfx/', '');
+  const nice = s => s.replace(/_/g, ' ');
+  const title = s => nice(s).replace(/\b\w/g, m => m.toUpperCase());
+  let m;
+  if((m = /^characters\/([^/]+)\/(.+)$/.exec(rest))) return { group: 'Character skills', label: title(m[1]) + ': ' + nice(m[2].replace(new RegExp('^' + m[1] + '_'), '')) };
+  if(rest.startsWith('characters/')) return { group: 'Character skills', label: nice(rest.slice('characters/'.length)) };
+  if((m = /^byrdpip\/(.+)$/.exec(rest))) return { group: 'Character skills', label: 'Byrdpip: ' + nice(m[1].replace(/^byrdpip_/, '')) };
+  if(rest.startsWith('ui/')) return { group: 'Cards & UI', label: nice(rest.slice(3).replace(/\//g, ': ')) };
+  if((m = /^npcs\/([^/]+)\/(.+)$/.exec(rest))) return { group: 'NPC voices', label: title(m[1]) + ': ' + nice(m[2].replace(new RegExp('^' + m[1] + '_'), '')) };
+  if((m = /^enemy\/enemy_attacks\/([^/]+)\/(.+)$/.exec(rest))) return { group: 'Enemy: ' + title(m[1]), label: nice(m[2].replace(new RegExp('^' + m[1] + '_'), '')) };
+  return { group: 'Combat', label: nice(rest.replace(/^enemy\//, '')) };
+}
+function vanillaSoundLabel(ev){ const i = vanillaSoundInfo(ev); return i.group + ' - ' + i.label; }
+function vanillaSoundOptionsHtml(selected){
+  const groups = new Map();
+  VANILLA_SOUND_EVENTS.forEach(ev=>{ const i = vanillaSoundInfo(ev); if(!groups.has(i.group)) groups.set(i.group, []); groups.get(i.group).push({ ev, label: i.label }); });
+  const order = g => g === 'Combat' ? 0 : g === 'Character skills' ? 1 : g === 'Cards & UI' ? 2 : g === 'NPC voices' ? 3 : 4;
+  return Array.from(groups.keys()).sort((a,b)=> order(a) - order(b) || a.localeCompare(b)).map(g =>
+    `<optgroup label="${escapeAttr(g)}">${groups.get(g).map(o=>`<option value="vanilla:${escapeAttr(o.ev)}" ${selected===o.ev?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</optgroup>`).join('');
+}
+// Uploaded sound effects (state.assets of kind "actionSfx"), in upload order.
+function sfxLibraryAssets(){ return (Array.isArray(state.assets) ? state.assets : []).filter(a=>a && a.kind === 'actionSfx'); }
+function sfxLibraryName(id){ const a = sfxLibraryAssets().find(x=>x.id===id); return a ? (a.name || 'Uploaded sound') : null; }
+// How many Play Sound actions (anywhere in the project) point at an uploaded sound.
+function countSoundUses(assetId){
+  let n = 0;
+  const walk = node=>{
+    if(Array.isArray(node)) { node.forEach(walk); return; }
+    if(node && typeof node === 'object'){
+      if(node.type === 'PlaySound' && node.soundKind === 'custom' && node.soundRef === assetId) n++;
+      Object.keys(node).forEach(k=>{ if(k !== 'assets') walk(node[k]); });
+    }
+  };
+  walk(state);
+  return n;
+}
 // [Round 330] Mirrors compiler.js:PLAYER_ALLY_TARGETABLE_ACTIONS exactly —
 // the 5 PLAYER_ONLY_ACTIONS types that also accept a `playerTarget` field
 // (Self/RandomAlly/AllAllies), see renderActionRowFields' own playerTarget
@@ -7709,6 +7769,76 @@ function wireSoundField(opts){
   artFieldRenderers.push(render);
   return render;
 }
+
+
+/* [Round 386] Sound effects library (Play Sound action). A list of uploaded
+   sounds kept in state.assets as {kind:'actionSfx', name, dataUrl}. The upload's
+   MIME is normalized from the file extension so the compiler's extension
+   choice always matches the real file. A sound that some action still uses
+   can't be removed (the row says how many actions use it) -- no silently
+   dangling references. */
+function wireSfxLibrary(){
+  const listEl = document.getElementById('sfx-library-list');
+  const addBtn = document.getElementById('sfx-library-add');
+  const uploadEl = document.getElementById('sfx-library-upload');
+  const errorEl = document.getElementById('sfx-library-error');
+  let replaceId = null;
+  const MIME_BY_EXT = { wav:'audio/wav', mp3:'audio/mpeg', ogg:'audio/ogg' };
+  const showError = (msg, note)=>{ errorEl.textContent = msg; errorEl.classList.toggle('art-field-note', !!note); errorEl.style.display = msg ? 'block' : 'none'; };
+  function render(){
+    listEl.innerHTML = '';
+    sfxLibraryAssets().forEach(a=>{
+      const row = document.createElement('div'); row.className = 'sfx-lib-row'; row.dataset.assetId = a.id;
+      const uses = countSoundUses(a.id);
+      row.innerHTML = `<audio controls></audio><input type="text" class="sfx-lib-name" maxlength="60" aria-label="Sound name"><span class="sfx-lib-uses"></span><div class="sfx-field-actions"><button class="ghost sfx-lib-replace" type="button">Replace</button><button class="ghost icon-btn icon-btn-danger sfx-lib-remove" type="button" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg></button></div>`;
+      if(a.dataUrl) row.querySelector('audio').src = a.dataUrl; else row.querySelector('audio').style.display = 'none';
+      const nameInput = row.querySelector('.sfx-lib-name'); nameInput.value = a.name || '';
+      nameInput.onchange = ()=>{ a.name = nameInput.value.trim() || 'Sound'; nameInput.value = a.name; save(); };
+      row.querySelector('.sfx-lib-uses').textContent = uses ? `used by ${uses} action${uses===1?'':'s'}` : '';
+      row.querySelector('.sfx-lib-replace').onclick = ()=>{ replaceId = a.id; uploadEl.click(); };
+      row.querySelector('.sfx-lib-remove').onclick = ()=>{
+        const n = countSoundUses(a.id);
+        if(n){ showError(`"${a.name || 'This sound'}" is used by ${n} Play Sound action${n===1?'':'s'} - change or remove ${n===1?'it':'those'} first, then remove the sound.`); render(); return; }
+        showError('');
+        state.assets = state.assets.filter(x=>x.id !== a.id);
+        save(); render();
+      };
+      listEl.appendChild(row);
+    });
+  }
+  addBtn.addEventListener('click', ()=>{ replaceId = null; uploadEl.click(); });
+  uploadEl.addEventListener('change', e=>{
+    const files = Array.from(e.target.files || []);
+    uploadEl.value = '';
+    if(!files.length) return;
+    showError('');
+    const target = replaceId; replaceId = null;
+    files.forEach(file=>{
+      const ext = (/\.([A-Za-z0-9]+)$/.exec(file.name) || [,''])[1].toLowerCase();
+      if(!MIME_BY_EXT[ext]){ showError(`"${file.name}" isn't a WAV, MP3 or OGG file.`); return; }
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const dataUrl = 'data:' + MIME_BY_EXT[ext] + ';base64,' + String(reader.result).slice(String(reader.result).indexOf(',') + 1);
+        if(!Array.isArray(state.assets)) state.assets = [];
+        const existing = target ? state.assets.find(x=>x.id===target && x.kind==='actionSfx') : null;
+        if(existing){ existing.dataUrl = dataUrl; existing.name = existing.name || file.name; }
+        else state.assets.push({ id: uid('asset'), kind:'actionSfx', name:file.name, dataUrl });
+        save(); render();
+        const probe = new Audio(); probe.preload = 'metadata';
+        probe.onloadedmetadata = ()=>{
+          if(Number.isFinite(probe.duration) && probe.duration > 15) showError(`Heads up - "${file.name}" is about ${probe.duration.toFixed(1)}s long. It will play in full, but clips over 15 seconds are reloaded from disk each time they play.`, true);
+        };
+        probe.src = dataUrl;
+      };
+      reader.onerror = ()=> showError(`Couldn't read "${file.name}" - try a different file.`);
+      reader.readAsDataURL(file);
+    });
+  });
+  render();
+  artFieldRenderers.push(render);
+  return render;
+}
+wireSfxLibrary();
 
 /* ---- [Round 123/125] Live combat-size preview ----
    Tyler: "i think we should have a preview of what the character looks
@@ -12440,6 +12570,11 @@ function describeAction(act){
     // same way every other still-stubbed action type already is here,
     // no different treatment just because they're new.
     case 'StunEnemy': return `Stun ${targetPhrase}`;
+    case 'PlaySound': {
+      const psVol = Number.isInteger(act.soundVolume) ? act.soundVolume : 100;
+      const psName = act.soundKind === 'vanilla' ? (act.soundVanillaRef ? vanillaSoundLabel(act.soundVanillaRef) : 'a game sound') : (sfxLibraryName(act.soundRef) || 'a missing sound');
+      return `Play ${psName}${psVol === 100 ? '' : ' at ' + psVol + '% volume'}`;
+    }
     case 'ChangeEnemyIntent': return `Change ${targetPhrase}'s intent to ${CHANGE_INTENT_LABELS[act.newIntentKind] ? act.newIntentKind : 'Attack'}`;
     case 'EndTurn': return `End your turn`;
     // [Round 160] "GainOrbSlots" never actually had a case here (a
@@ -16637,6 +16772,23 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef;
   }
+  // [Round 386] PlaySound: custom upload or game sound + volume %. A custom ref whose
+  // upload was deleted is deliberately NOT swapped to something else (the picker shows
+  // it as missing and the validator reports it) -- only a never-set action gets a default.
+  if(act.type === 'PlaySound'){
+    if(act.soundKind !== 'vanilla' && act.soundKind !== 'custom') act.soundKind = sfxLibraryAssets().length ? 'custom' : 'vanilla';
+    if(act.soundKind === 'custom'){
+      if(!act.soundRef){ const first = sfxLibraryAssets()[0]; if(first) act.soundRef = first.id; else { act.soundKind = 'vanilla'; } }
+    }
+    if(act.soundKind === 'custom'){ delete act.soundVanillaRef; }
+    else {
+      if(!VANILLA_SOUND_EVENTS.includes(act.soundVanillaRef)) act.soundVanillaRef = 'event:/sfx/block_gain';
+      delete act.soundRef;
+    }
+    if(!Number.isInteger(act.soundVolume) || act.soundVolume < 1 || act.soundVolume > 200) act.soundVolume = 100;
+  } else {
+    delete act.soundKind; delete act.soundRef; delete act.soundVanillaRef; delete act.soundVolume;
+  }
   // [Round 384] ChangeEnemyIntent: curated intent kind, default Attack.
   if(act.type === 'ChangeEnemyIntent'){ if(!CHANGE_INTENT_KINDS.includes(act.newIntentKind)) act.newIntentKind = 'Attack'; } else { delete act.newIntentKind; }
   // [Round 382] AddReplay: ThisCard (default) or RandomFromPile + count + "only without Replay".
@@ -17434,6 +17586,16 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // evidence yet that it's even a stackable/amount-bearing effect).
     // [UNVERIFIED] Todo() stub — see compiler.js's actionToCSharp case and
     // tools/reflect-baselib's new round 15.
+    case 'PlaySound': {
+      const psCustom = sfxLibraryAssets();
+      const psMissing = act.soundKind === 'custom' && act.soundRef && !psCustom.some(a=>a.id===act.soundRef);
+      const psCustomGroup = (psCustom.length || psMissing)
+        ? `<optgroup label="Your sounds">${psMissing ? `<option value="custom:${escapeAttr(act.soundRef)}" selected>(missing sound - pick another)</option>` : ''}${psCustom.map(a=>`<option value="custom:${escapeAttr(a.id)}" ${act.soundKind==='custom'&&act.soundRef===a.id?'selected':''}>${escapeHtml(a.name || 'Uploaded sound')}</option>`).join('')}</optgroup>`
+        : '';
+      const psVanillaSel = act.soundKind === 'vanilla' ? act.soundVanillaRef : null;
+      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.PlaySound)}">Play</span> <select class="a-sound-ref" title="Your uploaded sounds come first, then the game's own sounds.">${psCustomGroup}${vanillaSoundOptionsHtml(psVanillaSel)}</select> <span class="cond-word">at</span> <input type="number" class="a-sound-volume" min="1" max="200" step="1" value="${Number.isInteger(act.soundVolume) ? act.soundVolume : 100}" style="width:64px; flex:none;"><span class="cond-word">% volume.</span>`;
+      break;
+    }
     case 'ChangeEnemyIntent':
       sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ChangeEnemyIntent)}">Change</span>${targetHtml}<span class="cond-word">'s intent to</span> <select class="a-intent-kind">${CHANGE_INTENT_KINDS.map(k=>`<option value="${k}" ${act.newIntentKind===k?'selected':''}>${CHANGE_INTENT_LABELS[k]}</option>`).join('')}</select><span class="cond-word">.</span>`;
       break;
@@ -18020,6 +18182,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
     delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
     delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout; delete act.newIntentKind;
+    delete act.soundKind; delete act.soundRef; delete act.soundVanillaRef; delete act.soundVolume;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -18185,6 +18348,21 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     ensureActionRefDefaults(act);
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  // [Round 386] PlaySound: one combined picker (custom:<assetId> / vanilla:<event>) + volume %.
+  const soundRefSel = row.querySelector('.a-sound-ref');
+  if(soundRefSel) soundRefSel.onchange = e=>{
+    const raw = e.target.value; const sep = raw.indexOf(':');
+    const kind = raw.slice(0, sep), value = raw.slice(sep + 1);
+    act.soundKind = kind;
+    if(kind === 'vanilla'){ act.soundVanillaRef = value; delete act.soundRef; }
+    else { act.soundRef = value; delete act.soundVanillaRef; }
+  };
+  const soundVolInput = row.querySelector('.a-sound-volume');
+  if(soundVolInput) soundVolInput.onchange = e=>{
+    const v = parseInt(e.target.value, 10);
+    act.soundVolume = Number.isFinite(v) ? Math.min(200, Math.max(1, v)) : 100;
+    e.target.value = act.soundVolume;
   };
   // [Round 384] ChangeEnemyIntent kind picker (no re-render needed: no siblings depend on it).
   const intentKindSel = row.querySelector('.a-intent-kind');

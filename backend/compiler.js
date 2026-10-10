@@ -191,6 +191,8 @@ let currentPetById = new Map();
 // generateProject() before any entity source is generated -- same early-set
 // reasoning as currentStanceClassById.
 let currentOrbClassById = new Map();
+// [Round 386] PlaySound custom files: asset id -> res:// path the file is exported to (set in generateProject; see writeActionSfxAssets).
+let currentSfxResPaths = new Map();
 // [Round 378] The five real built-in orbs, all [VERIFIED via direct sts2.dll
 // type scan]: MegaCrit.Sts2.Core.Models.Orbs.{Lightning,Frost,Dark,Plasma,Glass}Orb.
 const BUILTIN_ORBS = ['Lightning', 'Frost', 'Dark', 'Plasma', 'Glass'];
@@ -707,6 +709,8 @@ const PLAYER_ONLY_ACTIONS = [
   // [Round 378] ChannelOrb / EvokeOrb -- orb-queue operations on the acting
   // Player, no Creature-target concept.
   'ChannelOrb', 'EvokeOrb',
+  // [Round 386] PlaySound -- plays a global sound, no Creature target (see playSoundToCSharp).
+  'PlaySound',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -787,6 +791,336 @@ const ENEMY_ONLY_ACTIONS = ['ChangeEnemyIntent'];
 // (the existing StunEnemy action owns it); Escape/Hidden/Unknown are
 // absent too (not meaningful "plans" to switch an enemy to). "Attack" uses
 // the AttackIntent base class so Single/Multi/DeathBlow attacks all match.
+
+// [Round 386] PlaySound's "vanilla" picker: the game's own one-shot FMOD sound
+// events. Every entry is a string literal found in sts2.dll itself (so the
+// game's own code references it -- none are guessed), restricted to
+// event:/sfx/... one-shots: music, ambience, looping events (*_loop/_ambient),
+// runtime-built prefixes (ending in "/" or "_"), timeline/wipe/pause UI and
+// the temp debug event are left out. Played with SfxCmd.Play(event, volume)
+// -- the same call the game uses for e.g. event:/sfx/block_gain. Mirrored in
+// frontend/index.html (VANILLA_SOUND_EVENTS).
+const VANILLA_SOUND_EVENTS = [
+  "event:/sfx/block_break",
+  "event:/sfx/block_gain",
+  "event:/sfx/block_hit",
+  "event:/sfx/buff",
+  "event:/sfx/byrdpip/byrdpip_attack",
+  "event:/sfx/characters/attack_fire",
+  "event:/sfx/characters/defect/defect_dark_channel",
+  "event:/sfx/characters/defect/defect_frost_channel",
+  "event:/sfx/characters/defect/defect_glass_channel",
+  "event:/sfx/characters/defect/defect_hyperbeam",
+  "event:/sfx/characters/defect/defect_lightning_channel",
+  "event:/sfx/characters/defect/defect_lightning_evoke",
+  "event:/sfx/characters/defect/defect_lightning_passive",
+  "event:/sfx/characters/defect/defect_plasma_channel",
+  "event:/sfx/characters/ironclad/ironclad_bloodwall",
+  "event:/sfx/characters/ironclad/ironclad_hellraiser",
+  "event:/sfx/characters/ironclad/ironclad_whirlwind",
+  "event:/sfx/characters/necrobinder/necrobinder_doom_kill",
+  "event:/sfx/characters/necrobinder/necrobinder_summon",
+  "event:/sfx/characters/osty/osty_attack",
+  "event:/sfx/characters/osty/osty_die",
+  "event:/sfx/characters/regent/regent_forge",
+  "event:/sfx/characters/regent/regent_guiding_star",
+  "event:/sfx/characters/regent/regent_refine",
+  "event:/sfx/characters/regent/regent_sovereign_blade",
+  "event:/sfx/characters/silent/silent_dagger_spray",
+  "event:/sfx/characters/silent/silent_fan_of_knives",
+  "event:/sfx/debuff",
+  "event:/sfx/enemy/enemy_attacks/axebot/axebot_attack_spin",
+  "event:/sfx/enemy/enemy_attacks/axebot/axebot_buff",
+  "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_attack",
+  "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_burrow",
+  "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_die",
+  "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_hidden_attack",
+  "event:/sfx/enemy/enemy_attacks/burrowing_bug/burrowing_bug_hurt",
+  "event:/sfx/enemy/enemy_attacks/byrdonis/byrdonis_die",
+  "event:/sfx/enemy/enemy_attacks/byrdonis/byrdonis_hurt",
+  "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_die",
+  "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_plow",
+  "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_plow_end",
+  "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_shrill",
+  "event:/sfx/enemy/enemy_attacks/ceremonial_beast/ceremonial_beast_stun",
+  "event:/sfx/enemy/enemy_attacks/chomper/chomper_hurt",
+  "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_attack",
+  "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_attack_light",
+  "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_die",
+  "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_ravenous",
+  "event:/sfx/enemy/enemy_attacks/corpse_slugs/corpse_slugs_ravenous_up_double",
+  "event:/sfx/enemy/enemy_attacks/crossbow_ruby_raider/crossbow_ruby_raider_reload",
+  "event:/sfx/enemy/enemy_attacks/cubex_construct/cubex_construct_burrow",
+  "event:/sfx/enemy/enemy_attacks/cubex_construct/cubex_construct_charge_attack",
+  "event:/sfx/enemy/enemy_attacks/cultists/cultists_attack",
+  "event:/sfx/enemy/enemy_attacks/cultists/cultists_buff_calcified",
+  "event:/sfx/enemy/enemy_attacks/cultists/cultists_buff_damp",
+  "event:/sfx/enemy/enemy_attacks/cultists/cultists_die_calcified",
+  "event:/sfx/enemy/enemy_attacks/cultists/cultists_die_damp",
+  "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_buff",
+  "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_triple",
+  "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_attack_weaken",
+  "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_die",
+  "event:/sfx/enemy/enemy_attacks/decimillipede/decimillipede_heal",
+  "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_attack",
+  "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_die",
+  "event:/sfx/enemy/enemy_attacks/egg_layer/egg_layer_lay",
+  "event:/sfx/enemy/enemy_attacks/entomancer/entomancer_attack_ranged",
+  "event:/sfx/enemy/enemy_attacks/entomancer/entomancer_die",
+  "event:/sfx/enemy/enemy_attacks/fabricator/fabricator_hurt",
+  "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_flail",
+  "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_ram",
+  "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_war_chant",
+  "event:/sfx/enemy/enemy_attacks/fogmog/fogmog_summon",
+  "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_buff",
+  "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_double",
+  "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_attack_single",
+  "event:/sfx/enemy/enemy_attacks/fossil_stalker/fossil_stalker_hurt",
+  "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_buff",
+  "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_charge",
+  "event:/sfx/enemy/enemy_attacks/frog_knight/frog_knight_tongue_lash",
+  "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_attack",
+  "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_attack_web",
+  "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_curl",
+  "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_die",
+  "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_uncurl",
+  "event:/sfx/enemy/enemy_attacks/globe_head/globe_head_charge",
+  "event:/sfx/enemy/enemy_attacks/globe_head/globe_head_slap",
+  "event:/sfx/enemy/enemy_attacks/gremlin_merc/fat_gremlin_die",
+  "event:/sfx/enemy/enemy_attacks/gremlin_merc/fat_gremlin_escape",
+  "event:/sfx/enemy/enemy_attacks/gremlin_merc/gremlin_merc_attack_buff",
+  "event:/sfx/enemy/enemy_attacks/gremlin_merc/sneaky_gremlin_attack",
+  "event:/sfx/enemy/enemy_attacks/gremlin_merc/sneaky_gremlin_die",
+  "event:/sfx/enemy/enemy_attacks/hunter_killer/hunter_killer_die",
+  "event:/sfx/enemy/enemy_attacks/hunter_killer/hunter_killer_hurt",
+  "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack",
+  "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack_defend",
+  "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_attack_spin",
+  "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_buff",
+  "event:/sfx/enemy/enemy_attacks/infested_prisms/infested_prisms_die",
+  "event:/sfx/enemy/enemy_attacks/inklet/inklet_attack_triple",
+  "event:/sfx/enemy/enemy_attacks/inklet/inklet_hurt",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_attack_slam",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_scissor",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_scoop",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_attack_slam",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_buff",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_left_die",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_attack_slam",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_attack_snap",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_buff",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_die",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_right_regrow",
+  "event:/sfx/enemy/enemy_attacks/kaiser_crab/kaiser_crab_rocket",
+  "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_clap",
+  "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_flame",
+  "event:/sfx/enemy/enemy_attacks/knowledge_demon/knowledge_demon_slap",
+  "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_attack_stab",
+  "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_awaken",
+  "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_cast",
+  "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_slam",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_attack_blow",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_die",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_explode",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_minion_appear",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_minion_die",
+  "event:/sfx/enemy/enemy_attacks/living_fog/living_fog_summon",
+  "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_attack_bomb",
+  "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_attack_ram",
+  "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_cast_shield",
+  "event:/sfx/enemy/enemy_attacks/magi_knight/magi_knight_hurt",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_buff",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_dash",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_die",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_flamethrower",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_heavy_attack",
+  "event:/sfx/enemy/enemy_attacks/mechaknight/mechaknight_hurt",
+  "event:/sfx/enemy/enemy_attacks/mite/mite_attack",
+  "event:/sfx/enemy/enemy_attacks/mite/mite_cast",
+  "event:/sfx/enemy/enemy_attacks/mite/mite_die",
+  "event:/sfx/enemy/enemy_attacks/mite/mite_suck",
+  "event:/sfx/enemy/enemy_attacks/nibbit/nibbit_die",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_attack",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_buff",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_die",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_attack",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_die",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_hologram_heal",
+  "event:/sfx/enemy/enemy_attacks/obscura/obscura_summon",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_attack_dive",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_attack_peck",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_die",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_die_flying",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_hurt",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_hurt_flying",
+  "event:/sfx/enemy/enemy_attacks/owl_magistrate/owl_magistrate_take_off",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_attack_bite",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_attack_lick",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_buff",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_die",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_extend",
+  "event:/sfx/enemy/enemy_attacks/phantasmal_gardeners/phantasmal_gardeners_retract",
+  "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_attack_double",
+  "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_attack_single",
+  "event:/sfx/enemy/enemy_attacks/punch_construct/punch_construct_buff",
+  "event:/sfx/enemy/enemy_attacks/queen/queen_arms_attack",
+  "event:/sfx/enemy/enemy_attacks/queen/queen_cast",
+  "event:/sfx/enemy/enemy_attacks/roaches/roaches_attack",
+  "event:/sfx/enemy/enemy_attacks/roaches/roaches_attack_heavy",
+  "event:/sfx/enemy/enemy_attacks/roaches/roaches_buff",
+  "event:/sfx/enemy/enemy_attacks/roaches/roaches_die",
+  "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_bite",
+  "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_bite_double",
+  "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_buff",
+  "event:/sfx/enemy/enemy_attacks/scroll_of_biting/scroll_of_biting_die",
+  "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_buff",
+  "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_hurt",
+  "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_kick",
+  "event:/sfx/enemy/enemy_attacks/seapunk/seapunk_kick_multi",
+  "event:/sfx/enemy/enemy_attacks/sewer_clam/sewer_clam_buff",
+  "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_hurt",
+  "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_kick",
+  "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_slap",
+  "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_spin",
+  "event:/sfx/enemy/enemy_attacks/skulking_colony/skulking_colony_thrust",
+  "event:/sfx/enemy/enemy_attacks/slimed_berserker/slimed_berserker_buff",
+  "event:/sfx/enemy/enemy_attacks/slimed_berserker/slimed_berserker_slime",
+  "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_attack_headbutt",
+  "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_cast",
+  "event:/sfx/enemy/enemy_attacks/slithering_strangler/slithering_strangler_tail",
+  "event:/sfx/enemy/enemy_attacks/sludge_spinner/sludge_spinner_attack_dash",
+  "event:/sfx/enemy/enemy_attacks/sludge_spinner/sludge_spinner_attack_spin",
+  "event:/sfx/enemy/enemy_attacks/slumbering_beetle/slumbering_beetle_roll",
+  "event:/sfx/enemy/enemy_attacks/slumbering_beetle/slumbering_beetle_wake_up",
+  "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_beckon",
+  "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_hurt",
+  "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_intangible",
+  "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_reappear",
+  "event:/sfx/enemy/enemy_attacks/soul_fysh/soul_fysh_wave",
+  "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_hex",
+  "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_soul_flame",
+  "event:/sfx/enemy/enemy_attacks/spectral_knight/spectral_knight_soul_slash",
+  "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_die",
+  "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_explode",
+  "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_lick",
+  "event:/sfx/enemy/enemy_attacks/spiny_toad/spiny_toad_protrude",
+  "event:/sfx/enemy/enemy_attacks/terror_eel/terror_eel_attack_multi",
+  "event:/sfx/enemy/enemy_attacks/terror_eel/terror_eel_debuff",
+  "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_bite",
+  "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_knock_out",
+  "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_revive_three_heads",
+  "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_revive_two_heads",
+  "event:/sfx/enemy/enemy_attacks/test_subject/test_subject_slash",
+  "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_finisher",
+  "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_liquify_ground",
+  "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_lunging_bite",
+  "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_salivate",
+  "event:/sfx/enemy/enemy_attacks/the_insatiable/the_insatiable_thrash",
+  "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_boomerang_slash",
+  "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_buff",
+  "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_die",
+  "event:/sfx/enemy/enemy_attacks/the_kin_minion/the_kin_minion_quick_slash",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_cast",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_die",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_hurt",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_rally",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_soul_beam",
+  "event:/sfx/enemy/enemy_attacks/the_kin_priest/the_kin_priest_soul_grenade",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_attack",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_attack_hover",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_die",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_flee",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_flee_hover",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_hurt_hover",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_steal",
+  "event:/sfx/enemy/enemy_attacks/thieving_hopper/thieving_hopper_take_off",
+  "event:/sfx/enemy/enemy_attacks/toadpole/toadpole_attack_spin",
+  "event:/sfx/enemy/enemy_attacks/torch_head_amalgam/torch_head_amalgam_beam",
+  "event:/sfx/enemy/enemy_attacks/tough_egg/hatchling_die",
+  "event:/sfx/enemy/enemy_attacks/tough_egg/tough_egg_die",
+  "event:/sfx/enemy/enemy_attacks/tough_egg/tough_egg_hatch",
+  "event:/sfx/enemy/enemy_attacks/turret_operator/turret_operator_buff",
+  "event:/sfx/enemy/enemy_attacks/turret_operator/turret_operator_hurt",
+  "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_attack_bite",
+  "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_attack_hands",
+  "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_die",
+  "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_hurt",
+  "event:/sfx/enemy/enemy_attacks/two_tail_rats/two_tail_rats_summon",
+  "event:/sfx/enemy/enemy_attacks/vantom/vantom_buff",
+  "event:/sfx/enemy/enemy_attacks/vantom/vantom_dismember",
+  "event:/sfx/enemy/enemy_attacks/vantom/vantom_extend_1",
+  "event:/sfx/enemy/enemy_attacks/vantom/vantom_extend_2",
+  "event:/sfx/enemy/enemy_attacks/vantom/vantom_inky_lance",
+  "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_cast",
+  "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_chomp",
+  "event:/sfx/enemy/enemy_attacks/vine_shambler/vine_shambler_defensive_swipe",
+  "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_attack_kick",
+  "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_attack_stomp",
+  "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_eruption",
+  "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_knockout",
+  "event:/sfx/enemy/enemy_attacks/workbug_egg/workbug_egg_attack",
+  "event:/sfx/enemy/enemy_attacks/workbug_egg/workbug_egg_die",
+  "event:/sfx/enemy/enemy_attacks/workbug_goop/workbug_goop_die",
+  "event:/sfx/enemy/enemy_attacks/workbug_goop/workbug_goop_spit",
+  "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_attack",
+  "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_die",
+  "event:/sfx/enemy/enemy_attacks/workbug_rock/workbug_rock_stun",
+  "event:/sfx/enemy/enemy_attacks/workbug_silk/workbug_silk_die",
+  "event:/sfx/enemy/enemy_attacks/workbug_silk/workbug_silk_spit",
+  "event:/sfx/enemy/enemy_fade",
+  "event:/sfx/heal",
+  "event:/sfx/npcs/darv/darv_endeared",
+  "event:/sfx/npcs/darv/darv_excited",
+  "event:/sfx/npcs/darv/darv_fear",
+  "event:/sfx/npcs/darv/darv_introduction",
+  "event:/sfx/npcs/darv/darv_outta_the_way",
+  "event:/sfx/npcs/darv/darv_pain",
+  "event:/sfx/npcs/merchant/merchant_dissapointment",
+  "event:/sfx/npcs/merchant/merchant_passive",
+  "event:/sfx/npcs/merchant/merchant_thank_yous",
+  "event:/sfx/npcs/merchant/merchant_welcome",
+  "event:/sfx/npcs/neow/neow_curious",
+  "event:/sfx/npcs/neow/neow_sleepy",
+  "event:/sfx/npcs/neow/neow_welcome",
+  "event:/sfx/npcs/nonupeipe/nonupeipe_eeked",
+  "event:/sfx/npcs/nonupeipe/nonupeipe_giggle",
+  "event:/sfx/npcs/nonupeipe/nonupeipe_grossed_out",
+  "event:/sfx/npcs/nonupeipe/nonupeipe_welcome",
+  "event:/sfx/npcs/reverse_merchant/reverse_merchant_die",
+  "event:/sfx/npcs/reverse_merchant/reverse_merchant_hurt",
+  "event:/sfx/npcs/reverse_merchant/reverse_merchant_laugh",
+  "event:/sfx/npcs/tanx/tanx_curiosity",
+  "event:/sfx/npcs/tanx/tanx_laugh",
+  "event:/sfx/npcs/tanx/tanx_roar",
+  "event:/sfx/ui/cards/card_impact_into_multi",
+  "event:/sfx/ui/cards/card_impact_into_single",
+  "event:/sfx/ui/cards/card_movement_B_into_deck",
+  "event:/sfx/ui/cards/card_movement_B_into_discard",
+  "event:/sfx/ui/cards/card_movement_B_into_draw",
+  "event:/sfx/ui/cards/card_movement_B_play_into_discard",
+  "event:/sfx/ui/cards/card_movement_B_power",
+  "event:/sfx/ui/cards/card_transform",
+  "event:/sfx/ui/clicks/ui_back",
+  "event:/sfx/ui/clicks/ui_checkbox_off",
+  "event:/sfx/ui/clicks/ui_checkbox_on",
+  "event:/sfx/ui/clicks/ui_click",
+  "event:/sfx/ui/clicks/ui_hover",
+  "event:/sfx/ui/enchant_shimmer",
+  "event:/sfx/ui/enchant_simple",
+  "event:/sfx/ui/gain_energy",
+  "event:/sfx/ui/gold/gold_1",
+  "event:/sfx/ui/gold/gold_2",
+  "event:/sfx/ui/gold/gold_3",
+  "event:/sfx/ui/map/map_close",
+  "event:/sfx/ui/map/map_erase",
+  "event:/sfx/ui/map/map_open",
+  "event:/sfx/ui/map/map_select",
+  "event:/sfx/ui/relic_activate_draw",
+  "event:/sfx/ui/relic_activate_general",
+  "event:/sfx/ui/treasure/treasure_act1",
+  "event:/sfx/ui/treasure/treasure_act2",
+  "event:/sfx/ui/treasure/treasure_act3"
+];
 const CHANGE_INTENT_KINDS = ['Attack', 'Defend', 'Buff', 'Debuff', 'Heal', 'Summon', 'Status', 'CardDebuff', 'Sleep'];
 const CHANGE_INTENT_CLASS = {
   Attack: 'AttackIntent', Defend: 'DefendIntent', Buff: 'BuffIntent', Debuff: 'DebuffIntent', Heal: 'HealIntent',
@@ -1829,6 +2163,35 @@ function resolveAfflictionClassExpr(action, ctx) {
   return (ctx.afflictionClassById && ctx.afflictionClassById.get(action.afflictionRef)) || null;
 }
 
+
+// [Round 386] PlaySound codegen. Two evidence-backed paths:
+//  * custom: BaseLib.Audio.ModAudio.PlaySoundGlobal(new ModSound(res://path,
+//    ModAudio.SoundType.Sfx), volumeAdd, volumeMult, pitchVariation,
+//    basePitch) -- all public in the installed BaseLib v3.4.1 (IL read). It
+//    loads the stream from the res:// path (a Godot-imported wav/mp3/ogg in
+//    the pack, same pipeline as every PNG), plays it on a pooled
+//    AudioStreamPlayer parented to the scene root, and skips playback when the
+//    game's master/SFX volume is 0. Volume in the IL: dB = LinearToDb(1 * mult)
+//    + add * mult, so (add 0, mult = percent/100) is a plain linear volume.
+//    pitchVariation 0 + basePitch 1 = unchanged pitch.
+//  * vanilla: MegaCrit.Sts2.Core.Commands.SfxCmd.Play(string, float volume),
+//    the game's own one-shot call (e.g. event:/sfx/block_gain).
+function playSoundToCSharp(action) {
+  const vol = Number.isInteger(action.soundVolume) ? action.soundVolume : 100;
+  const volLit = (vol / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0') + 'f';
+  if (action.soundKind === 'vanilla') {
+    if (!VANILLA_SOUND_EVENTS.includes(action.soundVanillaRef)) {
+      return `        ForgeActions.Todo("PlaySound: unknown game sound ${csharpStringLiteral(String(action.soundVanillaRef)).slice(1, -1)}"); // [UNVERIFIED]`;
+    }
+    return `        ForgeActions.PlayGameSound(${csharpStringLiteral(action.soundVanillaRef)}, ${volLit}); // [VERIFIED via sts2.dll: SfxCmd.Play(string, float) + event name literal found in the game's own code]`;
+  }
+  const resPath = currentSfxResPaths.get(action.soundRef);
+  if (!resPath) {
+    return `        ForgeActions.Todo("PlaySound: uploaded sound ${csharpStringLiteral(String(action.soundRef)).slice(1, -1)} not found"); // [UNVERIFIED]`;
+  }
+  return `        ForgeActions.PlayCustomSound(${csharpStringLiteral(resPath)}, ${volLit}); // [VERIFIED via BaseLib.dll v3.4.1: ModAudio.PlaySoundGlobal/ModSound -- see compiler.js's playSoundToCSharp comment]`;
+}
+
 function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
   // [Round 357, task #32] Internal, compiler-synthesized action -- never
   // authored (validate.js's ACTION_TYPES doesn't list it, so a hand-edited
@@ -2057,6 +2420,10 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       ].join('\n');
     }
   }
+
+  // [Round 386] PlaySound needs no creature/player in scope at all, so it is
+  // emitted before the "no target -> Todo" fallback below and works on every trigger.
+  if (action.type === 'PlaySound') return playSoundToCSharp(action);
 
   const targetExpr = forcedTargetExpr || resolveTargetExpr(action.target);
 
@@ -11292,8 +11659,43 @@ function sfxExtensionFromDataUrl(dataUrl) {
   const m = /^data:([^;,]+)/i.exec(dataUrl || '');
   const mime = m ? m[1].toLowerCase() : '';
   if (mime === 'audio/mpeg' || mime === 'audio/mp3') return 'mp3';
+  if (mime === 'audio/ogg' || mime === 'application/ogg' || mime === 'audio/vorbis') return 'ogg'; // [Round 386]
   if (mime === 'audio/wav' || mime === 'audio/x-wav' || mime === 'audio/wave' || mime === 'audio/vnd.wave') return 'wav';
   return 'wav';
+}
+
+
+// [Round 386] Sound files for PlaySound actions: only the uploads some action
+// actually references are exported (to pack/audio/<modid>/sfx_<id>.<ext>, the
+// same folder the select/death sounds use) so unused uploads don't bloat the
+// mod. Also fills currentSfxResPaths for playSoundToCSharp.
+function collectPlaySoundRefs(node, out) {
+  if (Array.isArray(node)) { node.forEach(n => collectPlaySoundRefs(n, out)); return out; }
+  if (node && typeof node === 'object') {
+    if (node.type === 'PlaySound' && node.soundKind === 'custom' && typeof node.soundRef === 'string') out.add(node.soundRef);
+    for (const k of Object.keys(node)) { if (k !== 'assets') collectPlaySoundRefs(node[k], out); }
+  }
+  return out;
+}
+function prepareActionSfxPaths(characterPackage, modIdLower) {
+  currentSfxResPaths = new Map();
+  for (const a of (characterPackage.assets || [])) {
+    if (!a || a.kind !== 'actionSfx' || !a.dataUrl) continue;
+    const safeId = String(a.id).replace(/[^A-Za-z0-9_]/g, '_');
+    currentSfxResPaths.set(a.id, `res://${ART_AUDIO_PREFIX}${modIdLower}/sfx_${safeId}.${sfxExtensionFromDataUrl(a.dataUrl)}`);
+  }
+}
+function writeActionSfxAssets(characterPackage, modIdLower, writeBinary) {
+  const report = [];
+  const used = collectPlaySoundRefs(characterPackage, new Set());
+  for (const a of (characterPackage.assets || [])) {
+    if (!a || a.kind !== 'actionSfx' || !a.dataUrl) continue;
+    const resPath = currentSfxResPaths.get(a.id);
+    if (!used.has(a.id)) { report.push(`- Sound effect "${a.name || a.id}": not used by any Play Sound action, not exported.`); continue; }
+    writeBinary(`pack/${resPath.slice('res://'.length)}`, dataUrlToBuffer(a.dataUrl));
+    report.push(`- Sound effect "${a.name || a.id}": exported to \`${resPath.slice('res://'.length)}\` for Play Sound actions.`);
+  }
+  return report;
 }
 
 // ---- Character sound overrides -> CharacterSelectSfx / CustomDeathSfx ----
@@ -13251,7 +13653,10 @@ function generateProject(characterPackage, outDir, opts = {}) {
   // "TestCharCharacter" -> entry "TEST_CHAR_CHARACTER", not "TEST_CHAR"
   // (which is what character.id alone would have given).
   const entrySlugLower = slugifyClassName(`${modId}Character`).toLowerCase();
+  prepareActionSfxPaths(characterPackage, modId.toLowerCase()); // [Round 386]
   const { overrides: artOverrides, report: artReport } = writeCharacterArt(characterPackage, modId.toLowerCase(), entrySlugLower, writeBinary, write, colorHex, namespace, `${modId}Character`);
+
+  artReport.push(...writeActionSfxAssets(characterPackage, modId.toLowerCase(), writeBinary)); // [Round 386]
 
   // Resource bars (round 92) — see writeResourceBars's own header comment.
   const { report: resourceBarReport } = writeResourceBars(characterPackage.character, namespace, `${modId}Character`, write);
@@ -13641,7 +14046,7 @@ module.exports = {
   // generateProject() throws deep inside a compile — one source of truth
   // for "what's a valid target for this action type" instead of two
   // copies that could drift apart.
-  PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, ENEMY_ONLY_ACTIONS, CHANGE_INTENT_KINDS, validTargetsForAction, MAX_UPGRADE_TIERS,
+  PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, ENEMY_ONLY_ACTIONS, CHANGE_INTENT_KINDS, VANILLA_SOUND_EVENTS, validTargetsForAction, MAX_UPGRADE_TIERS,
   // VANILLA_TOKEN_CARDS: the best-effort built-in-status-card name list for
   // CreateCard's "vanilla" token picker (see that const's own comment for
   // the full honesty caveat). PROTECTED_CTOR_BUILTIN_POWERS: exported as a
