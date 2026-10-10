@@ -3903,7 +3903,7 @@
     </div>
   </section>
 
-  <section class="panel" id="section-enchantments">
+  <section class="panel" id="section-enchantments" data-nav-label="Enchant &amp; Afflict">
     <div class="panel-head">
       <h2><span class="num">06</span> Enchantments &amp; Afflictions</h2>
     </div>
@@ -24096,7 +24096,10 @@ function buildSideNavLinks(){
     a.href = `#${sec.id}`;
     a.dataset.sectionId = sec.id;
     a.title = title;
-    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(title)}</span>`;
+    // A section can opt into a shorter menu label with data-nav-label (the
+    // full title still shows as the hover tooltip and in the section header).
+    const navLabel = sec.dataset.navLabel || title;
+    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(navLabel)}</span>`;
     inner.appendChild(a);
     links.push(a);
   });
