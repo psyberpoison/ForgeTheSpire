@@ -308,6 +308,8 @@ const ACTION_TYPES = [
   'BringCardsToHand',
   // [Round 382] AddReplay -- see compiler.js's actionToCSharp case.
   'AddReplay',
+  // [Round 384] ChangeEnemyIntent -- see compiler.js's actionToCSharp case.
+  'ChangeEnemyIntent',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -331,7 +333,7 @@ const MODE_ACTIONS = { ModifyStatus: ['Add', 'Remove'], ModifyHp: ['Gain', 'Lose
 // concepts exist", used both to reject a bad package up-front (here) and
 // as compiler.js's own defense-in-depth check (in case generateProject()
 // is ever called directly without going through this validator first).
-const { PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
+const { CHANGE_INTENT_KINDS, PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, BUILTIN_STATUSES, PROTECTED_CTOR_BUILTIN_POWERS, VANILLA_TOKEN_CARDS, BUILTIN_AFFLICTIONS, BUILTIN_STANCES, CONDITION_SUBJECTS, PET_SUPPORTED_TRIGGERS, SUBJECT_CAPABLE_CONDITION_KINDS, PET_ANY_SENTINEL, PET_POSITION_MODES, MAX_UPGRADE_TIERS, CARD_COST_REDUCTION_SCOPES, CARD_COST_REDUCTION_DIRECTIONS, TRIGGER_HOOKS, MODIFIER_HOOKS, CARD_KEYWORD_VALUES, CARD_TRIGGER_HOOKS, PILE_TRIGGER_HOOK_IDS, PILE_TYPES, MAX_RESOURCE_BARS, RESOURCE_BAR_ANCHORS, resolveBarAnchor, EPOCH_ERAS, EPOCH_UNLOCK_REQUIREMENT_KINDS, EPOCH_UNLOCK_REQUIREMENT_KINDS_NEEDING_AMOUNT, REST_SITE_OPTION_TYPES, AMOUNT_FORMULA_SOURCES, AMOUNT_FORMULA_SUBJECT_SOURCES, AMOUNT_FORMULA_STATUS_SOURCES, AMOUNT_FORMULA_HOOK_ONLY_SOURCES, AMOUNT_FORMULA_ORB_ONLY_SOURCES, AMOUNT_FORMULA_ORB_TRIGGERS, AMOUNT_FORMULA_HOOK_ONLY_TRIGGERS, MAX_AMOUNT_FORMULA_TERMS, CARD_POOL_CLASS_MAP } = require('./compiler');
 // [2026-09-30] DiscoverCard's own discoverPool enum — "OwnCharacter" (the
 // one real Discovery card's own default pool) plus every real
 // CARD_POOL_CLASS_MAP key, same list schema/character.schema.json's own
@@ -1359,6 +1361,12 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       }
     } else {
       ['replayTargetKind', 'replayRandomCount', 'replayOnlyWithout'].forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "AddReplay" — action type is "${act.type}".`); });
+    }
+    // [Round 384] ChangeEnemyIntent: newIntentKind (required, curated set).
+    if (act.type === 'ChangeEnemyIntent') {
+      if (!CHANGE_INTENT_KINDS.includes(act.newIntentKind)) errors.push(`${p}.newIntentKind "${act.newIntentKind}" is not one of: ${CHANGE_INTENT_KINDS.join(', ')}.`);
+    } else if (act.newIntentKind !== undefined) {
+      errors.push(`${p}: newIntentKind is only meaningful on "ChangeEnemyIntent" — action type is "${act.type}".`);
     }
     // [Round 378] ChannelOrb: orbKind/orbRef/orbVanillaRef -- same
     // custom/vanilla dual-field shape as stanceKind/stanceRef/

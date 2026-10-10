@@ -4611,7 +4611,10 @@ function hiddenTargetsForTrigger(actionType, mode, trigger){
 function fixActionTargetForTrigger(act, trigger){
   if(!act || typeof act !== 'object' || trigger === undefined) return;
   const hidden = hiddenTargetsForTrigger(act.type, act.mode, trigger);
-  if(hidden.has(act.target)) act.target = 'Self';
+  // [Round 384] ChangeEnemyIntent has no 'Self' (the player has no Monster) -- land on its first still-visible enemy target instead.
+  if(ENEMY_ONLY_ACTIONS.includes(act.type)){
+    if(hidden.has(act.target) || !validTargetsForAction(act.type).includes(act.target)) act.target = validTargetsForAction(act.type).find(v=>!hidden.has(v)) || act.target;
+  } else if(hidden.has(act.target)) act.target = 'Self';
   if(act.amountScalesWithSubject === 'Target' && HOOK_TRIGGER_BINDING[trigger] === 'player') act.amountScalesWithSubject = 'Self';
   if(act.followUp && Array.isArray(act.followUp.actions)) fixActionsForTrigger(act.followUp.actions, trigger);
 }
@@ -4718,7 +4721,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4886,6 +4889,7 @@ const ACTION_TYPE_LABELS = {
   BringCardsToHand: 'Bring Cards to Hand',
   // [Round 382]
   AddReplay: 'Add Replay to Card',
+  ChangeEnemyIntent: 'Change Enemy Intent',
 };
 // [Round 376] Hover text for action types that need a clarifying note.
 // Shown as the <option>'s native title and again on the action's own
@@ -4898,6 +4902,7 @@ const ACTION_TYPE_TOOLTIPS = {
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
+  ChangeEnemyIntent: "Switches an enemy's telegraphed next move to one of a different intent type (e.g. turn an Attack into a Defend). Forge looks through that enemy's own moves for ones with the chosen intent and picks one at random if several match. Does nothing if the enemy is already showing that intent or has no move like that, and it won't interrupt an enemy that must finish its current move first.",
   AddReplay: "Gives a card Replay: it is played that many extra times each time you play it, for the rest of this combat. Add it to this card, or to random cards in one of your piles (like the game's Hidden Gem, which gives Replay to a random card in the Draw pile). Random picks skip Unplayable cards, Curses and Quests, and can be limited to cards that don't already have Replay. Stacks on top of any Replay the card already has.",
   GainTempHp: 'Gives you Temporary HP: shown as "+N" next to your health (e.g. 95/100 +5). It soaks up HP loss that gets past your Block, one for one, then is used up. Stacks across gains and lasts until the end of combat. Does not stop HP lost directly (e.g. by a Lose HP effect).',
   RemoveBlock: 'Removes Block from the target. Choose a number, or "all Block".',
@@ -4936,7 +4941,7 @@ const ACTION_TYPE_TOOLTIPS = {
 // custom widget needed for this, same "still a real <select>" convention
 // round 157 already committed to.
 const ACTION_TYPE_GROUPS = [
-  { label: 'Damage', color: '#c65a48', types: ['DealDamage', 'StunEnemy'] },
+  { label: 'Damage', color: '#c65a48', types: ['DealDamage', 'StunEnemy', 'ChangeEnemyIntent'] },
   { label: 'Defense', color: '#4b93dd', types: ['GainBlock', 'GainTempHp', 'RemoveBlock'] },
   { label: 'Status Effects', color: '#4a9c4a', types: ['ModifyStatus', 'RemoveAllStatuses'] },
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
@@ -5022,6 +5027,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
   AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
+  ChangeEnemyIntent: 'change enemy intent switch move attack defend buff debuff telegraph plan',
   BringCardsToHand: 'bring cards to hand from discard draw exhaust pile retrieve return recover fetch search tutor',
 };
 // Mirrors compiler.js:BUILTIN_STATUSES (itself derived from
@@ -5350,6 +5356,10 @@ const SELF_ONLY_ACTIONS = ["GainBlock","GainTempHp"]; // [Round 380] GainTempHp:
 // below, same "SELF_ONLY_ACTIONS is its own special case" shape as before
 // this round).
 const ALLY_CREATURE_TARGETABLE_ACTIONS = ["DealDamage","ModifyStatus","RemoveAllStatuses","ModifyHp","StunEnemy"];
+// [Round 384] Mirrors compiler.js:ENEMY_ONLY_ACTIONS / CHANGE_INTENT_KINDS exactly.
+const ENEMY_ONLY_ACTIONS = ["ChangeEnemyIntent"];
+const CHANGE_INTENT_KINDS = ["Attack","Defend","Buff","Debuff","Heal","Summon","Status","CardDebuff","Sleep"];
+const CHANGE_INTENT_LABELS = {Attack:"Attack",Defend:"Defend",Buff:"Buff",Debuff:"Debuff",Heal:"Heal",Summon:"Summon",Status:"Status (adds junk cards)",CardDebuff:"Card debuff",Sleep:"Sleep"};
 // [Round 330] Mirrors compiler.js:PLAYER_ALLY_TARGETABLE_ACTIONS exactly —
 // the 5 PLAYER_ONLY_ACTIONS types that also accept a `playerTarget` field
 // (Self/RandomAlly/AllAllies), see renderActionRowFields' own playerTarget
@@ -5405,6 +5415,7 @@ function validTargetsForAction(actionType){
   if(PLAYER_ONLY_ACTIONS.includes(actionType)) return ["Self"];
   if(actionType === "GainBlock") return ["Self","AllAllies","RandomAlly","SingleAlly"];
   if(SELF_ONLY_ACTIONS.includes(actionType)) return ["Self"];
+  if(ENEMY_ONLY_ACTIONS.includes(actionType)) return ["SingleEnemy","AllEnemies","RandomEnemy"];
   const base = ["SingleEnemy","AllEnemies","Self","RandomEnemy"];
   return ALLY_CREATURE_TARGETABLE_ACTIONS.includes(actionType) ? [...base,"AllAllies","RandomAlly","SingleAlly"] : base;
 }
@@ -12429,6 +12440,7 @@ function describeAction(act){
     // same way every other still-stubbed action type already is here,
     // no different treatment just because they're new.
     case 'StunEnemy': return `Stun ${targetPhrase}`;
+    case 'ChangeEnemyIntent': return `Change ${targetPhrase}'s intent to ${CHANGE_INTENT_LABELS[act.newIntentKind] ? act.newIntentKind : 'Attack'}`;
     case 'EndTurn': return `End your turn`;
     // [Round 160] "GainOrbSlots" never actually had a case here (a
     // pre-existing gap from round 59 — it silently fell through to the
@@ -16625,6 +16637,8 @@ function ensureActionRefDefaults(act){
   } else {
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef;
   }
+  // [Round 384] ChangeEnemyIntent: curated intent kind, default Attack.
+  if(act.type === 'ChangeEnemyIntent'){ if(!CHANGE_INTENT_KINDS.includes(act.newIntentKind)) act.newIntentKind = 'Attack'; } else { delete act.newIntentKind; }
   // [Round 382] AddReplay: ThisCard (default) or RandomFromPile + count + "only without Replay".
   if(act.type === 'AddReplay'){
     if(act.replayTargetKind !== 'RandomFromPile') act.replayTargetKind = 'ThisCard';
@@ -17420,6 +17434,9 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // evidence yet that it's even a stackable/amount-bearing effect).
     // [UNVERIFIED] Todo() stub — see compiler.js's actionToCSharp case and
     // tools/reflect-baselib's new round 15.
+    case 'ChangeEnemyIntent':
+      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ChangeEnemyIntent)}">Change</span>${targetHtml}<span class="cond-word">'s intent to</span> <select class="a-intent-kind">${CHANGE_INTENT_KINDS.map(k=>`<option value="${k}" ${act.newIntentKind===k?'selected':''}>${CHANGE_INTENT_LABELS[k]}</option>`).join('')}</select><span class="cond-word">.</span>`;
+      break;
     case 'StunEnemy':
       sentenceHtml = `<span class="cond-word">Stun</span>${targetHtml}<span class="cond-word">.</span>`;
       break;
@@ -18002,7 +18019,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.removeAll; delete act.shuffleSource;
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
     delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
-    delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout;
+    delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout; delete act.newIntentKind;
     delete act.afflictTargetKind; delete act.afflictRandomCount; delete act.afflictAllInPile; delete act.afflictAllowDuplicates;
     // [2026-09-30] DiscoverCard's own fields -- destination is already
     // cleared above (shared with CreateCard, same field name).
@@ -18169,6 +18186,9 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
   };
+  // [Round 384] ChangeEnemyIntent kind picker (no re-render needed: no siblings depend on it).
+  const intentKindSel = row.querySelector('.a-intent-kind');
+  if(intentKindSel) intentKindSel.onchange = e=>{ act.newIntentKind = e.target.value; };
   // [Round 382] AddReplay. The target-kind select swaps which siblings show, so it re-renders.
   const replayKindSel = row.querySelector('.a-replay-kind');
   if(replayKindSel) replayKindSel.onchange = e=>{ act.replayTargetKind = e.target.value; bringRerender(); };

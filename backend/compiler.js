@@ -775,6 +775,24 @@ const SELF_ONLY_ACTIONS = ['GainBlock', 'GainTempHp'];
 // Allies (filtered) is exactly as real as HittableEnemies.
 const ALLY_CREATURE_TARGETABLE_ACTIONS = ['DealDamage', 'ModifyStatus', 'RemoveAllStatuses', 'ModifyHp', 'StunEnemy'];
 
+// [Round 384] ChangeEnemyIntent only makes sense on a creature that has a
+// MonsterModel (an enemy) -- the player's own Creature has no `.Monster`, so
+// "Self" is not offered, and allies are left out (pets/summons have no
+// enemy-style move set to switch). Mirrored in frontend/index.html.
+const ENEMY_ONLY_ACTIONS = ['ChangeEnemyIntent'];
+
+// [Round 384] ChangeEnemyIntent's curated intent kinds -> the real
+// MegaCrit.Sts2.Core.MonsterMoves.Intents class each one matches with `is`
+// (all 17 concrete types read from sts2.dll). Stun is deliberately absent
+// (the existing StunEnemy action owns it); Escape/Hidden/Unknown are
+// absent too (not meaningful "plans" to switch an enemy to). "Attack" uses
+// the AttackIntent base class so Single/Multi/DeathBlow attacks all match.
+const CHANGE_INTENT_KINDS = ['Attack', 'Defend', 'Buff', 'Debuff', 'Heal', 'Summon', 'Status', 'CardDebuff', 'Sleep'];
+const CHANGE_INTENT_CLASS = {
+  Attack: 'AttackIntent', Defend: 'DefendIntent', Buff: 'BuffIntent', Debuff: 'DebuffIntent', Heal: 'HealIntent',
+  Summon: 'SummonIntent', Status: 'StatusIntent', CardDebuff: 'CardDebuffIntent', Sleep: 'SleepIntent',
+};
+
 // [Round 330] "Ally PLAYER-resource targeting" — Tyler: "Give energy/cards/
 // Block to ONE ally" (gap analysis). Of PLAYER_ONLY_ACTIONS' full list,
 // exactly these 5 resolve a single Player via resolvePlayerExpr(ctx) in
@@ -942,6 +960,7 @@ function validTargetsForAction(actionType) {
   // target can be SingleAlly (see CARD_TARGET_TYPE_MAP's evidence trail).
   if (actionType === 'GainBlock') return ['Self', 'AllAllies', 'RandomAlly', 'SingleAlly'];
   if (SELF_ONLY_ACTIONS.includes(actionType)) return ['Self'];
+  if (ENEMY_ONLY_ACTIONS.includes(actionType)) return ['SingleEnemy', 'AllEnemies', 'RandomEnemy'];
   const base = ['SingleEnemy', 'AllEnemies', 'Self', 'RandomEnemy'];
   // [Round 330] see ALLY_CREATURE_TARGETABLE_ACTIONS' own comment above.
   // [Round 331] SingleAlly joins AllAllies/RandomAlly here — Tyler's own
@@ -2743,6 +2762,47 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // check on this project's IL-reading methodology, not just new
       // evidence about Stun itself.
       return `        await MegaCrit.Sts2.Core.Commands.CreatureCmd.Stun(${targetExpr}, null); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll's "Flick", confirmed against its real uncompiled source — see compiler.js's own comment on this case]`;
+    }
+    case 'ChangeEnemyIntent': {
+      // [Round 384 -- VERIFIED via direct sts2.dll IL read] Switches an enemy's
+      // already-telegraphed next move to one whose intent is of the chosen
+      // kind. Real members used (all public): Creature.Monster (MonsterModel),
+      // MonsterModel.NextMove (MoveState), MonsterModel.MoveStateMachine.States
+      // (Dictionary<string, MonsterState>; filtered to MoveState since the
+      // machine also holds branch/conditional states), MoveState.Intents
+      // (IReadOnlyList<AbstractIntent>), MonsterModel.SetMoveImmediate(
+      // MoveState, bool forceTransition) -- whose IL returns early when the
+      // CURRENT move's CanTransitionAway is false and forceTransition is false
+      // (so passing false respects "must finish this move first" enemies
+      // instead of breaking them), otherwise sets NextMove, calls
+      // MoveStateMachine.ForceCurrentState (so the follow-up chain continues
+      // from the new move) and refreshes the intent icon. Random pick uses the
+      // same stream the game's own MonsterModel.RollMove uses
+      // (RunRng.MonsterAi, Rng.NextItem). No fallback guess: if the enemy has
+      // no move of that kind, or already shows it, nothing happens.
+      const intentClass = CHANGE_INTENT_CLASS[action.newIntentKind];
+      if (!intentClass) return `        ForgeActions.Todo("ChangeEnemyIntent: unknown intent kind ${action.newIntentKind}"); // [UNVERIFIED]`;
+      const isTest = (v) => `${v}.Intents.Any(fgIntent => fgIntent is MegaCrit.Sts2.Core.MonsterMoves.Intents.${intentClass})`;
+      return [
+        `        { // [Round 384] ChangeEnemyIntent -> ${action.newIntentKind}`,
+        `            var fgIntentMonster = ${targetExpr}.Monster;`,
+        `            if (fgIntentMonster != null && ${targetExpr}.IsAlive && fgIntentMonster.NextMove != null)`,
+        `            {`,
+        `                var fgIntentMove = fgIntentMonster.NextMove;`,
+        `                if (!(${isTest('fgIntentMove')}))`,
+        `                {`,
+        `                    var fgIntentPool = fgIntentMonster.MoveStateMachine.States.Values`,
+        `                        .OfType<MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine.MoveState>()`,
+        `                        .Where(fgIntentCand => ${isTest('fgIntentCand')})`,
+        `                        .ToList();`,
+        `                    if (fgIntentPool.Count > 0)`,
+        `                    {`,
+        `                        fgIntentMonster.SetMoveImmediate(fgIntentMonster.RunRng.MonsterAi.NextItem(fgIntentPool), false);`,
+        `                    }`,
+        `                }`,
+        `            }`,
+        `        }`,
+      ].join('\n');
     }
     case 'EndTurn':
       // [VERIFIED] upgraded 2026-08-26 — Tyler gave direct access to
@@ -13581,7 +13641,7 @@ module.exports = {
   // generateProject() throws deep inside a compile — one source of truth
   // for "what's a valid target for this action type" instead of two
   // copies that could drift apart.
-  PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, validTargetsForAction, MAX_UPGRADE_TIERS,
+  PLAYER_ONLY_ACTIONS, SELF_ONLY_ACTIONS, ENEMY_ONLY_ACTIONS, CHANGE_INTENT_KINDS, validTargetsForAction, MAX_UPGRADE_TIERS,
   // VANILLA_TOKEN_CARDS: the best-effort built-in-status-card name list for
   // CreateCard's "vanilla" token picker (see that const's own comment for
   // the full honesty caveat). PROTECTED_CTOR_BUILTIN_POWERS: exported as a
