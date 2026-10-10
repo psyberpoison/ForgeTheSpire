@@ -4538,7 +4538,7 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(trigger === 'OnOrbEvoke') { hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); }
   // [Round 387] Triggering orb passives from inside an orb's own passive can re-fire this same orb forever (validate.js rejects it too).
   if(trigger === 'OnOrbPassive') hidden.add('TriggerOrbPassive');
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); hidden.add('TriggerOrbPassive'); hidden.add('ShuffleDiscardIntoDraw'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); hidden.add('TriggerOrbPassive'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4741,7 +4741,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound","TriggerOrbPassive","ShuffleHandIntoDraw","ShuffleDiscardIntoDraw"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound","TriggerOrbPassive"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4885,8 +4885,6 @@ const ACTION_TYPE_LABELS = {
   RemoveEnchantment: `Remove This Card's Enchantment`,
   ClearAfflictionFromPile: 'Clear Affliction From Pile',
   SwapDrawDiscard: 'Swap Draw And Discard Piles',
-  ShuffleHandIntoDraw: 'Shuffle Hand Into Draw Pile',
-  ShuffleDiscardIntoDraw: 'Shuffle Discard Into Draw Pile',
   TransformDeckCards: 'Transform Deck Cards',
   SummonPet: 'Summon Pet',
   PetAttack: 'Pet Attack',
@@ -4924,8 +4922,6 @@ const ACTION_TYPE_TOOLTIPS = {
   MillCards: 'Moves cards from the top of your Draw pile straight to your Discard pile without drawing them. They are not "discarded" (no on-discard effects trigger). Does nothing if the Draw pile is empty.',
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
-  ShuffleHandIntoDraw: "Moves every card in your Hand into your Draw pile at random positions (the card being played is not in your Hand, so it is unaffected).",
-  ShuffleDiscardIntoDraw: "The game's own reshuffle: your Discard pile and Draw pile are merged and shuffled together into a new Draw pile (relics that change shuffle order still apply). Needs a trigger that provides a choice context.",
   TriggerOrbPassive: "Fires the passive effect of your channeled orbs right now, without waiting for end of turn: your first orb (like the Loop power), your last orb, all of them, or every orb of one type (like Tesla Coil and Darkness do). The amount is how many times it fires. Optionally counts relic/power bonuses that make orb passives trigger extra times.",
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
@@ -4994,7 +4990,7 @@ const ACTION_TYPE_GROUPS = [
   // Cards" keeps the old group's purple (TRIGGER_CATEGORIES.cardplay) --
   // it's still fundamentally card-play-time manipulation, same category
   // that color always meant here.
-  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'ShuffleHandIntoDraw', 'ShuffleDiscardIntoDraw', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat', 'BringCardsToHand'] },
+  { label: 'Move Cards', color: '#2f8f8a', types: ['DrawCard', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ShuffleCardIntoDraw', 'ReturnToHand', 'SwapDrawDiscard', 'DiscoverCard', 'MillCards', 'ShufflePiles', 'RemoveFromCombat', 'BringCardsToHand'] },
   { label: 'Modify Cards', color: '#8a5fd6', types: ['ModifyCost', 'AfflictCard', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ClearAfflictionFromPile', 'TransformDeckCards', 'AddReplay'] },
   // [Round 286] Its own group rather than folded into Misc -- summoning a
   // companion is a distinct enough concept (see the SummonPet picker case
@@ -5055,8 +5051,6 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
   TriggerOrbPassive: 'trigger orb passive loop tesla coil darkness emotion chip fire orbs',
-  ShuffleHandIntoDraw: 'shuffle hand into draw pile reshuffle put back',
-  ShuffleDiscardIntoDraw: 'shuffle discard into draw pile reshuffle merge',
   AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
   ChangeEnemyIntent: 'change enemy intent switch move attack defend buff debuff telegraph plan',
   PlaySound: 'play sound sfx audio noise music effect custom upload',
@@ -5371,7 +5365,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound","TriggerOrbPassive","ShuffleHandIntoDraw","ShuffleDiscardIntoDraw"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound","TriggerOrbPassive"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12661,8 +12655,6 @@ function describeAction(act){
     // above -- see compiler.js's actionToCSharp SwapDrawDiscard/
     // TransformDeckCards cases for the full evidence trail.
     case 'SwapDrawDiscard': return `Swap your Draw and Discard piles`;
-    case 'ShuffleHandIntoDraw': return `Shuffle your Hand into your Draw pile`;
-    case 'ShuffleDiscardIntoDraw': return `Shuffle your Discard pile into your Draw pile`;
     case 'RemoveBlock': return `Remove ${act.removeAll ? 'all' : n} Block from ${targetPhrase}`;
     case 'MillCards': return `Mill ${n} card${n===1?'':'s'} (top of Draw pile to Discard pile)`;
     case 'ChannelOrb': {
@@ -17866,13 +17858,6 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     // target select (see refreshTransformPanel).
     case 'SwapDrawDiscard':
       sentenceHtml = `<span class="cond-word">Swap your Draw and Discard piles.</span>`;
-      break;
-    // [Round 388] Static sentences, no fields.
-    case 'ShuffleHandIntoDraw':
-      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ShuffleHandIntoDraw)}">Shuffle your Hand into your Draw pile.</span>`;
-      break;
-    case 'ShuffleDiscardIntoDraw':
-      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ShuffleDiscardIntoDraw)}">Shuffle your Discard pile into your Draw pile.</span>`;
       break;
     // [Round 376] Remove Block: "Remove [n | all] Block from [target]." The
     // "all Block" checkbox swaps the amount input for the word "all".

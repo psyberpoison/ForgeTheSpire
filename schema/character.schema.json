@@ -1832,8 +1832,6 @@
               "RemoveEnchantment",
               "ClearAfflictionFromPile",
               "SwapDrawDiscard",
-              "ShuffleHandIntoDraw",
-              "ShuffleDiscardIntoDraw",
               "TransformDeckCards",
               "SummonPet",
               "PetAttack",

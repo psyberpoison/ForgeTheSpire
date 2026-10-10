@@ -672,8 +672,6 @@ const PLAYER_ONLY_ACTIONS = [
   // "no real Creature-target concept" bucket as ClearAfflictionFromPile
   // right above -- see actionToCSharp's own cases for the full evidence.
   'SwapDrawDiscard', 'TransformDeckCards',
-  // [Round 388] whole-pile shuffles, no Creature target.
-  'ShuffleHandIntoDraw', 'ShuffleDiscardIntoDraw',
   // [Round 286] "SummonPet" -- PlayerCmd.AddPet<T>(Player) takes a Player,
   // not a Creature; summoning a companion has no "summon it onto an enemy"
   // concept, same bucket as CreateCard/DrawCard/etc. See its own
@@ -3737,32 +3735,6 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
         foreach (CardModel fgSwapC in fgSwapDraw) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Discard, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); }
         foreach (CardModel fgSwapC in fgSwapDiscard) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgSwapC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [BEST EFFORT] see compiler.js's own comment on this case
         }`;
-    }
-    // [Round 388] "Shuffle Hand into Draw" -- moves every card in the
-    // player's Hand into the Draw pile at a random position. The game has
-    // no single command for it; this is the same real
-    // CardPileCmd.Add(CardModel, PileType, CardPilePosition, AbstractModel,
-    // bool) call SwapDrawDiscard/ReturnToHand use. Snapshots (.ToList())
-    // first because Add mutates the Hand pile mid-loop. The card currently
-    // being played sits in the Play pile, not Hand, so it is unaffected.
-    case 'ShuffleHandIntoDraw': {
-      const shidPlayerExpr = resolvePlayerExpr(ctx);
-      return `        foreach (CardModel fgShHandC in MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions.GetPile(MegaCrit.Sts2.Core.Entities.Cards.PileType.Hand, ${shidPlayerExpr}).Cards.ToList()) { await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgShHandC, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); } // [Round 388] see compiler.js's own comment on this case`;
-    }
-    // [Round 388] "Shuffle Discard into Draw" -- the game's OWN reshuffle.
-    // [VERIFIED via direct sts2.dll IL read] CardPileCmd.Shuffle(
-    // PlayerChoiceContext choiceContext, Player player) : Task. Its async
-    // body (CardPileCmd.<Shuffle>d__22) bails out if combat is over/ending,
-    // builds a list of Discard cards + Draw cards, shuffles it with the
-    // run's Rng.Shuffle (StableShuffle), runs Hook.ModifyShuffleOrder so
-    // relics can reorder it, then re-adds every card to Draw with the
-    // normal shuffle animation. So it merges Discard into Draw AND
-    // reshuffles the whole thing -- exactly what the engine does at the
-    // start of a turn with an empty Draw pile. Needs a real choiceContext,
-    // so validate.js gates it off NO_CHOICE_CONTEXT_HOOK_TRIGGERS.
-    case 'ShuffleDiscardIntoDraw': {
-      const sdidPlayerExpr = resolvePlayerExpr(ctx);
-      return `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Shuffle(choiceContext, ${sdidPlayerExpr}); // [VERIFIED via direct sts2.dll IL read] see compiler.js's own comment on this case`;
     }
     // [2026-09-23] Same "Test Relic" reference -- its deckCardsBecome
     // passive modifier transforms deck cards into a different specific
