@@ -4534,7 +4534,9 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   if(trigger === 'AfterCardMilled') hidden.add('MillCards');
   // [Round 379] Channeling/evoking an orb from inside an orb's own Evoke would loop (validate.js rejects it too).
   if(trigger === 'OnOrbEvoke') { hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); }
-  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
+  // [Round 387] Triggering orb passives from inside an orb's own passive can re-fire this same orb forever (validate.js rejects it too).
+  if(trigger === 'OnOrbPassive') hidden.add('TriggerOrbPassive');
+  if(NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(trigger)) { hidden.add('DealDamage'); hidden.add('PetAttack'); hidden.add('EnterStance'); hidden.add('ExitStance'); hidden.add('RemoveBlock'); hidden.add('MillCards'); hidden.add('ChannelOrb'); hidden.add('EvokeOrb'); hidden.add('TriggerOrbPassive'); } // [Round 293] PetAttack's own codegen also ends in .Execute(choiceContext), same real need as DealDamage — see backend/validate.js's own matching PetAttack check. [Round 347] EnterStance/ExitStance join too -- ForgeStanceCmd.Enter<T>/Exit both reference choiceContext unconditionally, same backend/validate.js check.
   return hidden;
 }
 // Default action pushed by "+ Add action"/"+ Add else action" — was always
@@ -4737,7 +4739,7 @@ const HOOK_TRIGGERS = ["OnMyTurnStart","OnEnemyTurnStart","OnMyTurnEnd","OnEnemy
 // turned out to be monster-move-selection machinery, not a stacking
 // status. Full evidence trail in compiler.js's own case-level comments
 // and tools/reflect-baselib/README.md's "Round 15" section.
-const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound"];
+const ACTION_TYPES = ["DealDamage","GainBlock","GainTempHp","ModifyStatus","RemoveAllStatuses","DrawCard","ModifyEnergy","ModifyHp","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","StunEnemy","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","PetAttack","MovePetPosition","DiscoverCard","EnterStance","ExitStance","RemoveBlock","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","ChangeEnemyIntent","PlaySound","TriggerOrbPassive"];
 // [Round 303] Mirrors backend/compiler.js's own PET_ANY_SENTINEL literal
 // (this file has no require(), same hand-mirrored-constant convention as
 // CONDITION_SUBJECTS/SUBJECT_CAPABLE_CONDITION_KINDS elsewhere) — the
@@ -4901,6 +4903,7 @@ const ACTION_TYPE_LABELS = {
   // [Round 378] see backend/compiler.js's ChannelOrb/EvokeOrb cases.
   ChannelOrb: 'Channel Orb',
   EvokeOrb: 'Evoke Orb',
+  TriggerOrbPassive: 'Trigger Orb Passive',
   // [Round 381]
   BringCardsToHand: 'Bring Cards to Hand',
   // [Round 382]
@@ -4917,6 +4920,7 @@ const ACTION_TYPE_TOOLTIPS = {
   MillCards: 'Moves cards from the top of your Draw pile straight to your Discard pile without drawing them. They are not "discarded" (no on-discard effects trigger). Does nothing if the Draw pile is empty.',
   ShufflePiles: 'Moves every card from the chosen pile(s) into your Draw pile at random positions.',
   ChannelOrb: 'Channels the chosen orb into your next free slot. If every slot is full, your first orb is evoked and removed to make room. A character with no orb slots gets one automatically.',
+  TriggerOrbPassive: "Fires the passive effect of your channeled orbs right now, without waiting for end of turn: your first orb (like the Loop power), your last orb, all of them, or every orb of one type (like Tesla Coil and Darkness do). The amount is how many times it fires. Optionally counts relic/power bonuses that make orb passives trigger extra times.",
   EvokeOrb: 'Evokes your first (or last) orb. By default the orb is removed afterwards; evoking more than once triggers the evoke effect each time and removes the orb after the last one (like Multi-Cast). Does nothing with no orbs.',
   BringCardsToHand: "Moves cards from your Draw, Discard or Exhaust pile into your hand. You can choose which cards, take random ones, or take every matching card. Optional filters (card type, keyword, tag, energy cost) all have to match. Stops when your hand is full. X-cost cards never match a cost filter. Cards moved this way are not drawn, so on-draw effects do not trigger.",
   PlaySound: "Plays a sound when this effect fires: one of your own uploaded sounds (add them in Character & Art > Advanced Options > Custom sounds) or one of the game's built-in sounds. Volume is a percentage of the sound's normal level. Uploaded sounds follow the game's sound volume settings.",
@@ -4965,7 +4969,7 @@ const ACTION_TYPE_GROUPS = [
   // [Round 204] Tyler: "Modify HP should be under resources, not Misc."
   { label: 'Resources', color: '#c9a227', types: ['ModifyEnergy', 'ModifyGold', 'ModifyOrbSlots', 'ModifyHp'] },
   // [Round 378] Orb queue actions -- Defect-style channel/evoke.
-  { label: 'Orbs', color: '#3e9fd1', types: ['ChannelOrb', 'EvokeOrb'] },
+  { label: 'Orbs', color: '#3e9fd1', types: ['ChannelOrb', 'EvokeOrb', 'TriggerOrbPassive'] },
   // [2026-09-30] "DiscoverCard" joined the old single "Card Effects" group
   // -- same "generate/manipulate a card mid-combat" bucket as
   // CreateCard/ShuffleCardIntoDraw, not a distinct-enough concept to
@@ -5044,6 +5048,7 @@ const ACTION_TYPE_SEARCH_TEXT = {
   ShufflePiles: 'shuffle hand discard draw pile',
   ChannelOrb: 'channel orb lightning frost dark plasma glass summon',
   EvokeOrb: 'evoke orb trigger activate',
+  TriggerOrbPassive: 'trigger orb passive loop tesla coil darkness emotion chip fire orbs',
   AddReplay: 'replay extra plays play again twice hidden gem transfigure repeat',
   ChangeEnemyIntent: 'change enemy intent switch move attack defend buff debuff telegraph plan',
   PlaySound: 'play sound sfx audio noise music effect custom upload',
@@ -5358,7 +5363,7 @@ const STATUS_DESCRIPTIONS = {
 // different earlier miss. Added here alongside "DiscoverCard" (brand-new
 // this round, same bucket — see compiler.js's own PLAYER_ONLY_ACTIONS
 // comment).
-const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound"];
+const PLAYER_ONLY_ACTIONS = ["DrawCard","ModifyEnergy","ModifyGold","DiscardCard","ExhaustCard","CreateCard","ShuffleCardIntoDraw","EndTurn","ModifyOrbSlots","ReturnToHand","ModifyCost","AfflictCard","RemoveAffliction","EnchantCard","RemoveEnchantment","ClearAfflictionFromPile","SwapDrawDiscard","TransformDeckCards","SummonPet","MovePetPosition","DiscoverCard","EnterStance","ExitStance","MillCards","RemoveFromCombat","ShufflePiles","ChannelOrb","EvokeOrb","BringCardsToHand","AddReplay","PlaySound","TriggerOrbPassive"];
 // A SEPARATE, smaller list from PLAYER_ONLY_ACTIONS above — Tyler: "Gain
 // block should only ever be for yourself... We can remove the target
 // dropdown box." Mirrors compiler.js:SELF_ONLY_ACTIONS — kept apart from
@@ -12656,6 +12661,11 @@ function describeAction(act){
         : ((state.orbs.find(o=>o.id===act.orbRef) || {}).name || 'an');
       return `Channel ${n} ${orbName} orb${n===1?'':'s'}`;
     }
+    case 'TriggerOrbPassive': {
+      const tpWho = act.passiveWhich === 'Last' ? 'your last orb' : act.passiveWhich === 'All' ? 'all your orbs'
+        : act.passiveWhich === 'OfType' ? ('every ' + (act.orbKind === 'vanilla' ? (act.orbVanillaRef || 'chosen') : ((state.orbs.find(o=>o.id===act.orbRef) || {}).name || 'chosen')) + ' orb') : 'your first orb';
+      return `Trigger the passive of ${tpWho} ${n} time${n===1?'':'s'}${act.passiveCountHooks ? ' (counts orb-trigger bonuses)' : ''}`;
+    }
     case 'EvokeOrb': return `Evoke your ${act.evokeWhich === 'Last' ? 'last' : 'first'} orb ${n} time${n===1?'':'s'}${act.keepOrb ? ' (keeps it)' : ''}`;
     case 'AddReplay': {
       const rPile = ({Hand:'Hand',Draw:'Draw pile',Discard:'Discard pile',Exhaust:'Exhaust pile'})[act.pile] || 'Draw pile';
@@ -15811,7 +15821,7 @@ function actionNeedsAmount(type){
   // 3-way branch, see compiler.js's actionToCSharp) and "PetAttack" (the
   // damage the pet deals) both read the shared `amount` field directly,
   // same as DealDamage/GainBlock/ModifyHp above.
-  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand', 'AddReplay'].includes(type);
+  return ['DealDamage', 'GainBlock', 'GainTempHp', 'ModifyHp', 'DrawCard', 'ModifyGold', 'DiscardCard', 'ExhaustCard', 'CreateCard', 'ModifyEnergy', 'ModifyOrbSlots', 'ModifyCost', 'AfflictCard', 'EnchantCard', 'SummonPet', 'PetAttack', 'RemoveBlock', 'MillCards', 'ChannelOrb', 'EvokeOrb', 'BringCardsToHand', 'AddReplay', 'TriggerOrbPassive'].includes(type);
 }
 // Which action types can scale an amount by the acting player's own status
 // stack count — Tyler's ORIGINAL per-stack ask ("status needs a 'do this
@@ -16759,7 +16769,14 @@ function ensureActionRefDefaults(act){
   // [Round 378] ChannelOrb's orb picker -- same self-healing shape as the
   // EnterStance picker below (custom orbs first, vanilla when none exist);
   // EvokeOrb's evokeWhich/keepOrb. Everything is dropped on any other type.
-  if(act.type === 'ChannelOrb'){
+  // [Round 387] TriggerOrbPassive: which orbs (default First) + the "counts bonuses" flag; the orb picker below is shared.
+  if(act.type === 'TriggerOrbPassive'){
+    if(!['First','Last','All','OfType'].includes(act.passiveWhich)) act.passiveWhich = 'First';
+    if(!act.passiveCountHooks) delete act.passiveCountHooks;
+  } else {
+    delete act.passiveWhich; delete act.passiveCountHooks;
+  }
+  if(act.type === 'ChannelOrb' || (act.type === 'TriggerOrbPassive' && act.passiveWhich === 'OfType')){
     if(act.orbKind !== 'vanilla') act.orbKind = 'custom';
     if(act.orbKind === 'custom' && !state.orbs.length) act.orbKind = 'vanilla';
     if(act.orbKind === 'custom'){
@@ -17762,6 +17779,14 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
     case 'ChannelOrb':
       sentenceHtml = `<span class="cond-word">Channel</span>${amountHtml}${useXAmountHtml}${orbSelectHtml(act)} <span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.ChannelOrb)}">orb(s).</span>`;
       break;
+    case 'TriggerOrbPassive': {
+      const tpWhichSel = `<select class="a-passive-which">${[['First','your first orb'],['Last','your last orb'],['All','all your orbs'],['OfType','every orb of a type']].map(([v,l])=>`<option value="${v}" ${(act.passiveWhich||'First')===v?'selected':''}>${l}</option>`).join('')}</select>`;
+      const tpTypeSel = act.passiveWhich === 'OfType' ? orbSelectHtml(act) : '';
+      const tpHooks = `<label class="a-check-label" title="Also apply relics/powers that make orb passives trigger extra times (what Emotion Chip does). Off = fires exactly once per trigger, like Loop, Darkness and Tesla Coil."><input type="checkbox" class="a-passive-hooks" ${act.passiveCountHooks?'checked':''}> Counts orb-trigger bonuses</label>`;
+      afflictOptionsBlockHtml = `<div class="action-row-usex">${tpHooks}</div>`;
+      sentenceHtml = `<span class="cond-word" title="${escapeAttr(ACTION_TYPE_TOOLTIPS.TriggerOrbPassive)}">Trigger the passive of</span> ${tpWhichSel} ${tpTypeSel}${amountHtml}${useXAmountHtml}<span class="cond-word">time(s).</span>`;
+      break;
+    }
     case 'EvokeOrb': {
       const eoSel = `<select class="a-evoke-which">${[['First','first'],['Last','last']].map(([v,l])=>`<option value="${v}" ${(act.evokeWhich||'First')===v?'selected':''}>${l}</option>`).join('')}</select>`;
       const eoKeep = `<label class="a-check-label" title="Evoke without removing the orb afterwards."><input type="checkbox" class="a-keeporb" ${act.keepOrb?'checked':''}> Keep the orb</label>`;
@@ -18180,6 +18205,7 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     delete act.stanceKind; delete act.stanceRef; delete act.stanceVanillaRef;
     delete act.removeAll; delete act.shuffleSource;
     delete act.orbKind; delete act.orbRef; delete act.orbVanillaRef; delete act.evokeWhich; delete act.keepOrb;
+    delete act.passiveWhich; delete act.passiveCountHooks;
     delete act.bringMode; delete act.bringCardType; delete act.bringKeyword; delete act.bringTag; delete act.bringCostComparator; delete act.bringCostValue;
     delete act.replayTargetKind; delete act.replayRandomCount; delete act.replayOnlyWithout; delete act.newIntentKind;
     delete act.soundKind; delete act.soundRef; delete act.soundVanillaRef; delete act.soundVolume;
@@ -18252,6 +18278,16 @@ function wireActionRowHandlers(row, act, actions, container, j, xEligible, xStar
     if(kind === 'vanilla'){ act.orbVanillaRef = value; delete act.orbRef; }
     else { act.orbRef = value; delete act.orbVanillaRef; }
   };
+  // [Round 387] TriggerOrbPassive: which-orbs select swaps the type picker in/out, so it re-renders.
+  const passiveWhichSel = row.querySelector('.a-passive-which');
+  if(passiveWhichSel) passiveWhichSel.onchange = e=>{
+    act.passiveWhich = e.target.value;
+    ensureActionRefDefaults(act);
+    renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+    wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
+  };
+  const passiveHooksCheck = row.querySelector('.a-passive-hooks');
+  if(passiveHooksCheck) passiveHooksCheck.onchange = e=>{ if(e.target.checked) act.passiveCountHooks = true; else delete act.passiveCountHooks; };
   const evokeWhichSelect = row.querySelector('.a-evoke-which');
   if(evokeWhichSelect) evokeWhichSelect.onchange = e=> act.evokeWhich = e.target.value;
   const keepOrbCheck = row.querySelector('.a-keeporb');

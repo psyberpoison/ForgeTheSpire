@@ -711,6 +711,8 @@ const PLAYER_ONLY_ACTIONS = [
   'ChannelOrb', 'EvokeOrb',
   // [Round 386] PlaySound -- plays a global sound, no Creature target (see playSoundToCSharp).
   'PlaySound',
+  // [Round 387] TriggerOrbPassive -- fires the acting Player's orb passives, no Creature target.
+  'TriggerOrbPassive',
 ];
 // "GainOrbSlots" (round 59) — [VERIFIED via decompiling TheBurdenedNewCharacter.
 // dll v3's "Orbit" card, PLUS a direct sts2.dll read confirming the exact
@@ -3816,6 +3818,47 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       return `        for (int fgChanI = 0, fgChanN = (int)(${resolveAmountExpr(action, ctx)}); fgChanI < fgChanN; fgChanI++)
         {
             await MegaCrit.Sts2.Core.Commands.OrbCmd.Channel<${choCls}>(choiceContext, ${resolvePlayerExpr(ctx)}); // [VERIFIED via direct sts2.dll IL read, round 378]
+        }`;
+    }
+    case 'TriggerOrbPassive': {
+      // [Round 387 -- VERIFIED via direct sts2.dll IL read] OrbCmd.Passive(
+      // PlayerChoiceContext, OrbModel orb, Creature target, bool
+      // countAffectedByHooks) is public static, returns Task. Real callers
+      // (xref scan): LoopPower.AfterPlayerTurnStart (first orb: Orbs[0], null,
+      // false, then Cmd.Wait(0.25f, false), repeated Amount times),
+      // TeslaCoil.OnPlay (each lightning orb), Darkness.OnPlay (each dark
+      // orb), EmotionChip.AfterPlayerTurnStart (null, true). The body bails
+      // when the combat is over/ending, PushModel(orb)s, then calls
+      // OrbModel.TriggerPassive (true: repeats Passive per
+      // Hook.ModifyOrbPassiveTriggerCount, e.g. relic bonuses) or
+      // OrbModel.Passive (false: exactly once), then PopModel. target is null
+      // like Loop/Darkness/EmotionChip (the orb picks its own target). Forge
+      // snapshots the selection each repetition (.ToList()) so a passive that
+      // changes the queue can't invalidate the loop, and mirrors Loop's
+      // Cmd.Wait(0.25f, false) between triggers.
+      const tpQueue = 'fgPassQueue.Orbs';
+      let tpSel;
+      if (action.passiveWhich === 'Last') tpSel = `${tpQueue}.TakeLast(1)`;
+      else if (action.passiveWhich === 'All') tpSel = tpQueue;
+      else if (action.passiveWhich === 'OfType') {
+        const tpCls = action.orbKind === 'vanilla' ? BUILTIN_ORB_CLASS_NAMES[action.orbVanillaRef] : currentOrbClassById.get(action.orbRef);
+        if (!tpCls) return `        ForgeActions.Todo("TriggerOrbPassive -- no orb type selected"); // pick an orb in this action's own dropdown`;
+        tpSel = `${tpQueue}.OfType<${tpCls}>()`;
+      } else tpSel = `${tpQueue}.Take(1)`;
+      const tpHooks = action.passiveCountHooks ? 'true' : 'false';
+      return `        { // [Round 387] TriggerOrbPassive (${action.passiveWhich || 'First'})
+            var fgPassQueue = ${resolvePlayerExpr(ctx)}.PlayerCombatState?.OrbQueue;
+            if (fgPassQueue != null)
+            {
+                for (int fgPassI = 0, fgPassN = (int)(${resolveAmountExpr(action, ctx)}); fgPassI < fgPassN; fgPassI++)
+                {
+                    foreach (var fgPassOrb in ${tpSel}.ToList())
+                    {
+                        await MegaCrit.Sts2.Core.Commands.OrbCmd.Passive(choiceContext, fgPassOrb, null, ${tpHooks}); // [VERIFIED via direct sts2.dll IL read, round 387]
+                        await MegaCrit.Sts2.Core.Commands.Cmd.Wait(0.25f, false); // mirrors LoopPower
+                    }
+                }
+            }
         }`;
     }
     case 'EvokeOrb': {

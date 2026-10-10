@@ -312,6 +312,8 @@ const ACTION_TYPES = [
   'ChangeEnemyIntent',
   // [Round 386] PlaySound -- see compiler.js's playSoundToCSharp.
   'PlaySound',
+  // [Round 387] TriggerOrbPassive -- see compiler.js's actionToCSharp case.
+  'TriggerOrbPassive',
 ];
 // mode's valid pair depends on action.type — ModifyStatus reads Add/Remove
 // (which of the two old apply/remove call pairs to make), ModifyHp/
@@ -958,7 +960,7 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
-    } else if ((act.type === 'ChannelOrb' || act.type === 'EvokeOrb') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+    } else if ((act.type === 'ChannelOrb' || act.type === 'EvokeOrb' || act.type === 'TriggerOrbPassive') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 378] OrbCmd.Channel / EvokeNext / EvokeLast all take a real
       // PlayerChoiceContext as their first parameter (verified via IL) --
       // this hook's real signature has none.
@@ -1392,26 +1394,35 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
     // [Round 378] ChannelOrb: orbKind/orbRef/orbVanillaRef -- same
     // custom/vanilla dual-field shape as stanceKind/stanceRef/
     // stanceVanillaRef below. EvokeOrb: evokeWhich/keepOrb.
+    // [Round 387] ChannelOrb and TriggerOrbPassive (passiveWhich "OfType") share the orb picker fields.
+    const orbPicker = act.type === 'ChannelOrb' || (act.type === 'TriggerOrbPassive' && act.passiveWhich === 'OfType');
     if (act.orbKind !== undefined) {
       if (!['custom', 'vanilla'].includes(act.orbKind)) errors.push(`${p}.orbKind "${act.orbKind}" is not one of: custom, vanilla.`);
-      if (act.type !== 'ChannelOrb') errors.push(`${p}: orbKind is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
+      if (!orbPicker) errors.push(`${p}: orbKind is only meaningful on "ChannelOrb" / "TriggerOrbPassive" (type: Of a type) — action type is "${act.type}".`);
     }
-    if (act.type === 'ChannelOrb') {
+    if (orbPicker) {
       const orbKind = act.orbKind === 'vanilla' ? 'vanilla' : 'custom';
       if (orbKind === 'vanilla') {
         if (act.orbVanillaRef !== undefined && !BUILTIN_ORBS.includes(act.orbVanillaRef)) {
           errors.push(`${p}.orbVanillaRef "${act.orbVanillaRef}" is not one of: ${BUILTIN_ORBS.join(', ')}.`);
         } else if (act.orbVanillaRef === undefined || act.orbVanillaRef === '') {
-          errors.push(`${p}: action "ChannelOrb" needs a vanilla orb selected — pick one from the dropdown.`);
+          errors.push(`${p}: action "${act.type}" needs a vanilla orb selected — pick one from the dropdown.`);
         }
       } else if (act.orbRef === '' || act.orbRef === undefined) {
-        errors.push(`${p}: action "ChannelOrb" needs an orb selected — pick one from the dropdown, or add an orb first if none exist yet (Orbs section).`);
+        errors.push(`${p}: action "${act.type}" needs an orb selected — pick one from the dropdown, or add an orb first if none exist yet (Orbs section).`);
       } else if (!currentOrbIds.has(act.orbRef)) {
         errors.push(`${p}.orbRef "${act.orbRef}" doesn't match any defined orb id.`);
       }
     } else {
-      if (act.orbRef !== undefined) errors.push(`${p}: orbRef is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
-      if (act.orbVanillaRef !== undefined) errors.push(`${p}: orbVanillaRef is only meaningful on "ChannelOrb" — action type is "${act.type}".`);
+      if (act.orbRef !== undefined) errors.push(`${p}: orbRef is only meaningful on "ChannelOrb" / "TriggerOrbPassive" (type: Of a type) — action type is "${act.type}".`);
+      if (act.orbVanillaRef !== undefined) errors.push(`${p}: orbVanillaRef is only meaningful on "ChannelOrb" / "TriggerOrbPassive" (type: Of a type) — action type is "${act.type}".`);
+    }
+    // [Round 387] TriggerOrbPassive: passiveWhich / passiveCountHooks.
+    if (act.type === 'TriggerOrbPassive') {
+      if (act.passiveWhich !== undefined && !['First', 'Last', 'All', 'OfType'].includes(act.passiveWhich)) errors.push(`${p}.passiveWhich "${act.passiveWhich}" is not one of: First, Last, All, OfType.`);
+      if (act.passiveCountHooks !== undefined && typeof act.passiveCountHooks !== 'boolean') errors.push(`${p}.passiveCountHooks must be a boolean.`);
+    } else {
+      ['passiveWhich', 'passiveCountHooks'].forEach(f => { if (act[f] !== undefined) errors.push(`${p}: ${f} is only meaningful on "TriggerOrbPassive" — action type is "${act.type}".`); });
     }
     if (act.evokeWhich !== undefined) {
       if (!['First', 'Last'].includes(act.evokeWhich)) errors.push(`${p}.evokeWhich "${act.evokeWhich}" is not one of: First, Last.`);
@@ -2015,6 +2026,9 @@ const TRIGGER_SELF_LOOP_ACTIONS = {
   // EvokeNext(dequeue: true)), and EvokeNext/EvokeLast can pick this very orb again -- so a
   // Channel/Evoke Orb action INSIDE an orb's own evoke can re-trigger that evoke forever.
   OnOrbEvoke: (a) => a && (a.type === 'ChannelOrb' || a.type === 'EvokeOrb'),
+  // [Round 387] An orb's own passive firing "the passive of orbs" can fire this same orb's
+  // passive again (First/All/OfType all can include it) -- unbounded recursion. Rejected outright.
+  OnOrbPassive: (a) => a && a.type === 'TriggerOrbPassive',
 };
 
 function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, stanceIds, entityKind, gameplayTagsInUse, cardCostsX, cardCostsStarX }) {
