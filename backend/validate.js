@@ -2290,6 +2290,13 @@ function validateModifiers(modifiers, path, errors, mechanicIds, cardIds, relicI
 // trail on what each one actually compiles to.
 function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds, afflictionIds, enchantmentIds, petIds, gameplayTagsInUse, stanceIds) {
   const opts = card.advancedOptions;
+  // {Expiry} in the description needs wearsOut (the token is supplied by
+  // the generated AddExtraArgsToDescription override, which only exists
+  // when wearsOut is set) -- otherwise the game would print a broken token.
+  if (typeof card.description === 'string' && /\{Expiry\}/.test(card.description) && !(opts && opts.wearsOut && typeof opts.wearsOut === 'object')) {
+    errors.push(`${p}.description uses {Expiry}, but this card has no Wears Out set (Advanced Options) -- the token would show as broken text in game. Turn Wears Out on or remove the token.`);
+  }
+
   if (opts === undefined) return;
   if (!opts || typeof opts !== 'object') { errors.push(`${p}.advancedOptions must be an object if present.`); return; }
 
@@ -2382,6 +2389,17 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
     });
   }
 
+  // wearsOut [Round 389] -- N uses then removed-from-deck / exhausted.
+  if (opts.wearsOut !== undefined) {
+    const wo = opts.wearsOut;
+    if (!wo || typeof wo !== 'object' || Array.isArray(wo)) {
+      errors.push(`${p}.advancedOptions.wearsOut must be an object { uses, mode } if present.`);
+    } else {
+      if (!Number.isInteger(wo.uses) || wo.uses < 1 || wo.uses > 99) errors.push(`${p}.advancedOptions.wearsOut.uses must be a whole number from 1 to 99.`);
+      if (wo.mode !== 'RemoveFromDeck' && wo.mode !== 'ExhaustThisFight') errors.push(`${p}.advancedOptions.wearsOut.mode must be "RemoveFromDeck" or "ExhaustThisFight".`);
+      Object.keys(wo).forEach(k => { if (k !== 'uses' && k !== 'mode') errors.push(`${p}.advancedOptions.wearsOut has an unknown field "${k}".`); });
+    }
+  }
   // heavyAttackAnimation [Round 121] — only meaningful on an Attack-type
   // card (see character.poseSheets: the character's AfterCardPlayed hook
   // only distinguishes attack vs heavyAttack for cards of CardType.Attack;

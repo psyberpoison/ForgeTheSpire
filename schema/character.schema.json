@@ -832,6 +832,16 @@
               "description": "\"the ability to add effects that happen while the card is in your hand.\" Each entry is cardEffectBlock-shaped (same conditions/actions/elseActions), trigger \"OnTurnEndInHand\" (the closest real analog to a continuous while-in-hand hook \u2014 a TRUE continuous hook is an explicitly open research gap, see claude/feature-backlog.md group C) or, as of round 195, \"OnAnyCardPlayed\" (\"whenever you play a card\") or one of the 15 PILE_TRIGGER_HOOK_IDS (\"while in a pile\" \u2014 see compiler.js:PILE_TRIGGER_OWNER_GUARD). Every entry gets a `pile` field (Hand/Discard/Draw/Exhaust, default Hand) gating it to a real this.Pile?.Type == X check, EXCEPT OnTurnEndInHand, where `pile` is decorative/ignored (that hook is inherently hand-only already \u2014 round 156). OnTurnEndInHand and OnAnyCardPlayed both merge into the SAME override any card.effects[] block on that trigger already uses (backend/compiler.js:whileInHandMergeLines, round 195 \u2014 that round also fixed a real bug where OnTurnEndInHand entries here used to compile to a silently empty, no-op override, never actually reading this array at all despite this field's own prior description claiming otherwise).",
               "items": { "$ref": "#/definitions/cardEffectBlock" }
             },
+            "wearsOut": {
+              "type": "object",
+              "required": ["uses", "mode"],
+              "additionalProperties": false,
+              "description": "[Round 389] Wears Out -- this card can only be played `uses` times, then `mode` happens. The game has no native version of this, so it is built from verified pieces: the use count is a BaseLib SavedSpireField<CardModel,int> (persisted in the run save), counted on the DECK copy of the card (CardModel.DeckVersion) so it survives between fights. mode 'RemoveFromDeck' = when the last use is spent the deck copy is removed for the rest of the run (CardPileCmd.RemoveFromDeck) and this fight's copy is exhausted; 'ExhaustThisFight' = the counter lives on this fight's copy only (resets every fight) and the card exhausts when spent. Putting {Expiry} in the card's description (typed or auto-generated) shows the uses LEFT (the card overrides CardModel.AddExtraArgsToDescription to supply it). A description that uses {Expiry} without wearsOut is rejected.",
+              "properties": {
+                "uses": { "type": "integer", "minimum": 1, "maximum": 99 },
+                "mode": { "type": "string", "enum": ["RemoveFromDeck", "ExhaustThisFight"] }
+              }
+            },
             "heavyAttackAnimation": {
               "type": "boolean",
               "default": false,

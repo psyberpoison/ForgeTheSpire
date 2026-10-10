@@ -2022,6 +2022,8 @@
      above/star-tint-toggle, just full-width (this is its own section, not
      inline in a sentence) rather than a row of compact controls. */
   #upgrade-transform-toggle-row{margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border);}
+  .adv-wearsout-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;}
+  .adv-wearsout-row select{max-width:340px;}
   #upgrade-transform-panel{margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border);}
   #upgrade-transform-panel select{display:block; margin-top:6px; font-size:13px; padding:6px 9px;}
 
@@ -13014,6 +13016,8 @@ function generateCardDescription(effects, keywords, advancedOptions){
     const playabilityText = describePlayabilityRestriction(ao);
     if(playabilityText) extra.push(playabilityText);
     (ao.whileInHand||[]).forEach(entry=>{ const t = describePileTriggerEntry(entry); if(t) extra.push(t); });
+    // [Round 389] {Expiry} is supplied in game by the generated AddExtraArgsToDescription override.
+    if(ao.wearsOut) extra.push('Uses left: {Expiry}.');
     const extraText = extra.map(s=>{
       s = s.trim();
       if(!s) return '';
@@ -13829,7 +13833,10 @@ function openCardEditor(cardId){
     // [Round 161] advancedOptions is always the BASE card's — no per-tier
     // variant exists (same "stays whole-card" reasoning noted just above
     // for the Description field itself).
-    const description = typedDescription || generateCardDescription(previewEffects, previewKeywords, ensureAdvancedOptionsDefaults(card));
+    const rawDescription = typedDescription || generateCardDescription(previewEffects, previewKeywords, ensureAdvancedOptionsDefaults(card));
+    // [Round 389] {Expiry} previews as the card's full use count (nothing spent yet).
+    const previewWo = ensureAdvancedOptionsDefaults(card).wearsOut;
+    const description = rawDescription.replace(/\{Expiry\}/g, previewWo ? String(previewWo.uses) : '{Expiry}');
     // BUG FIX (2026-08-27, Tyler: "modifying the cost of the card is not
     // reflected in the upgraded preview") — this used to always show the
     // BASE card's raw cost field, completely ignoring every tier's
@@ -15069,6 +15076,19 @@ function renderAdvancedOptions(card){
     </div>
     ${glowSection.html}
     ${playabilitySection.html}
+    <div class="adv-section" id="adv-wearsout-section">
+      <label>Wears out</label>
+      <div class="adv-wearsout-row">
+        <label class="a-check-label" title="This card can only be played a limited number of times, then it is used up. The use count is saved with your run (when it removes itself from the deck) and shown by the {Expiry} token."><input type="checkbox" id="adv-wearsout-on" ${ao.wearsOut ? 'checked' : ''}> Wears out after</label>
+        <input type="number" id="adv-wearsout-uses" min="1" max="99" step="1" value="${ao.wearsOut ? ao.wearsOut.uses : 3}" ${ao.wearsOut ? '' : 'disabled'} style="width:70px">
+        <span class="cond-word">plays, then</span>
+        <select id="adv-wearsout-mode" ${ao.wearsOut ? '' : 'disabled'}>
+          <option value="RemoveFromDeck" ${ao.wearsOut && ao.wearsOut.mode === 'RemoveFromDeck' ? 'selected' : ''}>it is removed from your deck for the run</option>
+          <option value="ExhaustThisFight" ${ao.wearsOut && ao.wearsOut.mode === 'ExhaustThisFight' ? 'selected' : ''}>it exhausts for the rest of the fight</option>
+        </select>
+      </div>
+      <div class="hint-small">Type <code>{Expiry}</code> anywhere in the description to show the uses left (the auto-generated description already does). "Removed from your deck" counts across fights; "exhausts" restarts the count every fight. A card created mid-fight has no deck copy, so it just exhausts.</div>
+    </div>
     <div class="adv-section">
       <label>While in a pile</label>
       <div id="adv-whileinhand-list"></div>
@@ -15084,6 +15104,24 @@ function renderAdvancedOptions(card){
 
   glowSection.wire();
   playabilitySection.wire();
+
+  // [Round 389] Wears Out controls -- ao.wearsOut is absent when off.
+  const woOn = document.getElementById('adv-wearsout-on');
+  const woUses = document.getElementById('adv-wearsout-uses');
+  const woMode = document.getElementById('adv-wearsout-mode');
+  const syncWearsOut = ()=>{
+    if(woOn.checked){
+      let n = parseInt(woUses.value, 10);
+      if(!Number.isFinite(n)) n = 3;
+      n = Math.max(1, Math.min(99, n));
+      ao.wearsOut = { uses: n, mode: woMode.value === 'ExhaustThisFight' ? 'ExhaustThisFight' : 'RemoveFromDeck' };
+    } else {
+      delete ao.wearsOut;
+    }
+    woUses.disabled = !woOn.checked; woMode.disabled = !woOn.checked;
+    updateAdvancedOptionsSummary(card);
+  };
+  woOn.onchange = syncWearsOut; woUses.oninput = syncWearsOut; woMode.onchange = syncWearsOut;
 
   const whileInHandEntity = { effects: ao.whileInHand };
   renderEffectsList(whileInHandEntity, WHILE_IN_HAND_TRIGGERS, 'adv-whileinhand-list', card, true);
@@ -15122,6 +15160,7 @@ function updateAdvancedOptionsSummary(card){
     if(ao.costReductions.length) parts.push('Cost adjustment trigger set');
     if(ao.playability.conditions.length) parts.push('Playability trigger set');
     if(ao.whileInHand.length) parts.push('Pile trigger set');
+    if(ao.wearsOut) parts.push('Wears out set');
     summaryEl.textContent = parts.length ? `Advanced Options — ${parts.join(', ')}` : 'Advanced Options';
   }
   if(activeCardEditorRefreshPreview) activeCardEditorRefreshPreview();

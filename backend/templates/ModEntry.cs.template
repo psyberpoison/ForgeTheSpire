@@ -39,7 +39,7 @@ public class ModEntry
     public static void Initialize()
     {
         var harmony = new Harmony("{{harmonyId}}");
-{{chronicleRegistrarCall}}
+{{chronicleRegistrarCall}}{{wearsOutInitCall}}
         foreach (var type in Assembly.GetExecutingAssembly().GetTypes())
         {
             if (type.GetCustomAttributes(typeof(HarmonyPatch), true).Length == 0) continue;
