@@ -13018,6 +13018,8 @@ function generateCardDescription(effects, keywords, advancedOptions){
     (ao.whileInHand||[]).forEach(entry=>{ const t = describePileTriggerEntry(entry); if(t) extra.push(t); });
     // [Round 389] {Expiry} is supplied in game by the generated AddExtraArgsToDescription override.
     if(ao.wearsOut) extra.push('Uses left: {Expiry}.');
+    // [Round 390]
+    if(ao.duplicateOnAcquire) extra.push(`When added to your deck, adds ${ao.duplicateOnAcquire} extra ${ao.duplicateOnAcquire === 1 ? 'copy' : 'copies'}.`);
     const extraText = extra.map(s=>{
       s = s.trim();
       if(!s) return '';
@@ -15076,6 +15078,15 @@ function renderAdvancedOptions(card){
     </div>
     ${glowSection.html}
     ${playabilitySection.html}
+    <div class="adv-section" id="adv-dup-section">
+      <label>Duplicate on acquisition</label>
+      <div class="adv-wearsout-row">
+        <label class="a-check-label" title="Whenever this card joins your deck (card reward, shop, event, transform...), extra copies are added to the deck as well. The starting deck is not affected."><input type="checkbox" id="adv-dup-on" ${ao.duplicateOnAcquire ? 'checked' : ''}> When added to your deck, also add</label>
+        <input type="number" id="adv-dup-n" min="1" max="9" step="1" value="${ao.duplicateOnAcquire || 1}" ${ao.duplicateOnAcquire ? '' : 'disabled'} style="width:70px">
+        <span class="cond-word" id="adv-dup-word">extra cop${ao.duplicateOnAcquire > 1 ? 'ies' : 'y'}.</span>
+      </div>
+      <div class="hint-small">The extra copies are clones of the card (same upgrade level) and do not trigger more copies. Not applied to the starting deck.</div>
+    </div>
     <div class="adv-section" id="adv-wearsout-section">
       <label>Wears out</label>
       <div class="adv-wearsout-row">
@@ -15106,6 +15117,25 @@ function renderAdvancedOptions(card){
   playabilitySection.wire();
 
   // [Round 389] Wears Out controls -- ao.wearsOut is absent when off.
+  // [Round 390] Duplicate on acquisition -- ao.duplicateOnAcquire is absent when off.
+  const dupOn = document.getElementById('adv-dup-on');
+  const dupN = document.getElementById('adv-dup-n');
+  const dupWord = document.getElementById('adv-dup-word');
+  const syncDup = ()=>{
+    if(dupOn.checked){
+      let n = parseInt(dupN.value, 10);
+      if(!Number.isFinite(n)) n = 1;
+      n = Math.max(1, Math.min(9, n));
+      ao.duplicateOnAcquire = n;
+    } else {
+      delete ao.duplicateOnAcquire;
+    }
+    dupN.disabled = !dupOn.checked;
+    dupWord.textContent = (ao.duplicateOnAcquire > 1 ? 'extra copies.' : 'extra copy.');
+    updateAdvancedOptionsSummary(card);
+  };
+  dupOn.onchange = syncDup; dupN.oninput = syncDup;
+
   const woOn = document.getElementById('adv-wearsout-on');
   const woUses = document.getElementById('adv-wearsout-uses');
   const woMode = document.getElementById('adv-wearsout-mode');
@@ -15161,6 +15191,7 @@ function updateAdvancedOptionsSummary(card){
     if(ao.playability.conditions.length) parts.push('Playability trigger set');
     if(ao.whileInHand.length) parts.push('Pile trigger set');
     if(ao.wearsOut) parts.push('Wears out set');
+    if(ao.duplicateOnAcquire) parts.push('Duplicate on acquisition set');
     summaryEl.textContent = parts.length ? `Advanced Options — ${parts.join(', ')}` : 'Advanced Options';
   }
   if(activeCardEditorRefreshPreview) activeCardEditorRefreshPreview();

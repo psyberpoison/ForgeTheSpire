@@ -2389,6 +2389,12 @@ function validateAdvancedOptions(card, p, errors, mechanicIds, cardIds, relicIds
     });
   }
 
+  // duplicateOnAcquire [Round 390] -- N extra copies when the card joins the deck.
+  if (opts.duplicateOnAcquire !== undefined) {
+    if (!Number.isInteger(opts.duplicateOnAcquire) || opts.duplicateOnAcquire < 1 || opts.duplicateOnAcquire > 9) {
+      errors.push(`${p}.advancedOptions.duplicateOnAcquire must be a whole number from 1 to 9 (omit it to turn the feature off).`);
+    }
+  }
   // wearsOut [Round 389] -- N uses then removed-from-deck / exhausted.
   if (opts.wearsOut !== undefined) {
     const wo = opts.wearsOut;

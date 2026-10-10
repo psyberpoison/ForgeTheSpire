@@ -7646,9 +7646,44 @@ function generateWearsOutDescriptionOverride(card) {
     }`;
 }
 
+// [Round 390] Duplicate on acquisition -- see the schema description of
+// card.advancedOptions.duplicateOnAcquire for the evidence trail (direct
+// sts2.dll IL reads: RunState.IterateHookListeners includes Player.Deck.Cards;
+// Hook.AfterCardChangedPiles dispatches AbstractModel.AfterCardChangedPiles(
+// CardModel card, PileType oldPileType, AbstractModel clonedBy) to them;
+// CardModel.CreateClone(); CardPileCmd.Add(card, PileType.Deck,
+// CardPilePosition.Bottom, null, false) exactly as CardPileCmd.AddCursesToDeck
+// calls it; PileType = None/Draw/Hand/Discard/Exhaust/Play/Deck).
+function generateDuplicateOnAcquireOverride(card) {
+  const n = card.advancedOptions && card.advancedOptions.duplicateOnAcquire;
+  if (!n) return '';
+  return `    // [Round 390] Duplicate on acquisition (${n} extra cop${n === 1 ? 'y' : 'ies'}) -- see compiler.js's own comment on generateDuplicateOnAcquireOverride
+    public override async Task AfterCardChangedPiles(CardModel card, PileType oldPileType, AbstractModel clonedBy)
+    {
+        await base.AfterCardChangedPiles(card, oldPileType, clonedBy);
+        if (card != this || oldPileType == PileType.Deck || ForgeDuplicateOnAcquire.Active) return;
+        if (this.Pile == null || this.Pile.Type != PileType.Deck || this.Owner == null) return;
+        ForgeDuplicateOnAcquire.Active = true;
+        try
+        {
+            for (int fgDupI = 0; fgDupI < ${n}; fgDupI++)
+            {
+                var fgDupCopy = this.CreateClone();
+                await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(fgDupCopy, PileType.Deck, CardPilePosition.Bottom, null, false);
+            }
+        }
+        finally
+        {
+            ForgeDuplicateOnAcquire.Active = false;
+        }
+    }`;
+}
+
 function generateAdvancedOptionsNotes(card) {
   const opts = card.advancedOptions || {};
   const parts = [];
+  const dupOverride = generateDuplicateOnAcquireOverride(card);
+  if (dupOverride) parts.push(dupOverride);
   const wearsOutDescOverride = generateWearsOutDescriptionOverride(card);
   if (wearsOutDescOverride) parts.push(wearsOutDescOverride);
   const glowOverride = generateGlowOverride(card);
@@ -13592,6 +13627,9 @@ function generateProject(characterPackage, outDir, opts = {}) {
         }
 `
     : '';
+  if ((characterPackage.cards || []).some(c => c && c.advancedOptions && c.advancedOptions.duplicateOnAcquire)) {
+    write('Generated/ForgeDuplicateOnAcquire.cs', fillTemplate(loadTemplate('ForgeDuplicateOnAcquire.cs.template'), { namespace }));
+  }
   if (anyWearsOut) write('Generated/ForgeWearsOut.cs', fillTemplate(loadTemplate('ForgeWearsOut.cs.template'), { namespace }));
   write('ModEntry.cs', fillTemplate(loadTemplate('ModEntry.cs.template'), { harmonyId: `${modId.toLowerCase()}.patch`, chronicleRegistrarCall, wearsOutInitCall }));
 

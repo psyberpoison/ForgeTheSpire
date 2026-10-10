@@ -832,6 +832,12 @@
               "description": "\"the ability to add effects that happen while the card is in your hand.\" Each entry is cardEffectBlock-shaped (same conditions/actions/elseActions), trigger \"OnTurnEndInHand\" (the closest real analog to a continuous while-in-hand hook \u2014 a TRUE continuous hook is an explicitly open research gap, see claude/feature-backlog.md group C) or, as of round 195, \"OnAnyCardPlayed\" (\"whenever you play a card\") or one of the 15 PILE_TRIGGER_HOOK_IDS (\"while in a pile\" \u2014 see compiler.js:PILE_TRIGGER_OWNER_GUARD). Every entry gets a `pile` field (Hand/Discard/Draw/Exhaust, default Hand) gating it to a real this.Pile?.Type == X check, EXCEPT OnTurnEndInHand, where `pile` is decorative/ignored (that hook is inherently hand-only already \u2014 round 156). OnTurnEndInHand and OnAnyCardPlayed both merge into the SAME override any card.effects[] block on that trigger already uses (backend/compiler.js:whileInHandMergeLines, round 195 \u2014 that round also fixed a real bug where OnTurnEndInHand entries here used to compile to a silently empty, no-op override, never actually reading this array at all despite this field's own prior description claiming otherwise).",
               "items": { "$ref": "#/definitions/cardEffectBlock" }
             },
+            "duplicateOnAcquire": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9,
+              "description": "[Round 390] Whenever this card joins the player's deck (reward, shop, event, transform -- anything that moves it into the Deck pile after the run has started; the starting deck is built without that event), N extra copies are added to the deck too. Omitted = off. Built on verified game behavior: cards in a player's Deck are hook listeners (RunState.IterateHookListeners adds Player.Deck.Cards), so the card's own AfterCardChangedPiles override sees itself enter the Deck pile (oldPileType != Deck), then calls CardModel.CreateClone() (asserts the card is not in a combat pile; clones through the card scope, keeping upgrade/enchantment state) and CardPileCmd.Add(copy, PileType.Deck, CardPilePosition.Bottom, null, false) -- the same Add arguments CardPileCmd.AddCursesToDeck uses. Copies do not trigger further copies (a static re-entrancy guard in Generated/ForgeDuplicateOnAcquire.cs)."
+            },
             "wearsOut": {
               "type": "object",
               "required": ["uses", "mode"],
