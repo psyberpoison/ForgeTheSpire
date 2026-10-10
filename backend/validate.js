@@ -277,6 +277,8 @@ const ACTION_TYPES = [
   // supported everywhere else. Flagged during round 287's Pets work,
   // fixed here.
   'SwapDrawDiscard', 'TransformDeckCards',
+  // [Round 388] two new pile-shuffle actions (see compiler.js's cases).
+  'ShuffleHandIntoDraw', 'ShuffleDiscardIntoDraw',
   // [Round 286] "SummonPet" -- see compiler.js's actionToCSharp
   // "SummonPet" case for the real PlayerCmd.AddPet<T> evidence trail.
   // [Round 293] "PetAttack" -- new sibling action type, see compiler.js's
@@ -960,7 +962,7 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
       // not just AllEnemies -- so it's gated the same way as DealDamage
       // rather than ModifyStatus's narrower AllEnemies-only case.
       errors.push(`${p}: action "PetAttack" can't be used on trigger "${xContext.trigger}" — this hook's real signature has no PlayerChoiceContext parameter, which the pet's attack needs to actually execute (see compiler.js:TRIGGER_HOOKS/NO_CHOICE_CONTEXT_HOOK_TRIGGERS). Pick a different action for this trigger, or move this effect to a trigger that exposes one.`);
-    } else if ((act.type === 'ChannelOrb' || act.type === 'EvokeOrb' || act.type === 'TriggerOrbPassive') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
+    } else if ((act.type === 'ChannelOrb' || act.type === 'EvokeOrb' || act.type === 'TriggerOrbPassive' || act.type === 'ShuffleDiscardIntoDraw') && xContext.trigger !== undefined && NO_CHOICE_CONTEXT_HOOK_TRIGGERS.has(xContext.trigger)) {
       // [Round 378] OrbCmd.Channel / EvokeNext / EvokeLast all take a real
       // PlayerChoiceContext as their first parameter (verified via IL) --
       // this hook's real signature has none.
