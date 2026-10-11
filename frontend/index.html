@@ -1654,6 +1654,24 @@
   .a-formula-bound select{width:auto; min-width:0; flex:0 0 auto; field-sizing:content;}
   .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
+  /* [Round 397] Warnings section + nav badge */
+  .warn-tier{margin:14px 0 6px; font-size:13px; font-weight:700; letter-spacing:.03em;}
+  .warn-tier.blocker{color:var(--danger-bright);}
+  .warn-tier.advice{color:#d9a94a;}
+  .warn-tier.clear{color:#7fbf7f;}
+  .warn-row{display:flex; align-items:flex-start; gap:10px; padding:8px 10px; margin-bottom:6px; border:1px solid var(--border); border-left-width:4px; border-radius:4px; background:var(--ink); font-size:12.5px; line-height:1.4;}
+  .warn-row.blocker{border-left-color:var(--danger-bright);}
+  .warn-row.advice{border-left-color:#d9a94a;}
+  .warn-row .warn-main{flex:1; min-width:0;}
+  .warn-row .warn-who{font-weight:700; color:var(--parchment);}
+  .warn-row .warn-chip{display:inline-block; margin-left:6px; padding:0 6px; border-radius:8px; font-size:10.5px; line-height:16px; color:var(--parchment-dim); border:1px solid var(--border-soft); vertical-align:middle;}
+  .warn-row .warn-msg{color:var(--parchment-dim); margin-top:2px; overflow-wrap:anywhere;}
+  .warn-row button{flex:none;}
+  .warn-note{margin:8px 0; color:var(--parchment-dim); font-size:12px; font-style:italic;}
+  .side-nav-badge{margin-left:auto; padding:0 6px; border-radius:9px; font-size:10.5px; line-height:16px; font-family:'JetBrains Mono',monospace; color:#fff; background:var(--danger-bright);}
+  .side-nav-badge.advice{background:#b98a2f;}
+  .side-nav-badge[hidden]{display:none;}
+  .side-nav.collapsed .side-nav-badge, .side-nav.no-room .side-nav-badge{display:none;}
   .eb-live-warning{margin:6px 0; padding:7px 10px; border:1px solid var(--danger-bright); border-left-width:4px; border-radius:4px; background:rgba(200,60,50,.12); color:var(--parchment); font-size:12px; line-height:1.4;}
   .eb-live-warning[hidden]{display:none;}
   .eb-live-warning strong{color:var(--danger-bright);}
@@ -4069,6 +4087,20 @@
         when the epoch, and the cards behind it, actually unlocks for the player.
       </div>
       <div class="grid-cards" id="chronicles-grid"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="section-warnings" data-nav-label="Warnings">
+    <div class="panel-head">
+      <h2><span class="num">11</span> Warnings</h2>
+      <span class="mono" style="font-size:12px;color:var(--parchment-dim)" id="warnings-count">checking…</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-desc">
+        Everything in one place: what will stop a compile, and what will still compile but is worth fixing
+        (missing art, blank descriptions, effects that do nothing, things nothing uses). Updates as you edit.
+      </div>
+      <div id="warnings-body"></div>
     </div>
   </section>
 
@@ -6806,23 +6838,182 @@ function paintAllLiveIssues(){
 }
 async function runLiveValidation(){
   const seq = ++liveValidateSeq;
-  let body;
+  let body = null;
   try{
     const res = await fetch('/api/validate', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(state, (k, v)=> k === 'dataUrl' ? undefined : v)
     });
-    if(!res.ok) return;
-    body = await res.json();
-  }catch(e){ return; } // backend unreachable / older backend: compile still validates
-  if(seq !== liveValidateSeq || !Array.isArray(body.effectIssues)) return; // a newer edit superseded this answer
+    if(res.ok) body = await res.json();
+  }catch(e){ body = null; } // backend unreachable / older backend: compile still validates
+  if(seq !== liveValidateSeq) return; // a newer edit superseded this answer
+  if(!body || !Array.isArray(body.effectIssues)){
+    liveValidation = { reachable:false, errors:[] };
+    renderWarningsSection(); // soft checks still work without the backend
+    return;
+  }
+  liveValidation = { reachable:true, errors: Array.isArray(body.errors) ? body.errors : [] };
   liveEffectIssues.clear();
   body.effectIssues.forEach(issue=>{
     const eff = resolveStatePath(issue.locator);
     if(eff && typeof eff === 'object') liveEffectIssues.set(eff, issue.messages);
   });
   paintAllLiveIssues();
+  renderWarningsSection();
+}
+let liveValidation = { reachable:null, errors:[] }; // [Round 397] last /api/validate answer, feeds the Warnings section
+/* ---------- [Round 397] Warnings section ----------
+   Tyler: "add another section to the bottom where we show all of the warnings
+   in one place ... compile blockers as well as missing names ... anything that
+   will still compile, but should be addressed anyways. missing images".
+   Two tiers. BLOCKERS = everything /api/validate reports (the exact validator
+   Compile runs) plus the three frontend-only compile gates (character name,
+   shop rarity rule, starting relic). SHOULD-ADDRESS = checks that still compile:
+   missing art, blank descriptions (only where nothing auto-fills them), effects
+   that do nothing, and things nothing references. */
+const WARN_KIND_LABEL = { cards:'Card', relics:'Relic', mechanics:'Mechanic', potions:'Potion', enchantments:'Enchantment', afflictions:'Affliction', pets:'Pet', orbs:'Orb', stances:'Stance' };
+const WARN_KIND_SECTION = { cards:'section-cards', relics:'section-relics', mechanics:'section-mechanics', potions:'section-potions', enchantments:'section-enchantments', afflictions:'section-enchantments', pets:'section-pets', orbs:'section-orbs', stances:'section-stances' };
+function warnScrollTo(sectionId){
+  const el = document.getElementById(sectionId);
+  if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function warnOpenEntity(kind, entity){
+  if(!entity) return;
+  if(kind === 'cards') openCardEditor(entity.id);
+  else if(kind === 'relics') openRelicEditor(entity.id);
+  else if(kind === 'mechanics') openMechEditor(entity.id);
+  else if(kind === 'potions') openPotionEditor(entity.id);
+  else if(kind === 'pets') openPetEditor(entity.id);
+  else if(kind === 'orbs') openOrbEditor(entity.id);
+  else if(kind === 'stances') openStanceEditor(entity.id);
+  else warnScrollTo(WARN_KIND_SECTION[kind] || 'section-character'); // enchantments/afflictions edit inline in their section
+}
+function warnItem(tier, category, kind, entity, message){
+  return { tier, category, kind, entity, who: entity ? `${WARN_KIND_LABEL[kind] || kind} “${entity.name || 'Untitled'}”` : 'Character', message,
+    open: entity ? ()=> warnOpenEntity(kind, entity) : ()=> warnScrollTo('section-character') };
+}
+function entityHasArt(kind, e){
+  if(kind === 'cards') return !!findCardArtDataUrl(e.artAssetRef);
+  if(kind === 'relics') return !!findAssetDataUrl(e.iconAssetRef, 'relicIcon');
+  if(kind === 'mechanics') return e.hideIcon || !!findAssetDataUrl(e.iconAssetRef, 'mechanicIcon');
+  if(kind === 'potions') return !!findAssetDataUrl(e.iconAssetRef, 'potionIcon');
+  if(kind === 'enchantments') return !!findAssetDataUrl(e.icon, 'enchantmentIcon');
+  if(kind === 'pets') return !!findAssetDataUrl(e.artAssetRef, 'petArt');
+  if(kind === 'stances'){
+    stanceArtEnsure();
+    return state.stanceArtLinks.some(l=> stanceArtLinkMatches(l, 'custom', e.id) && stanceArtHasImage(Object.assign({}, state.stanceArt.find(a=>a.id===l.artRef) || {})));
+  }
+  return true;
+}
+const WARN_ART_NOTE = {
+  cards:'No card art — the card shows the game’s placeholder portrait.',
+  relics:'No relic icon — the game shows its “no texture” placeholder.',
+  mechanics:'No status icon — the game shows its “no texture” placeholder (tick “Hide status icon” if that’s intended).',
+  potions:'No potion icon — the game shows its “no texture” placeholder.',
+  enchantments:'No enchantment icon.',
+  pets:'No pet art — the pet has nothing to draw.',
+  stances:'No stance art is linked to this stance.'
+};
+function collectUnusedWarnings(out){
+  // An entity is "unused" when its id appears nowhere else in the project
+  // (actions, conditions, formulas, starting picks, art links, ...).
+  const everything = {};
+  ['cards','relics','potions','mechanics','enchantments','afflictions','pets','orbs','stances'].forEach(k=> everything[k] = state[k] || []);
+  const rest = Object.assign({}, state, { assets: undefined });
+  ['mechanics','enchantments','afflictions','pets','orbs'].forEach(kind=>{
+    (state[kind] || []).forEach(e=>{
+      if(!e || !e.id) return;
+      const without = JSON.stringify(rest, (k, v)=> v === e ? undefined : v);
+      if(!without.includes(JSON.stringify(e.id))) out.push(warnItem('advice', 'Unused', kind, e, `Nothing in this project uses it${kind==='pets' ? ' (no Summon Pet action)' : kind==='orbs' ? ' (never channeled and not a starting orb)' : ''}.`));
+    });
+  });
+}
+function parseValidatorError(err){
+  const m = /^(cards|relics|mechanics|potions|enchantments|afflictions|pets|orbs|stances)\[(\d+)\](?:\s+"[^"]*")?\.?([\s\S]*)$/.exec(err);
+  if(!m) return null;
+  return { kind: m[1], index: parseInt(m[2], 10), rest: (m[3] || '').trim() || err };
+}
+function collectWarnings(){
+  const blockers = [], advice = [];
+  const c = state.character || {};
+  // ---- blockers: frontend-only compile gates
+  const validatorSays = re => liveValidation.reachable && liveValidation.errors.some(e=>re.test(e)); // avoid listing the same blocker twice
+  if(!c.name && !validatorSays(/^character\.name/)) blockers.push({ tier:'blocker', category:'Character', who:'Character', message:'The character has no name.', open:()=>warnScrollTo('section-character') });
+  const shop = rareShopRequirementStatus();
+  if(!shop.ok){
+    const miss = [];
+    if(shop.shopAttacks < 2) miss.push(`${2-shop.shopAttacks} more Rare attack${2-shop.shopAttacks===1?'':'s'}`);
+    if(shop.shopPowers < 1) miss.push(`${1-shop.shopPowers} more Rare power`);
+    if(shop.shopSkills < 2) miss.push(`${2-shop.shopSkills} more Rare skill${2-shop.shopSkills===1?'':'s'}`);
+    blockers.push({ tier:'blocker', category:'Cards', who:'Shop rule', message:`The shop needs at least 2 Rare attacks, 1 Rare power and 2 Rare skills or the game can break in a shop. You need ${miss.join(', ')}.`, open:()=>warnScrollTo('section-cards') });
+  }
+  if(!startingRelicRequirementStatus().ok && !validatorSays(/no starting relic/i)) blockers.push({ tier:'blocker', category:'Relics', who:'Starting relic', message:'No starting relic is set — the game crashes the instant the character is clicked on the select screen. Pick one in the Character section or mark a relic’s rarity “Starter”.', open:()=>warnScrollTo('section-character') });
+  // ---- blockers: the real validator
+  const seen = new Set();
+  let unparsed = 0;
+  liveValidation.errors.forEach(err=>{
+    const p = parseValidatorError(err);
+    if(!p){ unparsed++; const isChar = /^character\b/.test(err); blockers.push({ tier:'blocker', category: isChar ? 'Character' : 'Validation', who: isChar ? 'Character' : 'Project', message:err, open:()=>warnScrollTo('section-character') }); return; }
+    const entity = (state[p.kind] || [])[p.index];
+    const key = p.kind + p.index + '|' + p.rest;
+    if(seen.has(key)) return; seen.add(key);
+    blockers.push(warnItem('blocker', 'Validation', p.kind, entity || null, p.rest)); // entity null only if the index is stale
+    if(!entity){ const b = blockers[blockers.length-1]; b.who = `${WARN_KIND_LABEL[p.kind]} #${p.index+1}`; b.open = ()=>warnScrollTo(WARN_KIND_SECTION[p.kind]); }
+  });
+  // ---- advice: missing art
+  const hasBody = !!findAssetDataUrl(c.bodySpriteAssetRef, 'bodySprite') || !!(c.poseSheets && c.poseSheets.idle && c.poseSheets.idle.assetRef);
+  if(!hasBody) advice.push({ tier:'advice', category:'Art', who:'Character', message:'No combat sprite (Body sprite or an Idle pose sheet) — the character shows the game’s generic “?” in combat.', open:()=>warnScrollTo('section-character') });
+  if(!findAssetDataUrl(c.selectScreenArtAssetRef, 'selectScreenArt')) advice.push({ tier:'advice', category:'Art', who:'Character', message:'No select-screen art — the character-select portrait is empty.', open:()=>warnScrollTo('section-character') });
+  Object.keys(WARN_ART_NOTE).forEach(kind=>{
+    (state[kind] || []).forEach(e=>{ if(e && !entityHasArt(kind, e)) advice.push(warnItem('advice', 'Art', kind, e, WARN_ART_NOTE[kind])); });
+  });
+  // ---- advice: blank descriptions (only kinds nothing auto-fills)
+  if(!(c.shortDescription || '').trim()) advice.push({ tier:'advice', category:'Description', who:'Character', message:'No character description — the select screen shows “No description yet.”', open:()=>warnScrollTo('section-character') });
+  ['enchantments','afflictions','stances','orbs'].forEach(kind=>{
+    (state[kind] || []).forEach(e=>{ if(e && !(e.description || '').trim()) advice.push(warnItem('advice', 'Description', kind, e, 'No description.')); });
+  });
+  (c.cardKeywords || []).forEach(k=>{ if(k && !(k.description || '').trim()) advice.push({ tier:'advice', category:'Description', who:`Card keyword “${k.word || 'Untitled'}”`, message:'No description — its hover tip is empty.', open:()=>warnScrollTo('section-cards') }); });
+  // ---- advice: effects that do nothing
+  (state.cards || []).forEach(card=>{ if(card && card.type !== 'Status' && card.type !== 'Curse' && !(card.effects || []).length) advice.push(warnItem('advice', 'Effects', 'cards', card, 'No effects — playing it does nothing.')); });
+  (state.relics || []).forEach(r=>{ if(r && !(r.effects || []).length && !(r.modifiers || []).length) advice.push(warnItem('advice', 'Effects', 'relics', r, 'No effects or modifiers — it does nothing.')); });
+  (state.potions || []).forEach(p=>{ if(p && !((p.onUse && p.onUse.effects) || []).length && p.preventsDeath !== true) advice.push(warnItem('advice', 'Effects', 'potions', p, 'No effects — drinking it does nothing.')); });
+  // ---- advice: unused
+  collectUnusedWarnings(advice);
+  return { blockers, advice };
+}
+let lastWarningCounts = { blockers:0, advice:0 };
+function updateWarningsBadge(){
+  const badge = document.querySelector('#side-nav .side-nav-link[data-section-id="section-warnings"] .side-nav-badge');
+  if(!badge) return;
+  const { blockers, advice } = lastWarningCounts;
+  const n = blockers || advice;
+  badge.hidden = !n;
+  badge.textContent = String(n);
+  badge.classList.toggle('advice', !blockers && !!advice);
+  badge.title = blockers ? `${blockers} compile blocker${blockers===1?'':'s'}` : `${advice} thing${advice===1?'':'s'} to address`;
+}
+function renderWarningsSection(){
+  const body = document.getElementById('warnings-body');
+  if(!body) return;
+  const { blockers, advice } = collectWarnings();
+  lastWarningCounts = { blockers: blockers.length, advice: advice.length };
+  updateWarningsBadge();
+  const counter = document.getElementById('warnings-count');
+  if(counter) counter.textContent = `${blockers.length} blocker${blockers.length===1?'':'s'} · ${advice.length} to address`;
+  const row = it => `<div class="warn-row ${it.tier}"><div class="warn-main"><span class="warn-who">${escapeHtml(it.who)}</span><span class="warn-chip">${escapeHtml(it.category)}</span><div class="warn-msg">${escapeHtml(it.message)}</div></div><button class="ghost warn-open" type="button">Open →</button></div>`;
+  const list = items => items.map(row).join('');
+  const all = blockers.concat(advice);
+  let html = '';
+  if(liveValidation.reachable === false) html += '<div class="warn-note">Couldn’t reach the Forge backend, so the full compile check isn’t shown — only the checks that run in this page. Compile will still validate everything.</div>';
+  html += blockers.length
+    ? `<div class="warn-tier blocker">Will block compile (${blockers.length})</div>${list(blockers)}`
+    : `<div class="warn-tier clear">${liveValidation.reachable === false ? 'No blockers found in this page’s checks.' : 'Nothing will block a compile.'}</div>`;
+  html += advice.length
+    ? `<div class="warn-tier advice">Will compile, but worth addressing (${advice.length})</div>${list(advice)}`
+    : '<div class="warn-tier clear">Nothing else to address.</div>';
+  body.innerHTML = html;
+  body.querySelectorAll('.warn-open').forEach((btn, i)=>{ btn.onclick = ()=> all[i].open(); });
 }
 function scheduleLiveValidation(){
   clearTimeout(liveValidateTimer);
@@ -24517,11 +24708,13 @@ function buildSideNavLinks(){
     // A section can opt into a shorter menu label with data-nav-label (the
     // full title still shows as the hover tooltip and in the section header).
     const navLabel = sec.dataset.navLabel || title;
-    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(navLabel)}</span>`;
+    a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(navLabel)}</span>`
+    if(sec.id === 'section-warnings') a.insertAdjacentHTML('beforeend', '<span class="side-nav-badge" hidden></span>'); // [Round 397]
     inner.appendChild(a);
     links.push(a);
   });
 
+  updateWarningsBadge(); // [Round 397] fresh badge element after every nav rebuild
   if(!sections.length || !('IntersectionObserver' in window)) return;
   const orderedIds = sections.map(sec=>sec.id);
   const visible = new Set();
