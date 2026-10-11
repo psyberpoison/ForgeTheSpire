@@ -1668,10 +1668,12 @@
   .warn-row .warn-msg{color:var(--parchment-dim); margin-top:2px; overflow-wrap:anywhere;}
   .warn-row button{flex:none;}
   .warn-note{margin:8px 0; color:var(--parchment-dim); font-size:12px; font-style:italic;}
-  .side-nav-badge{margin-left:auto; padding:0 6px; border-radius:9px; font-size:10.5px; line-height:16px; font-family:'JetBrains Mono',monospace; color:#fff; background:var(--danger-bright);}
-  .side-nav-badge.advice{background:#b98a2f;}
-  .side-nav-badge[hidden]{display:none;}
-  .side-nav.collapsed .side-nav-badge, .side-nav.no-room .side-nav-badge{display:none;}
+  /* Warning counts appended to the Warnings nav label: amber = should-address, red = compile blockers. */
+  .warn-nav-pills{display:inline-flex; gap:3px; margin-left:8px; flex:none;}
+  .warn-nav-pill{min-width:20px; padding:0 6px; border-radius:2px; text-align:center; font-size:12px; line-height:20px; font-weight:600; color:#1b1b1b;}
+  .warn-nav-pill.advice{background:#ffe27a;}
+  .warn-nav-pill.blocker{background:#ff5a5a; color:#1b1b1b;}
+  .side-nav.collapsed .warn-nav-pills, .side-nav.no-room .warn-nav-pills{display:none;}
   .eb-live-warning{margin:6px 0; padding:7px 10px; border:1px solid var(--danger-bright); border-left-width:4px; border-radius:4px; background:rgba(200,60,50,.12); color:var(--parchment); font-size:12px; line-height:1.4;}
   .eb-live-warning[hidden]{display:none;}
   .eb-live-warning strong{color:var(--danger-bright);}
@@ -6984,14 +6986,11 @@ function collectWarnings(){
 }
 let lastWarningCounts = { blockers:0, advice:0 };
 function updateWarningsBadge(){
-  const badge = document.querySelector('#side-nav .side-nav-link[data-section-id="section-warnings"] .side-nav-badge');
-  if(!badge) return;
+  const pills = document.querySelector('#side-nav .side-nav-link[data-section-id="section-warnings"] .warn-nav-pills');
+  if(!pills) return;
   const { blockers, advice } = lastWarningCounts;
-  const n = blockers || advice;
-  badge.hidden = !n;
-  badge.textContent = String(n);
-  badge.classList.toggle('advice', !blockers && !!advice);
-  badge.title = blockers ? `${blockers} compile blocker${blockers===1?'':'s'}` : `${advice} thing${advice===1?'':'s'} to address`;
+  pills.innerHTML = (advice ? `<span class="warn-nav-pill advice" title="${advice} thing${advice===1?'':'s'} worth addressing">${advice}</span>` : '')
+    + (blockers ? `<span class="warn-nav-pill blocker" title="${blockers} compile blocker${blockers===1?'':'s'}">${blockers}</span>` : '');
 }
 function renderWarningsSection(){
   const body = document.getElementById('warnings-body');
@@ -24709,7 +24708,7 @@ function buildSideNavLinks(){
     // full title still shows as the hover tooltip and in the section header).
     const navLabel = sec.dataset.navLabel || title;
     a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(navLabel)}</span>`
-    if(sec.id === 'section-warnings') a.insertAdjacentHTML('beforeend', '<span class="side-nav-badge" hidden></span>'); // [Round 397]
+    if(sec.id === 'section-warnings') a.querySelector('.side-nav-label').insertAdjacentHTML('beforeend', '<span class="warn-nav-pills"></span>'); // [Round 397] counts appended to the label
     inner.appendChild(a);
     links.push(a);
   });
