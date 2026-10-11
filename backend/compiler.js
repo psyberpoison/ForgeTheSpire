@@ -5548,6 +5548,7 @@ function conditionToCSharp(cond, ctx = {}) {
 //     Creature.
 const TRIGGER_HOOKS = {
   OnDrawCard: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCardDrawn',
     params: 'PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'card?.Owner == {OWNER_PLAYER}', cardParamExpr: 'card', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // no Creature reference in the real params at all
@@ -5571,6 +5572,7 @@ const TRIGGER_HOOKS = {
   // RemoveEnchantment/ModifyCost act on the specific exhausted card, and
   // lets PlayedCardHasKeyword/Tag/Type check its keyword/tag/type.
   OnExhaust: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCardExhausted',
     params: 'PlayerChoiceContext choiceContext, CardModel card, bool causedByEthereal',
     playerExpr: 'card.Owner.Creature', targetExpr: null,
@@ -5602,6 +5604,7 @@ const TRIGGER_HOOKS = {
   // collectionExpr`) and frontend/index.html's HOOK_TRIGGER_BINDING
   // (these 4 ids are 'player' there now, not 'unbound').
   OnMyTurnEnd: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterSideTurnEnd',
     params: 'PlayerChoiceContext choiceContext, CombatSide side, IEnumerable<Creature> participants',
     playerExpr: null, targetExpr: null,
@@ -5609,6 +5612,7 @@ const TRIGGER_HOOKS = {
     guardExpr: 'side == CombatSide.Player',
   },
   OnEnemyTurnEnd: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterSideTurnEnd',
     params: 'PlayerChoiceContext choiceContext, CombatSide side, IEnumerable<Creature> participants',
     playerExpr: null, targetExpr: null,
@@ -5623,6 +5627,7 @@ const TRIGGER_HOOKS = {
   // here specifically (NO_CHOICE_CONTEXT_HOOK_TRIGGERS picks this up
   // automatically once derived off collectionExpr too).
   OnMyTurnStart: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterSideTurnStart',
     params: 'CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState',
     playerExpr: null, targetExpr: null, // also note: NO PlayerChoiceContext param at all on this one
@@ -5630,6 +5635,7 @@ const TRIGGER_HOOKS = {
     guardExpr: 'side == CombatSide.Player',
   },
   OnEnemyTurnStart: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterSideTurnStart',
     params: 'CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState',
     playerExpr: null, targetExpr: null,
@@ -5640,6 +5646,7 @@ const TRIGGER_HOOKS = {
     // [BEST EFFORT remap] no "AfterCombatStart" exists anywhere in the real
     // dump — only `BeforeCombatStart()`/`BeforeCombatStartLate()` (no
     // params). Remapped to the closest real analog.
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeCombatStart',
     params: '',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch)
@@ -5650,6 +5657,7 @@ const TRIGGER_HOOKS = {
     // (ally or enemy), not just enemies. No confirmed way to filter to
     // "enemy specifically" from these params, so left as Todo rather than
     // risk firing this effect on the player's own death too.
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDeath',
     params: 'PlayerChoiceContext choiceContext, Creature creature, bool wasRemovalPrevented, float deathAnimLength',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'creature.IsEnemy', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch)
@@ -5662,12 +5670,14 @@ const TRIGGER_HOOKS = {
   // bound either way. Old id `OnTakeDamage` retired -- fail loud, per
   // Tyler's own migration choice, rather than silently guessing a side.
   OnMyDamageTaken: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDamageReceived',
     params: 'PlayerChoiceContext choiceContext, Creature target, DamageResult result, ValueProp props, Creature dealer, CardModel cardSource',
     playerExpr: 'target', targetExpr: 'dealer',
     guardExpr: '!fgPlayer.IsEnemy',
   },
   OnEnemyDamageTaken: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDamageReceived',
     params: 'PlayerChoiceContext choiceContext, Creature target, DamageResult result, ValueProp props, Creature dealer, CardModel cardSource',
     playerExpr: 'target', targetExpr: 'dealer',
@@ -5686,6 +5696,7 @@ const TRIGGER_HOOKS = {
   // `CardPlay` shape as OnPlay itself, so player/target binding is real
   // here too — not a Todo fallback like most of this map's other entries.
   OnAnyCardPlayed: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCardPlayed',
     params: 'PlayerChoiceContext choiceContext, CardPlay cardPlay',
     playerExpr: 'cardPlay.Player.Creature', // [VERIFIED via reflect-baselib round 5] same expression OnPlay itself uses
@@ -5702,12 +5713,13 @@ const TRIGGER_HOOKS = {
   // existing entry above: only bound when a real param unambiguously identifies
   // who's who, Todo() fallback otherwise. All [VERIFIED via direct sts2.dll read].
   AfterActEntered: {
+    combat: 'out', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterActEntered',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: '',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // Turn/run lifecycle — a new Act begins. No params at all.
   },
   AfterAttack: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterAttack',
     params: 'PlayerChoiceContext choiceContext, AttackCommand command',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'command?.Attacker == {OWNER_CREATURE}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // Attack-command level (broader than Deal Damage's own followUp) — no Creature exposed on the command param itself.
@@ -5718,12 +5730,14 @@ const TRIGGER_HOOKS = {
   // real `creature` param either way; guardExpr filters which side's
   // block-clear actually runs this effect's actions.
   AfterMyBlockCleared: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockCleared',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyBlockCleared: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockCleared',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
@@ -5731,12 +5745,14 @@ const TRIGGER_HOOKS = {
   },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   AfterMyBlockGained: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockGained',
     params: 'Creature creature, decimal amount, ValueProp props, CardModel cardSource',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyBlockGained: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockGained',
     params: 'Creature creature, decimal amount, ValueProp props, CardModel cardSource',
     playerExpr: 'creature', targetExpr: null,
@@ -5749,12 +5765,14 @@ const TRIGGER_HOOKS = {
   // mechanism as AfterMyBlockCleared above. fgTarget (= breaker) is still
   // bound either way.
   AfterMyBlockBroken: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockBroken',
     params: 'PlayerChoiceContext choiceContext, Creature target, Creature breaker',
     playerExpr: 'target', targetExpr: 'breaker',
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyBlockBroken: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterBlockBroken',
     params: 'PlayerChoiceContext choiceContext, Creature target, Creature breaker',
     playerExpr: 'target', targetExpr: 'breaker',
@@ -5769,17 +5787,20 @@ const TRIGGER_HOOKS = {
   // specific generated card via resolveActedCardExpr/
   // resolveReferencedCardExpr.
   AfterCardGeneratedForCombat: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCardGeneratedForCombat',
     params: 'CardModel card, Player creator',
     playerExpr: 'creator.Creature', targetExpr: null, // creator — bound as fgPlayer via .Creature, same pattern OnAnyCardPlayed's cardPlay.Player.Creature already uses.
     cardParamExpr: 'card',
   },
   AfterCombatEnd: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCombatEnd',
     params: 'CombatRoom room',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterCombatVictory: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCombatVictory',
     params: 'CombatRoom room',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
@@ -5799,6 +5820,7 @@ const TRIGGER_HOOKS = {
   // changed (used to also fire for the player entering combat), so an old
   // package using it must be re-picked by hand, not silently remapped.
   AfterEnemyAddedToCombat: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCreatureAddedToCombat',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
@@ -5806,12 +5828,14 @@ const TRIGGER_HOOKS = {
   },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   AfterMyCurrentHpChanged: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCurrentHpChanged',
     params: 'Creature creature, decimal delta',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyCurrentHpChanged: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCurrentHpChanged',
     params: 'Creature creature, decimal delta',
     playerExpr: 'creature', targetExpr: null,
@@ -5828,12 +5852,14 @@ const TRIGGER_HOOKS = {
   // backend/validate.js's table is updated to key off both new ids
   // instead of the old single one.
   AfterMyDamageGiven: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDamageGiven',
     params: 'PlayerChoiceContext choiceContext, Creature dealer, DamageResult result, ValueProp props, Creature target, CardModel cardSource',
     playerExpr: 'dealer', targetExpr: 'target', // This hook's own name is from the GIVER's perspective — dealer bound as fgPlayer, target as fgTarget (opposite direction from OnMyDamageTaken/OnEnemyDamageTaken, which are from the RECEIVER's perspective).
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyDamageGiven: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDamageGiven',
     params: 'PlayerChoiceContext choiceContext, Creature dealer, DamageResult result, ValueProp props, Creature target, CardModel cardSource',
     playerExpr: 'dealer', targetExpr: 'target',
@@ -5845,12 +5871,14 @@ const TRIGGER_HOOKS = {
   // (= target = who is about to receive the damage). fgTarget (= dealer)
   // is still bound either way.
   BeforeMyDamageReceived: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeDamageReceived',
     params: 'PlayerChoiceContext choiceContext, Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource',
     playerExpr: 'target', targetExpr: 'dealer', // Same real params/binding direction as OnMyDamageTaken/OnEnemyDamageTaken (AfterDamageReceived), just the Before variant.
     guardExpr: '!fgPlayer.IsEnemy',
   },
   BeforeEnemyDamageReceived: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeDamageReceived',
     params: 'PlayerChoiceContext choiceContext, Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource',
     playerExpr: 'target', targetExpr: 'dealer',
@@ -5858,35 +5886,40 @@ const TRIGGER_HOOKS = {
   },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   BeforeMyDeath: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeDeath',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: '!fgPlayer.IsEnemy',
   },
   BeforeEnemyDeath: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeDeath',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: 'fgPlayer.IsEnemy',
   },
   AfterDiedToDoom: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterDiedToDoom',
     params: 'PlayerChoiceContext choiceContext, IReadOnlyList<Creature> creatures',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION of creatures (multi-kill 'Doom' mechanic), not a single Creature.
   },
   AfterEnergyReset: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterEnergyReset',
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterEnergySpent: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterEnergySpent',
     params: 'CardModel card, int amount',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'card?.Owner == {OWNER_PLAYER}', cardParamExpr: 'card', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterGoldGained: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterGoldGained',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
@@ -5906,6 +5939,7 @@ const TRIGGER_HOOKS = {
   // unplayed-hand-discard step. `player.Creature` binding is the same
   // real Player.Creature property AfterGoldGained above already uses.
   BeforeFlush: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeFlush',
     params: 'PlayerChoiceContext choiceContext, Player player',
     playerExpr: 'player.Creature', targetExpr: null,
@@ -5918,62 +5952,68 @@ const TRIGGER_HOOKS = {
     // typed correctly anyway; omitted here means this hook fires but those
     // two collections aren't reachable from Forge's own action vocabulary
     // yet -- same honest scope-limiting as every other collectionless hook.
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterFlush',
     params: 'PlayerChoiceContext choiceContext, Player player, System.Collections.Generic.IReadOnlyCollection<CardModel> flushedCards, System.Collections.Generic.IReadOnlyCollection<CardModel> retainedCards',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   BeforeHandDraw: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeHandDraw',
     params: 'Player player, PlayerChoiceContext choiceContext, ICombatState combatState',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterHandEmptied: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterHandEmptied',
     params: 'PlayerChoiceContext choiceContext, Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterItemPurchased: {
+    combat: 'out', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterItemPurchased',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player, MerchantEntry itemPurchased, int goldSpent',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterPreventingDraw: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPreventingDraw',
     params: '',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No params at all.
   },
   AfterOrbChanneled: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterOrbChanneled',
     params: 'PlayerChoiceContext choiceContext, Player player, OrbModel orb',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterOrbEvoked: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterOrbEvoked',
     params: 'PlayerChoiceContext choiceContext, OrbModel orb, IEnumerable<Creature> targets',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'orb?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION of creatures (an orb can evoke onto multiple targets), not a single Creature.
   },
   BeforePotionUsed: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforePotionUsed',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion, Creature target',
     playerExpr: 'target', targetExpr: null, // Single Creature — bound as fgPlayer.
   },
   AfterPotionUsed: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPotionUsed',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion, Creature target',
     playerExpr: 'target', targetExpr: null, // Single Creature — bound as fgPlayer.
   },
   AfterPotionDiscarded: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPotionDiscarded',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterPotionProcured: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPotionProcured',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
@@ -5987,12 +6027,14 @@ const TRIGGER_HOOKS = {
   // new ids below carry the same real danger regardless of side, table
   // updated to key off both.
   AfterMyPowerAmountChanged: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPowerAmountChanged',
     params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
     playerExpr: 'applier', targetExpr: null, // applier — bound as fgPlayer (single Creature; the power's own holder isn't exposed here, only who applied it).
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterEnemyPowerAmountChanged: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPowerAmountChanged',
     params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
     playerExpr: 'applier', targetExpr: null,
@@ -6038,12 +6080,14 @@ const TRIGGER_HOOKS = {
   // bound as fgPlayer regardless (same real single-Creature binding the
   // pair above already has) so effect actions can still reference it.
   AfterThisPowerStacksAdded: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPowerAmountChanged',
     params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
     playerExpr: 'applier', targetExpr: null,
     guardExpr: 'power == this && amount > 0',
   },
   AfterThisPowerStacksRemoved: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPowerAmountChanged',
     params: 'PlayerChoiceContext choiceContext, PowerModel power, decimal amount, Creature applier, CardModel cardSource',
     playerExpr: 'applier', targetExpr: null,
@@ -6107,66 +6151,76 @@ const TRIGGER_HOOKS = {
   // evidence of an actual unbounded cycle, same "don't guess a
   // restriction" discipline as ModifyHp's LoseHp path.
   AfterThisPowerApplied: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterApplied',
     params: 'Creature applier, CardModel cardSource',
     playerExpr: 'Owner', targetExpr: null, // Owner, not one of this method's own params -- see the comment above.
   },
   AfterThisPowerRemoved: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterRemoved',
     params: 'Creature owner',
     playerExpr: 'owner', targetExpr: null,
   },
   // [Fix, round 35] Mine/Enemy split -- see AfterMyBlockCleared above.
   AfterPreventingMyDeath: {
+    combat: 'both', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPreventingDeath',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: '!fgPlayer.IsEnemy',
   },
   AfterPreventingEnemyDeath: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPreventingDeath',
     params: 'Creature creature',
     playerExpr: 'creature', targetExpr: null,
     guardExpr: 'fgPlayer.IsEnemy',
   },
   AfterRestSiteHeal: {
+    combat: 'out', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterRestSiteHeal',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player, bool isMimicked',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterRestSiteSmith: {
+    combat: 'out', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterRestSiteSmith',
-    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterShuffle: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterShuffle',
     params: 'PlayerChoiceContext choiceContext, Player shuffler',
     playerExpr: 'shuffler.Creature', targetExpr: null,
   },
   AfterStarsSpent: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterStarsSpent',
     params: 'int amount, Player spender',
     playerExpr: 'spender.Creature', targetExpr: null,
   },
   AfterStarsGained: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterStarsGained',
     params: 'int amount, Player gainer',
     playerExpr: 'gainer.Creature', targetExpr: null,
   },
   AfterSummon: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterSummon',
     params: 'PlayerChoiceContext choiceContext, Player summoner, decimal amount',
     playerExpr: 'summoner.Creature', targetExpr: null,
   },
   BeforeSideTurnStart: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'BeforeSideTurnStart',
     params: 'PlayerChoiceContext choiceContext, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION (participants), not a single Creature — same reasoning as the already-shipped OnTurnStart (AfterSideTurnStart).
   },
   AfterPlayerTurnStart: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterPlayerTurnStart',
     params: 'PlayerChoiceContext choiceContext, Player player',
     playerExpr: 'player.Creature', targetExpr: null,
@@ -6185,6 +6239,7 @@ const TRIGGER_HOOKS = {
   // moment this hook fires. cardParamExpr: 'card' — see
   // resolveActedCardExpr's own comment.
   AfterCardDiscarded: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterCardDiscarded',
     params: 'PlayerChoiceContext choiceContext, CardModel card',
     playerExpr: 'card.Owner.Creature', targetExpr: null, // this exact hook already backs cards' own OnDiscard (CARD_TRIGGER_HOOKS) but had no relic/mechanic-level 'any card discarded' trigger until round 20 introduced it (the parallel to OnAnyCardPlayed).
@@ -6206,6 +6261,7 @@ const TRIGGER_HOOKS = {
   // cards, and never for discards. playerExpr/cardParamExpr mirror
   // AfterCardDiscarded exactly (card.Owner is unchanged by the pile move).
   AfterCardMilled: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'ForgeAfterCardMilled',
     forgeHook: true,
     params: 'PlayerChoiceContext choiceContext, CardModel card',
@@ -6224,6 +6280,7 @@ const TRIGGER_HOOKS = {
   // `base.Owner.Creature` (OrbModel.Owner is a Player). orbValueExpr feeds the
   // amount formula's "OrbValue" source.
   OnOrbPassive: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'ForgeOrbPassive',
     forgeHook: true,
     forgeNote: "called by this orb's own Passive() override, see Orb.cs.template",
@@ -6232,6 +6289,7 @@ const TRIGGER_HOOKS = {
     orbValueExpr: 'PassiveVal',
   },
   OnOrbEvoke: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'ForgeOrbEvoke',
     forgeHook: true,
     forgeNote: "called by this orb's own Evoke() override, see Orb.cs.template",
@@ -6248,6 +6306,7 @@ const TRIGGER_HOOKS = {
   // read.] Single real `Player forger` param — same player-only-bound
   // shape as AfterGoldGained/AfterEnergyReset above.
   AfterForge: {
+    combat: 'in', // [Round 395] in-combat vs out-of-combat classification (see validate.js OUT_OF_COMBAT_TRIGGERS)
     method: 'AfterForge',
     params: 'decimal amount, Player forger, AbstractModel source',
     playerExpr: 'forger.Creature', targetExpr: null,
@@ -6359,33 +6418,33 @@ const BUILTIN_REST_SITE_OPTION_CLASS_MAP = {
 //                      other [UNVERIFIED] member in this file.
 const MODIFIER_HOOKS = {
   // ---- Boolean gates (8) ----
-  ShouldPlay: { method: 'ShouldPlay', ret: 'bool', params: 'CardModel card, AutoPlayType autoPlayType', shape: 'gate', playerExpr: null, targetExpr: null },
-  ShouldDie: { method: 'ShouldDie', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
-  ShouldClearBlock: { method: 'ShouldClearBlock', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
-  ShouldDraw: { method: 'ShouldDraw', ret: 'bool', params: 'Player player, bool fromHandDraw', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldAllowHitting: { method: 'ShouldAllowHitting', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
-  ShouldPlayerResetEnergy: { method: 'ShouldPlayerResetEnergy', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldPayExcessEnergyCostWithStars: { method: 'ShouldPayExcessEnergyCostWithStars', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldCreatureBeRemovedFromCombatAfterDeath: { method: 'ShouldCreatureBeRemovedFromCombatAfterDeath', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
+  ShouldPlay: { combat: 'in', method: 'ShouldPlay', ret: 'bool', params: 'CardModel card, AutoPlayType autoPlayType', shape: 'gate', playerExpr: null, targetExpr: null },
+  ShouldDie: { combat: 'both', method: 'ShouldDie', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
+  ShouldClearBlock: { combat: 'in', method: 'ShouldClearBlock', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
+  ShouldDraw: { combat: 'in', method: 'ShouldDraw', ret: 'bool', params: 'Player player, bool fromHandDraw', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAllowHitting: { combat: 'in', method: 'ShouldAllowHitting', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
+  ShouldPlayerResetEnergy: { combat: 'in', method: 'ShouldPlayerResetEnergy', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldPayExcessEnergyCostWithStars: { combat: 'in', method: 'ShouldPayExcessEnergyCostWithStars', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldCreatureBeRemovedFromCombatAfterDeath: { combat: 'in', method: 'ShouldCreatureBeRemovedFromCombatAfterDeath', ret: 'bool', params: 'Creature creature', shape: 'gate', playerExpr: 'creature', targetExpr: null },
 
   // ---- Numeric modifiers (17) ----
-  ModifyBlockAdditive: { method: 'ModifyBlockAdditive', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Add', playerExpr: 'target', targetExpr: null },
-  ModifyBlockMultiplicative: { method: 'ModifyBlockMultiplicative', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: null },
-  ModifyDamageAdditive: { method: 'ModifyDamageAdditive', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'target', targetExpr: 'dealer' },
-  ModifyDamageMultiplicative: { method: 'ModifyDamageMultiplicative', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: 'dealer' },
-  ModifyDamageCap: { method: 'ModifyDamageCap', ret: 'decimal', params: 'Creature target, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: null, lockedOp: null, playerExpr: 'target', targetExpr: 'dealer' },
-  ModifyAttackHitCount: { method: 'ModifyAttackHitCount', ret: 'int', params: 'AttackCommand attack, int hitCount', shape: 'numeric', valueParam: 'hitCount', lockedOp: null, playerExpr: null, targetExpr: null },
-  ModifyCardPlayCount: { method: 'ModifyCardPlayCount', ret: 'int', params: 'CardModel card, Creature target, int playCount', shape: 'numeric', valueParam: 'playCount', lockedOp: null, playerExpr: 'target', targetExpr: null },
-  ModifyGoldGained: { method: 'ModifyGoldGained', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
-  ModifyHandDraw: { method: 'ModifyHandDraw', ret: 'decimal', params: 'Player player, decimal count', shape: 'numeric', valueParam: 'count', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
-  ModifyHpLostBeforeOsty: { method: 'ModifyHpLostBeforeOsty', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'target', targetExpr: 'dealer' },
-  ModifyMaxEnergy: { method: 'ModifyMaxEnergy', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
-  ModifyOrbPassiveTriggerCounts: { method: 'ModifyOrbPassiveTriggerCounts', ret: 'int', params: 'OrbModel orb, int triggerCount', shape: 'numeric', valueParam: 'triggerCount', lockedOp: null, playerExpr: null, targetExpr: null },
-  ModifyOrbValue: { method: 'ModifyOrbValue', ret: 'decimal', params: 'OrbModel orb, decimal value', shape: 'numeric', valueParam: 'value', lockedOp: null, playerExpr: null, targetExpr: null },
-  ModifyPowerAmountGivenAdditive: { method: 'ModifyPowerAmountGivenAdditive', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'giver', targetExpr: 'target' },
-  ModifyRestSiteHealAmount: { method: 'ModifyRestSiteHealAmount', ret: 'decimal', params: 'Creature creature, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'creature', targetExpr: null },
-  ModifySummonAmount: { method: 'ModifySummonAmount', ret: 'decimal', params: 'Player summoner, decimal amount, AbstractModel source', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'summoner.Creature', targetExpr: null },
-  ModifyXValue: { method: 'ModifyXValue', ret: 'int', params: 'CardModel card, int originalValue', shape: 'numeric', valueParam: 'originalValue', lockedOp: null, playerExpr: null, targetExpr: null },
+  ModifyBlockAdditive: { combat: 'in', method: 'ModifyBlockAdditive', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Add', playerExpr: 'target', targetExpr: null },
+  ModifyBlockMultiplicative: { combat: 'in', method: 'ModifyBlockMultiplicative', ret: 'decimal', params: 'Creature target, decimal block, ValueProp props, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: 'block', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: null },
+  ModifyDamageAdditive: { combat: 'in', method: 'ModifyDamageAdditive', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyDamageMultiplicative: { combat: 'in', method: 'ModifyDamageMultiplicative', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'damageNumeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyDamageCap: { combat: 'in', method: 'ModifyDamageCap', ret: 'decimal', params: 'Creature target, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay', shape: 'numeric', valueParam: null, lockedOp: null, playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyAttackHitCount: { combat: 'in', method: 'ModifyAttackHitCount', ret: 'int', params: 'AttackCommand attack, int hitCount', shape: 'numeric', valueParam: 'hitCount', lockedOp: null, playerExpr: null, targetExpr: null },
+  ModifyCardPlayCount: { combat: 'in', method: 'ModifyCardPlayCount', ret: 'int', params: 'CardModel card, Creature target, int playCount', shape: 'numeric', valueParam: 'playCount', lockedOp: null, playerExpr: 'target', targetExpr: null },
+  ModifyGoldGained: { combat: 'both', method: 'ModifyGoldGained', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyHandDraw: { combat: 'in', method: 'ModifyHandDraw', ret: 'decimal', params: 'Player player, decimal count', shape: 'numeric', valueParam: 'count', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyHpLostBeforeOsty: { combat: 'in', method: 'ModifyHpLostBeforeOsty', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'target', targetExpr: 'dealer' },
+  ModifyMaxEnergy: { combat: 'in', method: 'ModifyMaxEnergy', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyOrbPassiveTriggerCounts: { combat: 'in', method: 'ModifyOrbPassiveTriggerCounts', ret: 'int', params: 'OrbModel orb, int triggerCount', shape: 'numeric', valueParam: 'triggerCount', lockedOp: null, playerExpr: null, targetExpr: null },
+  ModifyOrbValue: { combat: 'in', method: 'ModifyOrbValue', ret: 'decimal', params: 'OrbModel orb, decimal value', shape: 'numeric', valueParam: 'value', lockedOp: null, playerExpr: null, targetExpr: null },
+  ModifyPowerAmountGivenAdditive: { combat: 'in', method: 'ModifyPowerAmountGivenAdditive', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Add', playerExpr: 'giver', targetExpr: 'target' },
+  ModifyRestSiteHealAmount: { combat: 'out', method: 'ModifyRestSiteHealAmount', ret: 'decimal', params: 'Creature creature, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'creature', targetExpr: null },
+  ModifySummonAmount: { combat: 'in', method: 'ModifySummonAmount', ret: 'decimal', params: 'Player summoner, decimal amount, AbstractModel source', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'summoner.Creature', targetExpr: null },
+  ModifyXValue: { combat: 'in', method: 'ModifyXValue', ret: 'int', params: 'CardModel card, int originalValue', shape: 'numeric', valueParam: 'originalValue', lockedOp: null, playerExpr: null, targetExpr: null },
 
   // ---- Paired display-fix hook (1) — added round 116, straight from a
   // real bug found (and fixed) in TheBurdenedNewCharacter's own Toughen
@@ -6410,26 +6469,26 @@ const MODIFIER_HOOKS = {
   // kind/subject filtering; `companionMethod`/`companionParams` describe
   // the paired ModifyDamageAdditive override generateModifierOverrides
   // also emits. See claude/round116-reduce-hp-loss-display-fix.md.
-  ReduceHpLossBeforeBlock: { method: 'ModifyHpLostBeforeOsty', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource', shape: 'hpLossDisplayFixed', valueParam: 'amount', lockedOp: 'Subtract', playerExpr: 'target', targetExpr: 'dealer', companionMethod: 'ModifyDamageAdditive', companionParams: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay' },
+  ReduceHpLossBeforeBlock: { combat: 'in', method: 'ModifyHpLostBeforeOsty', ret: 'decimal', params: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource', shape: 'hpLossDisplayFixed', valueParam: 'amount', lockedOp: 'Subtract', playerExpr: 'target', targetExpr: 'dealer', companionMethod: 'ModifyDamageAdditive', companionParams: 'Creature target, decimal amount, ValueProp props, Creature dealer, CardModel cardSource, CardPlay cardPlay' },
 
   // ---- Combined gate+modifier: bool + ref decimal (4) ----
-  TryModifyEnergyCostInCombat: { method: 'TryModifyEnergyCostInCombat', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
-  TryModifyEnergyCostInCombatLate: { method: 'TryModifyEnergyCostInCombatLate', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
-  TryModifyPowerAmountReceived: { method: 'TryModifyPowerAmountReceived', ret: 'bool', params: 'PowerModel canonicalPower, Creature target, decimal amount, Creature applier, ref decimal modifiedAmount', shape: 'powerReceivedFilter', refParam: 'modifiedAmount', playerExpr: 'target', targetExpr: 'applier' },
-  TryModifyStarCost: { method: 'TryModifyStarCost', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
+  TryModifyEnergyCostInCombat: { combat: 'in', method: 'TryModifyEnergyCostInCombat', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
+  TryModifyEnergyCostInCombatLate: { combat: 'in', method: 'TryModifyEnergyCostInCombatLate', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
+  TryModifyPowerAmountReceived: { combat: 'in', method: 'TryModifyPowerAmountReceived', ret: 'bool', params: 'PowerModel canonicalPower, Creature target, decimal amount, Creature applier, ref decimal modifiedAmount', shape: 'powerReceivedFilter', refParam: 'modifiedAmount', playerExpr: 'target', targetExpr: 'applier' },
+  TryModifyStarCost: { combat: 'in', method: 'TryModifyStarCost', ret: 'bool', params: 'CardModel card, decimal originalCost, ref decimal modifiedCost', shape: 'tryRefNumeric', refParam: 'modifiedCost', playerExpr: null, targetExpr: null },
 
   // ---- Collection mutation (1) — the only one of the 6 real "TryModify +
   // mutable collection" shapes tractable this round, since CardKeyword's
   // real 7 members are already fully known (card.keywords). ----
-  TryModifyKeywordsInCombat: { method: 'TryModifyKeywordsInCombat', ret: 'bool', params: 'CardModel card, ISet<CardKeyword> keywords', shape: 'keywordSet', playerExpr: null, targetExpr: null },
+  TryModifyKeywordsInCombat: { combat: 'in', method: 'TryModifyKeywordsInCombat', ret: 'bool', params: 'CardModel card, ISet<CardKeyword> keywords', shape: 'keywordSet', playerExpr: null, targetExpr: null },
 
   // ---- Deferred (7) — real, verified, Tyler-approved hooks that need
   // more research before real codegen. See each `reason`. ----
-  TryModifyCardBeingAddedToDeck: { method: 'TryModifyCardBeingAddedToDeck', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
-  TryModifyCardBeingAddedToDeckLate: { method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
-  TryModifyRestSiteHealRewards: { method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
-  TryModifyRestSiteOptions: { method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
-  ModifyCardPlayResultLocation: { method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  TryModifyCardBeingAddedToDeck: { combat: 'both', method: 'TryModifyCardBeingAddedToDeck', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  TryModifyCardBeingAddedToDeckLate: { combat: 'both', method: 'TryModifyCardBeingAddedToDeckLate', ret: 'bool', params: 'CardModel card, ref CardModel newCard', shape: 'cardTransformOnAdd', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  TryModifyRestSiteHealRewards: { combat: 'out', method: 'TryModifyRestSiteHealRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, bool isMimicked', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyRestSiteOptions: { combat: 'out', method: 'TryModifyRestSiteOptions', ret: 'bool', params: 'Player player, ICollection<RestSiteOption> options', shape: 'restSiteOption', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardPlayResultLocation: { combat: 'in', method: 'ModifyCardPlayResultLocation', ret: 'CardLocation', params: 'CardModel card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation', shape: 'cardLocation', playerExpr: 'card.Owner.Creature', targetExpr: null },
   // [2026-09-23, this round] Moved off 'deferred' -- direct ECMA-335
   // reads of BOTH the real installed sts2.dll AND mods/BaseLib/BaseLib.dll
   // confirm the full real path: `LocString(string locTable, string
@@ -6448,7 +6507,7 @@ const MODIFIER_HOOKS = {
   // added its row under. See generateExtraHealTextLocalization's own
   // comment for the paired class-level override this hook's codegen
   // needs alongside it.
-  ModifyExtraRestSiteHealText: { method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'extraHealText', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyExtraRestSiteHealText: { combat: 'out', method: 'ModifyExtraRestSiteHealText', ret: 'IReadOnlyList<LocString>', params: 'Player player, IReadOnlyList<LocString> currentExtraText', shape: 'extraHealText', playerExpr: 'player.Creature', targetExpr: null },
   // [2026-09-23, this round] Moved off 'deferred' -- the authoring-UI
   // design pass the old `reason` called for is now built: a real
   // 'shuffleOrder' shape (see generateModifierOverrides below), reusing
@@ -6461,7 +6520,7 @@ const MODIFIER_HOOKS = {
   // (same 'mutate a live list, no return value' pattern restSiteOption/
   // cardListUpgradeVoid already use). `player`/`cards`/`isInitialShuffle`
   // are this hook's own real, confirmed params -- nothing new to verify.
-  ModifyShuffleOrder: { method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'shuffleOrder', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyShuffleOrder: { combat: 'in', method: 'ModifyShuffleOrder', ret: 'void', params: 'Player player, List<CardModel> cards, bool isInitialShuffle', shape: 'shuffleOrder', playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 207 (2026-09-23) — 16 new hooks, all confirmed via a full,
   // authoritative dump of the REAL, installed sts2.dll's own
@@ -6475,41 +6534,41 @@ const MODIFIER_HOOKS = {
   // numerics above, so generateModifierOverrides needed zero new codegen
   // to support them. See claude/round207-passive-buildout-punchlist.md for
   // the full item-by-item mapping and what's still open after this round.
-  ShouldProcurePotion: { method: 'ShouldProcurePotion', ret: 'bool', params: 'PotionModel potion, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldAfflict: { method: 'ShouldAfflict', ret: 'bool', params: 'CardModel card, AfflictionModel affliction', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
-  ShouldGenerateTreasure: { method: 'ShouldGenerateTreasure', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldAllowMerchantCardRemoval: { method: 'ShouldAllowMerchantCardRemoval', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldDisableRemainingRestSiteOptions: { method: 'ShouldDisableRemainingRestSiteOptions', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldTakeExtraTurn: { method: 'ShouldTakeExtraTurn', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldFlush: { method: 'ShouldFlush', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
-  ShouldEtherealTrigger: { method: 'ShouldEtherealTrigger', ret: 'bool', params: 'CardModel card', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
-  ShouldGainStars: { method: 'ShouldGainStars', ret: 'bool', params: 'decimal amount, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldProcurePotion: { combat: 'both', method: 'ShouldProcurePotion', ret: 'bool', params: 'PotionModel potion, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAfflict: { combat: 'in', method: 'ShouldAfflict', ret: 'bool', params: 'CardModel card, AfflictionModel affliction', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  ShouldGenerateTreasure: { combat: 'out', method: 'ShouldGenerateTreasure', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAllowMerchantCardRemoval: { combat: 'out', method: 'ShouldAllowMerchantCardRemoval', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldDisableRemainingRestSiteOptions: { combat: 'out', method: 'ShouldDisableRemainingRestSiteOptions', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldTakeExtraTurn: { combat: 'in', method: 'ShouldTakeExtraTurn', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldFlush: { combat: 'in', method: 'ShouldFlush', ret: 'bool', params: 'Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldEtherealTrigger: { combat: 'in', method: 'ShouldEtherealTrigger', ret: 'bool', params: 'CardModel card', shape: 'gate', playerExpr: 'card.Owner.Creature', targetExpr: null },
+  ShouldGainStars: { combat: 'in', method: 'ShouldGainStars', ret: 'bool', params: 'decimal amount, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
   // No real params at all on this one (confirmed — ShouldAllowFreeTravel()
   // takes nothing), so playerExpr is null same as ShouldPlay/
   // ModifyAttackHitCount/ModifyOrbPassiveTriggerCounts/ModifyOrbValue
   // above — conditions here can't reference "you" via fgPlayer, but a
   // plain unconditional gate (no conditions authored) is exactly what
   // "freeMapTravel" (#29) needs.
-  ShouldAllowFreeTravel: { method: 'ShouldAllowFreeTravel', ret: 'bool', params: '', shape: 'gate', playerExpr: null, targetExpr: null },
-  ShouldRefillMerchantEntry: { method: 'ShouldRefillMerchantEntry', ret: 'bool', params: 'MerchantEntry entry, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldAllowFreeTravel: { combat: 'out', method: 'ShouldAllowFreeTravel', ret: 'bool', params: '', shape: 'gate', playerExpr: null, targetExpr: null },
+  ShouldRefillMerchantEntry: { combat: 'out', method: 'ShouldRefillMerchantEntry', ret: 'bool', params: 'MerchantEntry entry, Player player', shape: 'gate', playerExpr: 'player.Creature', targetExpr: null },
   // [Caveat, see round207 punchlist] Real params include `RoomType
   // roomType` (TheBurdenedNewCharacter's own compiled body gated on a
   // roomType range check) but Forge has no RoomType condition kind yet,
   // so this gate is NOT room-type-filtered here — an author's "force a
   // potion reward" gate applies to every room this hook fires for unless
   // they add their own conditions. Flagged, not silently narrowed.
-  ShouldForcePotionReward: { method: 'ShouldForcePotionReward', ret: 'bool', params: 'Player player, RoomType roomType', shape: 'gateRoomTypeFiltered', playerExpr: 'player.Creature', targetExpr: null },
+  ShouldForcePotionReward: { combat: 'out', method: 'ShouldForcePotionReward', ret: 'bool', params: 'Player player, RoomType roomType', shape: 'gateRoomTypeFiltered', playerExpr: 'player.Creature', targetExpr: null },
 
-  ModifyEnergyGain: { method: 'ModifyEnergyGain', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyEnergyGain: { combat: 'in', method: 'ModifyEnergyGain', ret: 'decimal', params: 'Player player, decimal amount', shape: 'numeric', valueParam: 'amount', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
   // Real sibling of ModifyPowerAmountGivenAdditive above — SAME real
   // params, SAME playerExpr/targetExpr ('giver'/'target'), just the
   // Multiplicative override instead of Additive. [VERIFIED hook identity
   // via TheBurdenedNewCharacter_v3.dll kind 74 powerAmountGivenPercent —
   // real percent-multiply body, degenerate *1 test value] and confirmed
   // to exist verbatim in the real sts2.dll's own AbstractModel this round.
-  ModifyPowerAmountGivenMultiplicative: { method: 'ModifyPowerAmountGivenMultiplicative', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'giver', targetExpr: 'target' },
-  ModifyMerchantPrice: { method: 'ModifyMerchantPrice', ret: 'decimal', params: 'Player player, MerchantEntry entry, decimal cost', shape: 'numeric', valueParam: 'cost', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
-  ModifyCardRewardUpgradeOdds: { method: 'ModifyCardRewardUpgradeOdds', ret: 'decimal', params: 'Player player, CardModel card, decimal odds', shape: 'numeric', valueParam: 'odds', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyPowerAmountGivenMultiplicative: { combat: 'in', method: 'ModifyPowerAmountGivenMultiplicative', ret: 'decimal', params: 'PowerModel power, Creature giver, decimal amount, Creature target, CardModel cardSource', shape: 'numeric', valueParam: 'amount', lockedOp: 'Multiply', playerExpr: 'giver', targetExpr: 'target' },
+  ModifyMerchantPrice: { combat: 'out', method: 'ModifyMerchantPrice', ret: 'decimal', params: 'Player player, MerchantEntry entry, decimal cost', shape: 'numeric', valueParam: 'cost', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardRewardUpgradeOdds: { combat: 'out', method: 'ModifyCardRewardUpgradeOdds', ret: 'decimal', params: 'Player player, CardModel card, decimal odds', shape: 'numeric', valueParam: 'odds', lockedOp: null, playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 208 (2026-09-23) — new 'creatureRedirect' shape, closes
   // #93 "Its attacks hit its own allies instead" (attacksHitOwnAllies).
@@ -6524,7 +6583,7 @@ const MODIFIER_HOOKS = {
   // (ecma_dump_ext.py against MegaCrit.Sts2.Core.Combat.CombatState AND
   // MegaCrit.Sts2.Core.Combat.ICombatState separately) -- so calling them
   // off dealer.CombatState (interface-typed) compiles for real.
-  ModifyUnblockedDamageTarget: { method: 'ModifyUnblockedDamageTarget', ret: 'Creature', params: 'Creature target, decimal amount, ValueProp props, Creature dealer', shape: 'creatureRedirect', playerExpr: 'dealer', targetExpr: 'target' },
+  ModifyUnblockedDamageTarget: { combat: 'in', method: 'ModifyUnblockedDamageTarget', ret: 'Creature', params: 'Creature target, decimal amount, ValueProp props, Creature dealer', shape: 'creatureRedirect', playerExpr: 'dealer', targetExpr: 'target' },
 
   // ---- Round 213 (2026-09-23) -- closes #13 expandCardRewardPools. Real
   // signatures confirmed via the full authoritative AbstractModel dump
@@ -6536,8 +6595,8 @@ const MODIFIER_HOOKS = {
   // MegaCrit.Sts2.Core.Runs.CardCreationOptions this round) -- a genuine
   // fluent 'with' method, not a guess at a mutation API. See
   // CARD_POOL_CLASS_MAP above for the real CardPoolModel subclass list.
-  ModifyCardRewardCreationOptions: { method: 'ModifyCardRewardCreationOptions', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
-  ModifyCardRewardCreationOptionsLate: { method: 'ModifyCardRewardCreationOptionsLate', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardRewardCreationOptions: { combat: 'out', method: 'ModifyCardRewardCreationOptions', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyCardRewardCreationOptionsLate: { combat: 'out', method: 'ModifyCardRewardCreationOptionsLate', ret: 'CardCreationOptions', params: 'Player player, CardCreationOptions options', shape: 'cardRewardPoolAppend', playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 214 (2026-09-23) -- closes #88 cardRewardCountDelta. Real
   // signatures confirmed via the full authoritative AbstractModel dump
@@ -6552,8 +6611,8 @@ const MODIFIER_HOOKS = {
   // overload. Only the ADD direction is implemented (rewardCountDelta > 0);
   // there's no real-evidenced mechanism for which specific option to
   // remove, so 'remove N' is intentionally not offered rather than guessed.
-  TryModifyCardRewardOptions: { method: 'TryModifyCardRewardOptions', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
-  TryModifyCardRewardOptionsLate: { method: 'TryModifyCardRewardOptionsLate', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyCardRewardOptions: { combat: 'out', method: 'TryModifyCardRewardOptions', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyCardRewardOptionsLate: { combat: 'out', method: 'TryModifyCardRewardOptionsLate', ret: 'bool', params: 'Player player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions', shape: 'cardRewardCountDelta', playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 216 (2026-09-23) -- closes #24 upgradeAcquiredCards' shop
   // surface (reward/deck surfaces are separate orthogonal extensions to
@@ -6579,7 +6638,7 @@ const MODIFIER_HOOKS = {
   // upgraded clone as this option's actual card WITHOUT mutating the
   // shared canonical CardModel instance in place (which would wrongly
   // upgrade every future draw of that card, not just this one reward).
-  ModifyMerchantCardCreationResults: { method: 'ModifyMerchantCardCreationResults', ret: 'void', params: 'Player player, List<CardCreationResult> cards', shape: 'cardListUpgradeVoid', playerExpr: 'player.Creature', targetExpr: null },
+  ModifyMerchantCardCreationResults: { combat: 'out', method: 'ModifyMerchantCardCreationResults', ret: 'void', params: 'Player player, List<CardCreationResult> cards', shape: 'cardListUpgradeVoid', playerExpr: 'player.Creature', targetExpr: null },
 
   // ---- Round 209 (2026-09-23) — closes #21 (modifyRoomRewards): real
   // signature TryModifyRewards(Player player, List<Reward> rewards,
@@ -6594,8 +6653,8 @@ const MODIFIER_HOOKS = {
   // rewards can be rerolled") -- that needs a different mutation (toggle
   // CanReroll=true on EXISTING CardReward entries, not Add/Remove Gold)
   // and isn't built yet -- see claude/round207-208-passive-buildout-punchlist.md.
-  TryModifyRewards: { method: 'TryModifyRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
-  TryModifyRewardsLate: { method: 'TryModifyRewardsLate', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyRewards: { combat: 'out', method: 'TryModifyRewards', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
+  TryModifyRewardsLate: { combat: 'out', method: 'TryModifyRewardsLate', ret: 'bool', params: 'Player player, List<Reward> rewards, AbstractRoom room', shape: 'restSiteReward', playerExpr: 'player.Creature', targetExpr: null },
 };
 
 // "ref decimal modifiedCost" -> "modifiedCost" (declaration -> a plain
@@ -7846,6 +7905,7 @@ const CARD_TRIGGER_HOOKS = {
   // TARGETLESS_BOUND_HOOK_TRIGGERS, now derived off CARD_TRIGGER_HOOKS
   // too).
   OnDiscard: {
+    combat: 'in', // [Round 395] combat classification (cards only exist in combat piles here)
     method: 'AfterCardDiscarded',
     params: 'PlayerChoiceContext choiceContext, CardModel card',
     access: 'public',
@@ -7861,6 +7921,7 @@ const CARD_TRIGGER_HOOKS = {
   // reasoning as OnDiscard — nothing is being targeted when your turn
   // ends with a card still in hand.
   OnTurnEndInHand: {
+    combat: 'in', // [Round 395] combat classification (cards only exist in combat piles here)
     method: 'OnTurnEndInHand',
     params: 'PlayerChoiceContext choiceContext',
     access: 'protected',
@@ -7869,6 +7930,7 @@ const CARD_TRIGGER_HOOKS = {
     petExpr: 'this.Owner.Osty',
   },
   OnAnyCardPlayed: {
+    combat: 'in', // [Round 395] combat classification (cards only exist in combat piles here)
     method: 'AfterCardPlayed',
     params: 'PlayerChoiceContext choiceContext, CardPlay cardPlay',
     access: 'public',
@@ -7892,6 +7954,7 @@ const CARD_TRIGGER_HOOKS = {
   // Creature (retaining a card isn't targeted at anything, same as
   // discard/turn-end-in-hand above).
   OnRetained: {
+    combat: 'in', // [Round 395] combat classification (cards only exist in combat piles here)
     method: 'AfterFlush',
     params: 'PlayerChoiceContext choiceContext, Player player, System.Collections.Generic.IReadOnlyCollection<CardModel> flushedCards, System.Collections.Generic.IReadOnlyCollection<CardModel> retainedCards',
     access: 'public',

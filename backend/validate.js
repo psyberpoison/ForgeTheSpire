@@ -456,21 +456,28 @@ function cardInScopeFor(entityKind, trigger) {
   if (entityKind === 'relic' || entityKind === 'mechanic') return REFERENCED_CARD_TRIGGERS.includes(trigger);
   return false;
 }
-// [Round 394] Triggers that can fire with NO combat running (derived from the
-// `outOfCombat` flag on TRIGGER_HOOKS). IL-verified: AfterActEntered
-// (RunManager.EnterAct), AfterRestSiteHeal/Smith (rest-site options),
-// AfterItemPurchased (merchant entries) take only an IRunState -- they never
-// run in combat; AfterGoldGained (PlayerCmd.GainGold) and the four potion
-// hooks (PotionCmd/PotionModel, passing `player.Creature.CombatState` which is
-// null outside combat) can run either way. Outside combat there is no
-// Creature.CombatState / PlayerCombatState, so -- exactly like an AnyTime
-// potion -- only HP and gold actions, plain amounts, and combat-free
-// conditions are allowed on these triggers.
-const OUT_OF_COMBAT_TRIGGERS = Object.keys(TRIGGER_HOOKS).filter(t => TRIGGER_HOOKS[t].outOfCombat);
+// [Round 395] Every hook table entry (TRIGGER_HOOKS, MODIFIER_HOOKS,
+// CARD_TRIGGER_HOOKS) carries a `combat` classification: 'in' (only ever fires
+// inside a fight), 'out' (never in a fight) or 'both' (can fire either way --
+// left alone, full option set). Fail loud at load if an entry is missing or
+// mistyped so a new hook can never silently skip classification.
+for (const [tableName, table] of [['TRIGGER_HOOKS', TRIGGER_HOOKS], ['MODIFIER_HOOKS', MODIFIER_HOOKS], ['CARD_TRIGGER_HOOKS', CARD_TRIGGER_HOOKS]]) {
+  for (const [id, h] of Object.entries(table)) {
+    if (!['in', 'out', 'both'].includes(h.combat)) throw new Error(`${tableName}.${id} is missing a valid \`combat\` classification ('in' | 'out' | 'both')`);
+  }
+}
+// [Round 394/395] Triggers that are OUT-OF-COMBAT ONLY (combat === 'out').
+// IL-verified: AfterActEntered (RunManager.EnterAct), AfterRestSiteHeal/Smith
+// (rest-site options) and AfterItemPurchased (merchant entries) take only an
+// IRunState -- they never run in combat, so no Creature.CombatState /
+// PlayerCombatState exists there: only HP and gold actions, plain amounts and
+// combat-free conditions are allowed. 'both' hooks (AfterGoldGained, the four
+// potion hooks, ...) can run in a fight too and keep the FULL option set.
+const OUT_OF_COMBAT_TRIGGERS = Object.keys(TRIGGER_HOOKS).filter(t => TRIGGER_HOOKS[t].combat === 'out');
 const OUT_OF_COMBAT_SAFE_ACTIONS = ['ModifyHp', 'ModifyGold'];
 const OUT_OF_COMBAT_SAFE_CONDITIONS = ['HpBelowPercent', 'MaxHp', 'HasSpecificRelic', 'Chance'];
 function validateOutOfCombatEffect(eff, p, errors) {
-  const where = `the "${eff.trigger}" trigger can fire outside combat (no enemies, energy, block or combat statuses exist there)`;
+  const where = `the "${eff.trigger}" trigger only fires outside combat (no enemies, energy, block or combat statuses exist there)`;
   (Array.isArray(eff.conditions) ? eff.conditions : []).forEach((c, ci) => {
     if (!c || typeof c !== 'object') return;
     if (!OUT_OF_COMBAT_SAFE_CONDITIONS.includes(c.kind)) errors.push(`${p}.conditions[${ci}]: condition "${c.kind}" reads combat state, but ${where}. Allowed here: ${OUT_OF_COMBAT_SAFE_CONDITIONS.join(', ')}.`);
