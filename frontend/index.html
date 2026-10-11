@@ -1657,6 +1657,39 @@
   .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
   /* [Round 397] Warnings section + nav badge */
+  /* [Round 401] grouped menu / pinning / collapsible optional sections (experiment -- see the JS block's header) */
+  .side-nav-group{padding:4px 0;}
+  .side-nav-group + .side-nav-group{border-top:1px solid var(--border-soft); margin-top:4px; padding-top:8px;}
+  .side-nav-group-label{padding:2px 18px 4px; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--parchment-dim); opacity:.75;}
+  .side-nav-group.pinned .side-nav-group-label{color:var(--accent-bright); opacity:1;}
+  .side-nav-item{position:relative; display:flex; align-items:stretch;}
+  .side-nav-item > .side-nav-link{flex:1 1 auto; min-width:0; padding-right:30px;}
+  .side-nav-item .side-nav-pin{position:absolute; right:6px; top:50%; transform:translateY(-50%); padding:3px 4px; border:0; background:transparent; color:var(--parchment-dim); opacity:0; cursor:pointer; line-height:0; border-radius:3px;}
+  .side-nav-item:hover .side-nav-pin, .side-nav-item .side-nav-pin:focus-visible, .side-nav-item .side-nav-pin.on{opacity:.9;}
+  .side-nav-item .side-nav-pin.on{color:var(--accent-bright);}
+  .side-nav-item .side-nav-pin:hover{color:var(--parchment); background:rgba(255,255,255,.08);}
+  .side-nav-item.pinned{cursor:grab;}
+  .side-nav-item.pinned > .side-nav-link{padding-left:6px;}
+  .side-nav-grip{display:flex; align-items:center; padding-left:8px; color:var(--parchment-dim); opacity:.5; font-size:11px; letter-spacing:-2px; user-select:none;}
+  .side-nav-item.dragging{opacity:.4;}
+  .side-nav-item.drop-before{box-shadow:0 -2px 0 var(--accent-bright);}
+  .side-nav-item.drop-after{box-shadow:0 2px 0 var(--accent-bright);}
+  .side-nav-layout-switch{display:block; margin:10px 18px 4px; padding:2px 0; border:0; background:transparent; color:var(--parchment-dim); font-size:11px; text-decoration:underline; cursor:pointer; opacity:.7;}
+  .side-nav-layout-switch:hover{opacity:1; color:var(--parchment);}
+  .side-nav.collapsed .side-nav-group-label, .side-nav.no-room .side-nav-group-label,
+  .side-nav.collapsed .side-nav-pin, .side-nav.no-room .side-nav-pin,
+  .side-nav.collapsed .side-nav-grip, .side-nav.no-room .side-nav-grip,
+  .side-nav.collapsed .side-nav-layout-switch, .side-nav.no-room .side-nav-layout-switch{display:none;}
+  .side-nav.collapsed .side-nav-item > .side-nav-link, .side-nav.no-room .side-nav-item > .side-nav-link{padding-right:4px; padding-left:4px;}
+  .panel-req-chip{margin-left:4px; padding:0 8px; border-radius:9px; font-size:10.5px; line-height:17px; letter-spacing:.05em; color:var(--parchment-dim); border:1px solid var(--border-soft); font-family:'JetBrains Mono',monospace; text-transform:uppercase; align-self:center;}
+  .panel-req-chip.required{color:#d9a94a; border-color:rgba(217,169,74,.5);}
+  section.panel .panel-head:has(.panel-req-chip){justify-content:flex-start; gap:10px;}
+  section.panel .panel-head:has(.panel-req-chip) > .mono{margin-left:auto;}
+  section.panel .panel-head > .panel-collapse-btn{border:0; background:transparent; color:var(--parchment-dim); font-size:15px; padding:0 4px; cursor:pointer; line-height:1;}
+  section.panel .panel-head > .panel-collapse-btn:hover{color:var(--parchment);}
+  section.panel.collapsible > .panel-head{cursor:pointer; user-select:none;}
+  section.panel.collapsed > .panel-head{border-bottom-color:transparent;}
+  section.panel.collapsed > .panel-body{display:none;}
   .warn-tier{margin:14px 0 6px; font-size:13px; font-weight:700; letter-spacing:.03em;}
   .warn-tier.blocker{color:var(--danger-bright);}
   .warn-tier.advice{color:#d9a94a;}
@@ -6879,6 +6912,7 @@ let liveValidation = { reachable:null, errors:[] }; // [Round 397] last /api/val
 const WARN_KIND_LABEL = { cards:'Card', relics:'Relic', mechanics:'Mechanic', potions:'Potion', enchantments:'Enchantment', afflictions:'Affliction', pets:'Pet', orbs:'Orb', stances:'Stance' };
 const WARN_KIND_SECTION = { cards:'section-cards', relics:'section-relics', mechanics:'section-mechanics', potions:'section-potions', enchantments:'section-enchantments', afflictions:'section-enchantments', pets:'section-pets', orbs:'section-orbs', stances:'section-stances' };
 function warnScrollTo(sectionId){
+  expandSectionIfCollapsed(sectionId); // [Round 401] never scroll to a folded section
   const el = document.getElementById(sectionId);
   if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
 }
@@ -7036,6 +7070,7 @@ function save(){
   try{ localStorage.setItem(STORAGE_KEY, storedProjectJson(state)); }
   catch(e){ reportStorageFailure(e); }
   scheduleLiveValidation(); // [Round 396]
+  if(navLayoutReady) applySectionLayout(); // [Round 401] counts changed -> auto fold/unfold
 }
 // Fills dataUrl back in for assets the stored project JSON carries only by id.
 function hydrateAssetsFromIdb(){
@@ -24679,6 +24714,226 @@ function setActiveScreen(name, opts){
   updateSideNavFit();
 }
 
+/* ---------- [Round 401] Grouped menu, collapsible optional sections, pinning (EXPERIMENT) ----------
+   Tyler: "lets test 1 and 2, but be ready to roll back ... Orbs should be optional ... pin sections to the top of
+   the menu ... should not change the number of the orbs section, and it should still jump them to the part of the
+   page containing orbs ... reorder pinned items with some kind of draggable element."
+   Everything here is presentation only (no project data changes) and is switchable at runtime with the
+   "Classic menu" link under the menu, which restores the old flat menu and un-collapses every section. The whole
+   round is also one self-contained commit, so `git revert` removes it. Preferences live in localStorage
+   (forge.navPrefs), not in the project. */
+const NAV_PREFS_KEY = 'forge.navPrefs';
+const SECTION_REQUIRED = { 'section-character':true, 'section-cards':true, 'section-relics':true };
+const SECTION_COUNTS = {
+  'section-mechanics': ()=> (state.mechanics||[]).length,
+  'section-potions': ()=> (state.potions||[]).length,
+  'section-enchantments': ()=> (state.enchantments||[]).length + (state.afflictions||[]).length,
+  'section-pets': ()=> (state.pets||[]).length,
+  'section-orbs': ()=> (state.orbs||[]).length,
+  'section-stances': ()=> (state.stances||[]).length,
+  'section-chronicles': ()=> ((state.character && state.character.chronicles) || []).length
+};
+var navLayoutReady = false; // `var` so save() can read it safely even before this block has run
+let navPrefs = null;
+function getNavPrefs(){
+  if(navPrefs) return navPrefs;
+  let p = {};
+  try{ p = JSON.parse(localStorage.getItem(NAV_PREFS_KEY) || '{}') || {}; }catch(e){ p = {}; }
+  navPrefs = {
+    layout: p.layout === 'classic' ? 'classic' : 'grouped',
+    pinned: Array.isArray(p.pinned) ? p.pinned.filter(x=>typeof x === 'string') : [],
+    open: (p.open && typeof p.open === 'object') ? p.open : {}
+  };
+  return navPrefs;
+}
+function saveNavPrefs(){
+  try{ localStorage.setItem(NAV_PREFS_KEY, JSON.stringify(getNavPrefs())); }catch(e){ /* works this session, just not remembered */ }
+}
+const sectionSeenOpen = new Set(); // once a section has been open this page session, never auto-collapse it under the user
+function isGroupedLayout(){ return getNavPrefs().layout === 'grouped'; }
+function sectionIsOptional(id){ return Object.prototype.hasOwnProperty.call(SECTION_COUNTS, id); }
+function sectionShouldBeCollapsed(id){
+  if(!isGroupedLayout() || !sectionIsOptional(id)) return false;
+  const explicit = getNavPrefs().open[id];
+  if(explicit === true) return false;
+  if(explicit === false) return true;
+  if(sectionSeenOpen.has(id)) return false;
+  return SECTION_COUNTS[id]() === 0;
+}
+// Idempotent: adds the required/optional chip + collapse chevron once, then just syncs the collapsed class.
+function applySectionLayout(){
+  const grouped = isGroupedLayout();
+  document.querySelectorAll('#screen-character section.panel[id^="section-"]').forEach(sec=>{
+    const head = sec.querySelector(':scope > .panel-head');
+    if(!head) return;
+    const id = sec.id;
+    const kind = SECTION_REQUIRED[id] ? 'required' : sectionIsOptional(id) ? 'optional' : null;
+    let chip = head.querySelector('.panel-req-chip');
+    let chev = head.querySelector('.panel-collapse-btn');
+    if(!grouped || !kind){
+      if(chip) chip.remove();
+      if(chev) chev.remove();
+      sec.classList.remove('collapsed', 'collapsible');
+      return;
+    }
+    const h2 = head.querySelector('h2');
+    if(!chip && h2){ chip = document.createElement('span'); chip.className = 'panel-req-chip'; h2.after(chip); }
+    if(chip){ chip.textContent = kind; chip.classList.toggle('required', kind === 'required'); }
+    if(kind === 'optional'){
+      if(!chev){
+        chev = document.createElement('button');
+        chev.type = 'button'; chev.className = 'panel-collapse-btn ghost';
+        head.appendChild(chev);
+      }
+      const collapsed = sectionShouldBeCollapsed(id);
+      if(!collapsed) sectionSeenOpen.add(id);
+      sec.classList.add('collapsible');
+      sec.classList.toggle('collapsed', collapsed);
+      chev.textContent = collapsed ? '▸' : '▾';
+      chev.title = collapsed ? 'Expand this section' : 'Collapse this section';
+      chev.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
+  });
+}
+function setSectionOpen(id, open){
+  getNavPrefs().open[id] = !!open;
+  saveNavPrefs();
+  applySectionLayout();
+}
+function expandSectionIfCollapsed(id){
+  const sec = document.getElementById(id);
+  if(sec && sec.classList.contains('collapsed')) setSectionOpen(id, true);
+}
+// Clicking a collapsible section's header (but not a button/link/field inside it) toggles it.
+document.addEventListener('click', (ev)=>{
+  const head = ev.target.closest && ev.target.closest('#screen-character section.panel.collapsible > .panel-head');
+  if(!head) return;
+  if(ev.target.closest('a, input, select, textarea') || (ev.target.closest('button') && !ev.target.closest('.panel-collapse-btn'))) return;
+  const sec = head.parentElement;
+  setSectionOpen(sec.id, sec.classList.contains('collapsed'));
+});
+function setNavLayout(layout){
+  getNavPrefs().layout = layout === 'classic' ? 'classic' : 'grouped';
+  saveNavPrefs();
+  applySectionLayout();
+  buildSideNavLinks();
+}
+function toggleNavPin(id){
+  const p = getNavPrefs();
+  const i = p.pinned.indexOf(id);
+  if(i >= 0) p.pinned.splice(i, 1); else p.pinned.push(id);
+  saveNavPrefs();
+  buildSideNavLinks();
+}
+function moveNavPin(id, toIndex){
+  const p = getNavPrefs();
+  const from = p.pinned.indexOf(id);
+  if(from < 0) return;
+  p.pinned.splice(from, 1);
+  p.pinned.splice(Math.max(0, Math.min(toIndex, p.pinned.length)), 0, id);
+  saveNavPrefs();
+  buildSideNavLinks();
+}
+const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M16 3l5 5-2 1-3.5 3.5.5 4-1.5 1.5-4-4L5 20l-1-1 5.5-6.5-4-4L7 7l4 .5L14.5 4 16 3z"/></svg>';
+// Appends the links to .side-nav-inner. Classic layout / World screen: the original flat list.
+function layoutSideNavLinks(inner, sections, linkById){
+  const grouped = isGroupedLayout() && activeScreen === 'character';
+  if(!grouped){
+    sections.forEach(sec=>{ const a = linkById.get(sec.id); if(a) inner.appendChild(a); });
+    if(activeScreen === 'character') appendLayoutSwitch(inner);
+    return;
+  }
+  const prefs = getNavPrefs();
+  const ids = sections.map(s=>s.id).filter(id=>linkById.has(id));
+  const pinned = prefs.pinned.filter(id=>ids.includes(id));
+  const rest = ids.filter(id=>!pinned.includes(id));
+  const essentials = rest.filter(id=>SECTION_REQUIRED[id]);
+  const extras = rest.filter(id=>sectionIsOptional(id));
+  const review = rest.filter(id=>!SECTION_REQUIRED[id] && !sectionIsOptional(id));
+  const addGroup = (label, groupIds, kind)=>{
+    if(!groupIds.length) return;
+    const g = document.createElement('div');
+    g.className = 'side-nav-group ' + kind;
+    g.dataset.group = kind;
+    if(label) g.insertAdjacentHTML('beforeend', `<div class="side-nav-group-label">${label}</div>`);
+    groupIds.forEach((id, idx)=> g.appendChild(buildNavItem(id, linkById.get(id), kind === 'pinned', idx)));
+    inner.appendChild(g);
+  };
+  addGroup('Pinned', pinned, 'pinned');
+  addGroup('Essentials', essentials, 'essentials');
+  addGroup('Extras', extras, 'extras');
+  addGroup(review.length ? 'Review' : '', review, 'review');
+  appendLayoutSwitch(inner);
+}
+function appendLayoutSwitch(inner){
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'side-nav-layout-switch ghost';
+  b.textContent = isGroupedLayout() ? 'Classic menu' : 'Grouped menu';
+  b.title = isGroupedLayout() ? 'Switch back to the original flat menu (also expands every section)' : 'Group sections into Essentials / Extras with pinning and collapsible optional sections';
+  b.onclick = ()=> setNavLayout(isGroupedLayout() ? 'classic' : 'grouped');
+  inner.appendChild(b);
+}
+function buildNavItem(id, a, isPinned, index){
+  const item = document.createElement('div');
+  item.className = 'side-nav-item' + (isPinned ? ' pinned' : '');
+  item.dataset.sectionId = id;
+  if(isPinned){
+    item.draggable = true;
+    a.draggable = false;
+    item.insertAdjacentHTML('beforeend', '<span class="side-nav-grip" aria-hidden="true">⋮⋮</span>');
+  }
+  item.appendChild(a);
+  const pin = document.createElement('button');
+  pin.type = 'button'; pin.className = 'side-nav-pin ghost' + (isPinned ? ' on' : '');
+  pin.innerHTML = PIN_SVG;
+  pin.title = isPinned ? 'Unpin from the top' : 'Pin to the top of the menu';
+  pin.setAttribute('aria-label', pin.title);
+  pin.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+  pin.onclick = (ev)=>{ ev.preventDefault(); ev.stopPropagation(); toggleNavPin(id); };
+  item.appendChild(pin);
+  // Jumping to a folded section opens it first, so the link always lands on real content.
+  a.addEventListener('click', ()=> expandSectionIfCollapsed(id));
+  if(isPinned){
+    item.addEventListener('dragstart', (ev)=>{
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', id);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', ()=>{
+      item.classList.remove('dragging');
+      document.querySelectorAll('.side-nav-item.drop-before, .side-nav-item.drop-after').forEach(el=>el.classList.remove('drop-before', 'drop-after'));
+    });
+    item.addEventListener('dragover', (ev)=>{
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      const r = item.getBoundingClientRect();
+      const before = ev.clientY < r.top + r.height / 2;
+      item.classList.toggle('drop-before', before);
+      item.classList.toggle('drop-after', !before);
+    });
+    item.addEventListener('dragleave', ()=> item.classList.remove('drop-before', 'drop-after'));
+    item.addEventListener('drop', (ev)=>{
+      ev.preventDefault();
+      const dragged = ev.dataTransfer.getData('text/plain');
+      if(!dragged || dragged === id) return;
+      const pins = getNavPrefs().pinned;
+      const r = item.getBoundingClientRect();
+      const before = ev.clientY < r.top + r.height / 2;
+      const without = pins.filter(x=>x !== dragged);
+      moveNavPin(dragged, without.indexOf(id) + (before ? 0 : 1));
+    });
+    a.addEventListener('keydown', (ev)=>{
+      if(!ev.altKey || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+      ev.preventDefault();
+      const cur = getNavPrefs().pinned.indexOf(id);
+      moveNavPin(id, cur + (ev.key === 'ArrowUp' ? -1 : 1));
+      const again = document.querySelector(`.side-nav-item[data-section-id="${id}"] .side-nav-link`);
+      if(again) again.focus();
+    });
+  }
+  return item;
+}
+
 // Builds the menu's link list from the ACTIVE screen's own sections (each
 // screen numbers its sections from 01 on its own), and re-points the
 // scroll-spy at them.
@@ -24692,6 +24947,7 @@ function buildSideNavLinks(){
   if(sideNavObserver){ sideNavObserver.disconnect(); sideNavObserver = null; }
   const sections = Array.from(document.querySelectorAll(`#screen-${activeScreen} section.panel[id^="section-"]`));
   const links = [];
+  const linkById = new Map();
   sections.forEach(sec=>{
     const h2 = sec.querySelector('.panel-head h2');
     if(!h2) return;
@@ -24711,9 +24967,10 @@ function buildSideNavLinks(){
     const navLabel = sec.dataset.navLabel || title;
     a.innerHTML = `${num ? `<span class="side-nav-num">${escapeHtml(num)}</span>` : ''}<span class="side-nav-label">${escapeHtml(navLabel)}</span>`
     if(sec.id === 'section-warnings') a.querySelector('.side-nav-label').insertAdjacentHTML('beforeend', '<span class="warn-nav-pills"></span>'); // [Round 397] counts appended to the label
-    inner.appendChild(a);
+    linkById.set(sec.id, a);
     links.push(a);
   });
+  layoutSideNavLinks(inner, sections, linkById); // [Round 401] grouped/pinned layout (or the classic flat list)
 
   updateWarningsBadge(); // [Round 397] fresh badge element after every nav rebuild
   if(!sections.length || !('IntersectionObserver' in window)) return;
@@ -24771,7 +25028,10 @@ function renderAllFromState(){
   artFieldRenderers.forEach(r=> r());
   renderCombatSizePreview();
   renderChronicles();
+  applySectionLayout(); // [Round 401]
 }
+navLayoutReady = true; // [Round 401] the layout module's consts are initialised by here
+applySectionLayout(); // before the first nav build
 renderSideNav();
 renderAllFromState();
 refreshGameStatus();
