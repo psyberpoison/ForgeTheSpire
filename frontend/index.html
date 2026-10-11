@@ -1654,6 +1654,10 @@
   .a-formula-bound select{width:auto; min-width:0; flex:0 0 auto; field-sizing:content;}
   .a-amount-formula-note{font-size:12px; color:var(--parchment-dim); font-style:italic;}
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
+  .eb-live-warning{margin:6px 0; padding:7px 10px; border:1px solid var(--danger-bright); border-left-width:4px; border-radius:4px; background:rgba(200,60,50,.12); color:var(--parchment); font-size:12px; line-height:1.4;}
+  .eb-live-warning[hidden]{display:none;}
+  .eb-live-warning strong{color:var(--danger-bright);}
+  .eb-live-warning ul{margin:4px 0 0 18px; padding:0;}
   /* Enchantment/Affliction "Valid targets" merged base+custom tag picker
      (renderEnchTagPicker, round 171) reuses .a-status-picker's sizing
      wholesale — see that function's own comment for why. */
@@ -6761,6 +6765,69 @@ function persistAssetAsync(x){
     a.inflight.delete(id); a.idbFailed = true; reportStorageFailure(err); save();
   });
 }
+/* ---------- [Round 396] live "this combination will error" warnings ----------
+   Tyler: "make a notification when the creator adds a combination of hooks and
+   actions that could result in an error". The backend's /api/validate runs the
+   exact validator /api/compile uses and reports, per effect block, what it
+   would reject (effectIssues: [{locator:"relics[0].effects[1]", messages}]).
+   Each locator is a real path into `state`, so it resolves to the SAME effect
+   object the editor row holds; the warning is painted inline on that block and
+   clears itself as soon as the combination is fixed. Debounced; never blocks
+   editing; silent if the backend isn't reachable (compile still validates). */
+const liveEffectIssues = new Map(); // effect object -> [message]
+let liveValidateTimer = null, liveValidateSeq = 0;
+function resolveStatePath(path){
+  let cur = state;
+  const re = /([A-Za-z_]\w*)|\[(\d+)\]/g;
+  let m;
+  while((m = re.exec(path)) !== null){
+    if(cur === null || cur === undefined) return undefined;
+    cur = m[1] !== undefined ? cur[m[1]] : cur[Number(m[2])];
+  }
+  return cur;
+}
+function friendlyEffectIssue(msg){
+  return msg
+    .replace(/\belseActions\[(\d+)\]/g, (_, n)=>`Else action ${Number(n)+1}`)
+    .replace(/\bactions\[(\d+)\]/g, (_, n)=>`Action ${Number(n)+1}`)
+    .replace(/\bconditions\[(\d+)\]/g, (_, n)=>`Condition ${Number(n)+1}`);
+}
+function paintBlockIssue(block){
+  const slot = block.querySelector(':scope > .eb-live-warning');
+  if(!slot) return;
+  const msgs = liveEffectIssues.get(block._fgEffect);
+  if(!msgs || !msgs.length){ slot.hidden = true; slot.innerHTML = ''; return; }
+  slot.hidden = false;
+  slot.innerHTML = `<strong>⚠ This combination will fail to compile</strong>` +
+    `<ul>${msgs.map(m=>`<li>${escapeHtml(friendlyEffectIssue(m))}</li>`).join('')}</ul>`;
+}
+function paintAllLiveIssues(){
+  document.querySelectorAll('.effect-block').forEach(paintBlockIssue);
+}
+async function runLiveValidation(){
+  const seq = ++liveValidateSeq;
+  let body;
+  try{
+    const res = await fetch('/api/validate', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(state, (k, v)=> k === 'dataUrl' ? undefined : v)
+    });
+    if(!res.ok) return;
+    body = await res.json();
+  }catch(e){ return; } // backend unreachable / older backend: compile still validates
+  if(seq !== liveValidateSeq || !Array.isArray(body.effectIssues)) return; // a newer edit superseded this answer
+  liveEffectIssues.clear();
+  body.effectIssues.forEach(issue=>{
+    const eff = resolveStatePath(issue.locator);
+    if(eff && typeof eff === 'object') liveEffectIssues.set(eff, issue.messages);
+  });
+  paintAllLiveIssues();
+}
+function scheduleLiveValidation(){
+  clearTimeout(liveValidateTimer);
+  liveValidateTimer = setTimeout(runLiveValidation, 500);
+}
 function save(){
   const a = assetPersist;
   const assets = Array.isArray(state.assets) ? state.assets : [];
@@ -6776,6 +6843,7 @@ function save(){
   }
   try{ localStorage.setItem(STORAGE_KEY, storedProjectJson(state)); }
   catch(e){ reportStorageFailure(e); }
+  scheduleLiveValidation(); // [Round 396]
 }
 // Fills dataUrl back in for assets the stored project JSON carries only by id.
 function hydrateAssetsFromIdb(){
@@ -6812,6 +6880,7 @@ function clearStoredAssets(){
 }
 
 let state = load();
+scheduleLiveValidation(); // [Round 396] first pass on page load
 
 function load(){
   try{
@@ -14311,11 +14380,13 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       return false;
     };
     fixTriggerForPile();
+    block._fgEffect = eff; // [Round 396] lets the live validator find this block's warning slot
     block.innerHTML = `
       <div class="eb-head">
         <div class="eb-head-label">Trigger:</div>
         <button class="ghost eb-remove">remove this effect</button>
       </div>
+      <div class="eb-live-warning" role="alert" hidden></div>
       ${showPile ? `<label class="eb-pile-label">While in: <select class="eb-pile">${pileOptList(eff.pile)}</select></label>` : ''}
       ${useBubblePicker
         ? '<div class="eb-trigger-picker"></div>'
@@ -14347,6 +14418,7 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
     // (scoped, works detached too), but not for these document-global
     // lookups. Reported by Tyler: "selecting passive throws an error."
     list.appendChild(block);
+    paintBlockIssue(block); // [Round 396]
     // xEligibleNow — whether "Use X" is offered on this block's action
     // rows right now. Mirrors backend/validate.js's own xEligible check
     // exactly (entityKind==='card' -> triggerOptions===CARD_TRIGGERS here,

@@ -172,6 +172,19 @@ function buildTopReadme({ characterPackage, modId, game, godot, compiled, buildE
   return lines.join('\n');
 }
 
+// [Round 396] Live validation for the editor's inline "this combination will
+// error" warning. Runs the SAME validateCharacterPackage /api/compile uses, but
+// compiles nothing and writes nothing -- it only reports which effect blocks
+// would be rejected (effectIssues: [{ locator: "relics[0].effects[1]", messages }]).
+app.post('/api/validate', (req, res) => {
+  try {
+    const { valid, errors, effectIssues } = validateCharacterPackage(req.body);
+    res.json({ valid, errorCount: errors.length, effectIssues });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message || err) });
+  }
+});
+
 app.post('/api/compile', async (req, res) => {
   const characterPackage = req.body;
 
