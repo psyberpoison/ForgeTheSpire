@@ -7004,7 +7004,7 @@ function renderWarningsSection(){
   const list = items => items.map(row).join('');
   const all = blockers.concat(advice);
   let html = '';
-  if(liveValidation.reachable === false) html += '<div class="warn-note">Couldn’t reach the Forge backend, so the full compile check isn’t shown — only the checks that run in this page. Compile will still validate everything.</div>';
+  if(liveValidation.reachable === false) html += '<div class="warn-note"><strong>Couldn’t reach the Forge backend</strong>, so the full compile check isn’t shown — only the checks that run in this page. If you’re using the desktop app, close and reopen it: its built-in backend may have failed to start or may be an older version without this check. If you’re testing in a browser, restart the backend. Compile will still validate everything either way.</div>';
   html += blockers.length
     ? `<div class="warn-tier blocker">Will block compile (${blockers.length})</div>${list(blockers)}`
     : `<div class="warn-tier clear">${liveValidation.reachable === false ? 'No blockers found in this page’s checks.' : 'Nothing will block a compile.'}</div>`;
