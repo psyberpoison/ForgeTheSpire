@@ -403,6 +403,8 @@
   .side-nav.collapsed .side-nav-screen-tab .abbr, .side-nav.no-room .side-nav-screen-tab .abbr{display:inline-block;}
   .side-nav.collapsed .side-nav-screen-tab, .side-nav.no-room .side-nav-screen-tab{flex:0 0 auto; padding:6px 0; font-size:12px; letter-spacing:0;}
   /* The two screens. The one being switched TO slides in from the right (World) or the left (back to Character). */
+  /* [Round 400] Since Round 374 wrapped the sections in .screen containers, main's own `gap` no longer reached them (every section touched the next). The gap lives here now. */
+  .screen{display:flex; flex-direction:column; gap:34px;}
   .screen[hidden]{display:none;}
   @keyframes screen-in-right{from{opacity:0; transform:translateX(80px);} to{opacity:1; transform:none;}}
   @keyframes screen-in-left{from{opacity:0; transform:translateX(-80px);} to{opacity:1; transform:none;}}
