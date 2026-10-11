@@ -2822,9 +2822,12 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // AbstractModel-verified-safe type here). Gated on ctx.thisIsCard,
       // same ReturnToHand/ShuffleCardIntoDraw precedent, rather than
       // guessing this parameter accepts anything but a real card.
-      if (!ctx.thisIsCard) {
-        return `        ForgeActions.Todo("ExhaustCard (prompt) -- this action's CardSelectCmd.FromHand call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
-      }
+      // [Round 393] Gate removed. IL-verified: CardSelectCmd.FromHand's last
+      // parameter is `AbstractModel source` (not CardModel); the state machine
+      // only forwards it to NPlayerHand.SelectCards -> AfterCardsSelected, which
+      // null-checks it and merely subscribes AbstractModel.ExecutionFinished.
+      // Relics, powers, enchantments, afflictions and potions are all
+      // AbstractModels, so bare `this` is valid from every Forge-generated model.
       return `        foreach (var fgExhaustCard in await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand(choiceContext, ${exhaustPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.ExhaustSelectionPrompt, ${resolveAmountExpr(action, ctx)}), null, this)) { await MegaCrit.Sts2.Core.Commands.CardCmd.Exhaust(choiceContext, fgExhaustCard, false, false); } // [Round 63] see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
     case 'DiscardCard': {
@@ -2841,9 +2844,8 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // [Round 191 fix] Same ctx.thisIsCard gate as ExhaustCard's own
       // prompt-picker branch just above -- see its comment for the full
       // reasoning.
-      if (!ctx.thisIsCard) {
-        return `        ForgeActions.Todo("DiscardCard (prompt) -- this action's CardSelectCmd.FromHandForDiscard call takes \`this\` as its last argument, unconfirmed outside a card's own generated class"); // [UNVERIFIED] see compiler.js's own comment on this case`;
-      }
+      // [Round 393] Gate removed -- see ExhaustCard's prompt branch above
+      // (FromHandForDiscard forwards the same AbstractModel `source` to FromHand).
       return `        await MegaCrit.Sts2.Core.Commands.CardCmd.Discard(choiceContext, await MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForDiscard(choiceContext, ${discardPlayerExpr}, new MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs(MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.DiscardSelectionPrompt, ${resolveAmountExpr(action, ctx)}), null, this)); // [VERIFIED via decompiling TheBurdenedNewCharacter.dll — 4/4 real discard cards use this exact chain — see compiler.js's own comment on this case / resolvePlayerExpr's own comment`;
     }
     case 'CreateCard': {
@@ -3047,9 +3049,19 @@ function actionToCSharp(action, ctx = {}, forcedTargetExpr = null) {
       // relic/mechanic hook (TRIGGER_HOOKS' OnAnyCardPlayed entry), where
       // `this` is a RelicModel/PowerModel, not the played card at all —
       // that combination stays an honest stub.
-      return ctx.thisIsCard
-        ? `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(this, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); // [BEST EFFORT] see compiler.js's own comment on this case`
-        : `        ForgeActions.Todo("ShuffleCardIntoDraw (this card only)"); // [UNVERIFIED] real CardPileCmd.Add(...) exists but \`this\` isn't a CardModel at this specific hook (not authored on a card's own OnPlay/OnAnyCardPlayed) — see compiler.js's own comment on this case`;
+      // [Round 393] Generalized off ctx.thisIsCard to resolveActedCardExpr(ctx):
+      // CardPileCmd.Add takes any CardModel, and the shared resolver yields a
+      // real CardModel at every hook that has one in scope (`this` on a card's
+      // own body, `cardPlay.Card` on OnAnyCardPlayed, `this.Card` on
+      // enchantments/afflictions, the hook's own card param on OnDrawCard/
+      // OnExhaust/...). Hooks with NO card in scope are rejected by
+      // validate.js ("needs a card in scope"); the Todo below is only the
+      // defensive fallback if validation was bypassed.
+      const scCardExpr = resolveActedCardExpr(ctx);
+      return scCardExpr
+        ? `        await MegaCrit.Sts2.Core.Commands.CardPileCmd.Add(${scCardExpr}, MegaCrit.Sts2.Core.Entities.Cards.PileType.Draw, MegaCrit.Sts2.Core.Entities.Cards.CardPilePosition.Random, null, false); // [BEST EFFORT] see compiler.js's own comment on this case`
+        : `        ForgeActions.Todo("ShuffleCardIntoDraw -- no CardModel reference in scope on this hook"); // [UNVERIFIED] defensive fallback; validate.js rejects this combination`;
+
     case 'ReturnToHand': {
       // [Round 155] Tyler: "add a 'return this card to hand' effect for
       // the pile triggers that arent in hand. There should also be a
@@ -5538,7 +5550,7 @@ const TRIGGER_HOOKS = {
   OnDrawCard: {
     method: 'AfterCardDrawn',
     params: 'PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw',
-    playerExpr: null, targetExpr: null, // no Creature reference in the real params at all
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'card?.Owner == {OWNER_PLAYER}', cardParamExpr: 'card', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // no Creature reference in the real params at all
   },
   // [2026-09-25] Tyler: "add a 'when any card is exhausted' trigger" ->
   // turned out OnExhaust already existed but was fully stubbed (playerExpr
@@ -5630,7 +5642,7 @@ const TRIGGER_HOOKS = {
     // params). Remapped to the closest real analog.
     method: 'BeforeCombatStart',
     params: '',
-    playerExpr: null, targetExpr: null,
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch)
   },
   OnKillEnemy: {
     // [BEST EFFORT remap] no "AfterEnemyKilled" exists either — closest
@@ -5640,7 +5652,7 @@ const TRIGGER_HOOKS = {
     // risk firing this effect on the player's own death too.
     method: 'AfterDeath',
     params: 'PlayerChoiceContext choiceContext, Creature creature, bool wasRemovalPrevented, float deathAnimLength',
-    playerExpr: null, targetExpr: null,
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'creature.IsEnemy', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch)
   },
   // [Fix, round 35] Mine/Enemy split via the real, IL-confirmed
   // Creature.IsEnemy property (MegaCrit.Sts2.Core.Entities.Creatures.
@@ -5692,12 +5704,12 @@ const TRIGGER_HOOKS = {
   AfterActEntered: {
     method: 'AfterActEntered',
     params: '',
-    playerExpr: null, targetExpr: null, // Turn/run lifecycle — a new Act begins. No params at all.
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // Turn/run lifecycle — a new Act begins. No params at all.
   },
   AfterAttack: {
     method: 'AfterAttack',
     params: 'PlayerChoiceContext choiceContext, AttackCommand command',
-    playerExpr: null, targetExpr: null, // Attack-command level (broader than Deal Damage's own followUp) — no Creature exposed on the command param itself.
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'command?.Attacker == {OWNER_CREATURE}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // Attack-command level (broader than Deal Damage's own followUp) — no Creature exposed on the command param itself.
   },
   // [Fix, round 35] Mine/Enemy split via Creature.IsEnemy -- see
   // OnMyDamageTaken above for the real IL evidence, same mechanism reused
@@ -5764,12 +5776,12 @@ const TRIGGER_HOOKS = {
   AfterCombatEnd: {
     method: 'AfterCombatEnd',
     params: 'CombatRoom room',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterCombatVictory: {
     method: 'AfterCombatVictory',
     params: 'CombatRoom room',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   // [Fix, round 35 -- Tyler: "aftercreatureaddedtocombat should not
   // check for you entering combat. there should already be an 'at the
@@ -5859,7 +5871,7 @@ const TRIGGER_HOOKS = {
   AfterDiedToDoom: {
     method: 'AfterDiedToDoom',
     params: 'PlayerChoiceContext choiceContext, IReadOnlyList<Creature> creatures',
-    playerExpr: null, targetExpr: null, // A COLLECTION of creatures (multi-kill 'Doom' mechanic), not a single Creature.
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION of creatures (multi-kill 'Doom' mechanic), not a single Creature.
   },
   AfterEnergyReset: {
     method: 'AfterEnergyReset',
@@ -5869,7 +5881,7 @@ const TRIGGER_HOOKS = {
   AfterEnergySpent: {
     method: 'AfterEnergySpent',
     params: 'CardModel card, int amount',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'card?.Owner == {OWNER_PLAYER}', cardParamExpr: 'card', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterGoldGained: {
     method: 'AfterGoldGained',
@@ -5926,7 +5938,7 @@ const TRIGGER_HOOKS = {
   AfterPreventingDraw: {
     method: 'AfterPreventingDraw',
     params: '',
-    playerExpr: null, targetExpr: null, // No params at all.
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No params at all.
   },
   AfterOrbChanneled: {
     method: 'AfterOrbChanneled',
@@ -5936,7 +5948,7 @@ const TRIGGER_HOOKS = {
   AfterOrbEvoked: {
     method: 'AfterOrbEvoked',
     params: 'PlayerChoiceContext choiceContext, OrbModel orb, IEnumerable<Creature> targets',
-    playerExpr: null, targetExpr: null, // A COLLECTION of creatures (an orb can evoke onto multiple targets), not a single Creature.
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'orb?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION of creatures (an orb can evoke onto multiple targets), not a single Creature.
   },
   BeforePotionUsed: {
     method: 'BeforePotionUsed',
@@ -5951,12 +5963,12 @@ const TRIGGER_HOOKS = {
   AfterPotionDiscarded: {
     method: 'AfterPotionDiscarded',
     params: 'PotionModel potion',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterPotionProcured: {
     method: 'AfterPotionProcured',
     params: 'PotionModel potion',
-    playerExpr: null, targetExpr: null, // No Creature/Player exposed.
+    playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   // [Fix, round 35] Mine/Enemy split via Creature.IsEnemy on fgPlayer
   // (= applier -- the one who APPLIED the power change, NOT the power's
@@ -6143,7 +6155,7 @@ const TRIGGER_HOOKS = {
   BeforeSideTurnStart: {
     method: 'BeforeSideTurnStart',
     params: 'PlayerChoiceContext choiceContext, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState',
-    playerExpr: null, targetExpr: null, // A COLLECTION (participants), not a single Creature — same reasoning as the already-shipped OnTurnStart (AfterSideTurnStart).
+    playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // A COLLECTION (participants), not a single Creature — same reasoning as the already-shipped OnTurnStart (AfterSideTurnStart).
   },
   AfterPlayerTurnStart: {
     method: 'AfterPlayerTurnStart',
@@ -6981,6 +6993,36 @@ function wrapPileGuard(effect, code) {
   return `        // effect: ${effect.trigger} (while in a pile -- this.Card.Pile is [VERIFIED via direct ECMA-335 metadata read of CardModel, round 200])\n        if (this.Card.Pile?.Type == ${effect.__pileGuard})\n        {\n${indented}\n        }`;
 }
 
+// [Round 393] Owner-bound hooks. 14 TRIGGER_HOOKS entries (OnCombatStart,
+// OnKillEnemy, OnDrawCard, AfterAttack, AfterDiedToDoom, AfterEnergySpent,
+// AfterPreventingDraw, AfterActEntered, AfterCombatEnd, AfterCombatVictory,
+// BeforeSideTurnStart, AfterOrbEvoked, AfterPotionDiscarded,
+// AfterPotionProcured) expose no Creature/Player in their real parameters,
+// so they used to collapse to a ForgeActions.Todo() stub. They now bind
+// `fgPlayer` to the entity's OWN owner instead -- exactly the "whose relic/
+// power is this" answer every Forge-generated model already has:
+//   relic        RelicModel.Owner  : Player   (public getter, sts2.dll)  -> .Creature
+//   mechanic     PowerModel.Owner  : Creature (public getter, sts2.dll)
+//   enchantment / affliction: no Owner of their own; Card.Owner (CardModel.Owner : Player)
+// Guards (`{OWNER_PLAYER}` / `{OWNER_CREATURE}` placeholders in a hook's
+// guardExpr) keep multiplayer correct: every player's relic receives every
+// player's events, so e.g. "when I draw a card" must test card.Owner.
+function ownerBindingExprs(entityKind) {
+  switch (entityKind) {
+    case 'relic': return { player: 'this.Owner', creature: 'this.Owner.Creature' };
+    case 'mechanic': return { player: 'this.Owner.Player', creature: 'this.Owner' };
+    case 'enchantment':
+    case 'affliction': return { player: 'this.Card.Owner', creature: 'this.Card.Owner.Creature' };
+    default: return null;
+  }
+}
+function applyOwnerPlaceholders(expr, entityKind) {
+  if (!expr || expr.indexOf('{OWNER_') < 0) return expr;
+  const o = ownerBindingExprs(entityKind);
+  if (!o) throw new Error(`owner-bound hook guard used for unsupported entity kind "${entityKind}"`);
+  return expr.replace(/\{OWNER_PLAYER\}/g, o.player).replace(/\{OWNER_CREATURE\}/g, o.creature);
+}
+
 function generateHookEffects(entity, entityKind, refMaps) {
   const blocks = [];
   // [Fix, round 35] Same-real-method merge groups. Before this round,
@@ -7041,7 +7083,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // entry; the assertion below is a cheap tripwire in case a future
     // TRIGGER_HOOKS edit ever breaks that invariant by hand.
     const hook = group[0].hook;
-    if (group.some(g => g.hook.params !== hook.params || g.hook.playerExpr !== hook.playerExpr || g.hook.targetExpr !== hook.targetExpr || g.hook.collectionExpr !== hook.collectionExpr || g.hook.cardParamExpr !== hook.cardParamExpr)) {
+    if (group.some(g => g.hook.params !== hook.params || g.hook.playerExpr !== hook.playerExpr || g.hook.targetExpr !== hook.targetExpr || g.hook.collectionExpr !== hook.collectionExpr || !!g.hook.ownerBound !== !!hook.ownerBound || g.hook.cardParamExpr !== hook.cardParamExpr)) {
       throw new Error(`TRIGGER_HOOKS entries sharing real method "${hook.method}" have mismatched params/playerExpr/targetExpr/collectionExpr — every id mapped to the same real method must describe the exact same real signature/binding, only guardExpr may differ. Fix the TRIGGER_HOOKS table.`);
     }
     // Local vars are `fgPlayer`/`fgTarget` (Forge-prefixed), NOT `player`/
@@ -7080,7 +7122,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
     // it ever reaches here, so no fgTarget-referencing action/condition can
     // survive into a player-only-bound hook body.
     let body;
-    if (!hook.playerExpr && !hook.collectionExpr) {
+    if (!hook.playerExpr && !hook.collectionExpr && !hook.ownerBound) {
       // Genuinely unbound hook — no real Creature and no real collection
       // exposed at all. Whole effect collapses to a Todo() stub, one call
       // per grouped effect. (Before round 35's follow-up, OnMyTurnStart/
@@ -7124,7 +7166,11 @@ function generateHookEffects(entity, entityKind, refMaps) {
       });
       body = effectBodies.join('\n');
     } else {
-      const bindLines = (hook.playerExpr && hook.targetExpr)
+      const ownerExprs = hook.ownerBound ? ownerBindingExprs(entityKind) : null;
+      if (hook.ownerBound && !ownerExprs) throw new Error(`Hook "${hook.method}" is owner-bound but entity kind "${entityKind}" has no owner expression.`);
+      const bindLines = hook.ownerBound
+        ? `        var fgPlayer = ${ownerExprs.creature}; // [Round 393] [VERIFIED via direct sts2.dll read] owner-bound hook -- ${hook.method}'s real parameters expose no Creature, so fgPlayer is this ${entityKind}'s own owner\n${petLine}`
+        : (hook.playerExpr && hook.targetExpr)
         ? `        var fgPlayer = ${hook.playerExpr}; // [BEST EFFORT]\n        var fgTarget = ${hook.targetExpr}; // [BEST EFFORT]\n${petLine}`
         : `        var fgPlayer = ${hook.playerExpr}; // [VERIFIED via direct sts2.dll read — single-Creature/Player hook, no second party exposed]\n${petLine}`;
       const effectBodies = group.map(({ effect, hook: effHook }) => {
@@ -7136,7 +7182,7 @@ function generateHookEffects(entity, entityKind, refMaps) {
         // from. Re-indented one level deeper since it's now wrapped in
         // its own if-block rather than being the whole method body.
         const indented = raw.split('\n').map(l => l ? '    ' + l : l).join('\n');
-        return wrapPileGuard(effect, `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${effHook.guardExpr})\n        {\n${indented}\n        }`);
+        return wrapPileGuard(effect, `        // effect: ${effect.trigger} (side-filtered — see TRIGGER_HOOKS.${effect.trigger}.guardExpr)\n        if (${applyOwnerPlaceholders(effHook.guardExpr, entityKind)})\n        {\n${indented}\n        }`);
       });
       body = `${bindLines}${effectBodies.join('\n')}`;
     }

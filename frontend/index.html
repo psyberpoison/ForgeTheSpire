@@ -4385,18 +4385,19 @@ const HOOK_TRIGGER_BINDING = {
   OnMyDamageTaken: 'both', OnEnemyDamageTaken: 'both',
   OnMyTurnStart: 'player', OnEnemyTurnStart: 'player',
   OnMyTurnEnd: 'player', OnEnemyTurnEnd: 'player',
-  AfterActEntered: 'unbound', AfterAttack: 'unbound', AfterCardGeneratedForCombat: 'player',
+  AfterActEntered: 'player', AfterAttack: 'player', AfterCardGeneratedForCombat: 'player',
   OnExhaust: 'player', // [2026-09-25] previously had no entry at all here (treated as unbound-shaped by omission) -- see backend/compiler.js:TRIGGER_HOOKS.OnExhaust's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
-  AfterCombatEnd: 'unbound', AfterCombatVictory: 'unbound',
-  AfterDiedToDoom: 'unbound', AfterEnergyReset: 'player',
-  AfterEnergySpent: 'unbound', AfterGoldGained: 'player', BeforeHandDraw: 'player',
+  AfterCombatEnd: 'player', AfterCombatVictory: 'player',
+  AfterDiedToDoom: 'player', AfterEnergyReset: 'player',
+  AfterEnergySpent: 'player', AfterGoldGained: 'player', BeforeHandDraw: 'player',
   AfterHandEmptied: 'player', AfterItemPurchased: 'player',
-  AfterPreventingDraw: 'unbound', AfterOrbChanneled: 'player', AfterOrbEvoked: 'unbound',
-  BeforePotionUsed: 'player', AfterPotionUsed: 'player', AfterPotionDiscarded: 'unbound',
-  AfterPotionProcured: 'unbound',
+  AfterPreventingDraw: 'player', AfterOrbChanneled: 'player', AfterOrbEvoked: 'player',
+  BeforePotionUsed: 'player', AfterPotionUsed: 'player', AfterPotionDiscarded: 'player',
+  AfterPotionProcured: 'player', // [Round 393] the 14 formerly-'unbound' triggers (these + OnCombatStart/OnKillEnemy/OnDrawCard below) are owner-bound now: fgPlayer = the relic's/status's own owner -- see backend/compiler.js ownerBindingExprs
+  OnCombatStart: 'player', OnKillEnemy: 'player', OnDrawCard: 'player',
   AfterRestSiteHeal: 'player', AfterRestSiteSmith: 'player', AfterShuffle: 'player',
   AfterStarsSpent: 'player', AfterStarsGained: 'player', AfterSummon: 'player',
-  BeforeSideTurnStart: 'unbound', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', AfterCardMilled: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
+  BeforeSideTurnStart: 'player', AfterPlayerTurnStart: 'player', AfterCardDiscarded: 'player', AfterCardMilled: 'player', // [2026-09-25] was 'unbound' -- see backend/compiler.js:TRIGGER_HOOKS.AfterCardDiscarded's own comment (card.Owner.Creature, VERIFIED via direct sts2.dll IL read)
   AfterForge: 'player', // playerExpr: 'forger.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.AfterForge
   OnOrbPassive: 'player', OnOrbEvoke: 'player', // [Round 379] playerExpr: 'Owner.Creature', targetExpr: null -- see backend/compiler.js:TRIGGER_HOOKS.OnOrbPassive/OnOrbEvoke
   BeforeFlush: 'player', AfterFlush: 'player', // [Round 199] playerExpr: 'player.Creature', targetExpr: null — see backend/compiler.js:TRIGGER_HOOKS.BeforeFlush/AfterFlush
@@ -4435,6 +4436,8 @@ const NO_CHOICE_CONTEXT_HOOK_TRIGGERS = new Set([
   'AfterPreventingMyDeath', 'AfterPreventingEnemyDeath',
   'AfterRestSiteHeal', 'AfterRestSiteSmith', 'AfterStarsSpent',
   'AfterStarsGained', 'AfterForge',
+  // [Round 393] owner-bound hooks whose real params have no PlayerChoiceContext (re-derived from backend/validate.js):
+  'OnCombatStart', 'AfterEnergySpent', 'AfterPreventingDraw', 'AfterActEntered', 'AfterCombatEnd', 'AfterCombatVictory', 'AfterPotionDiscarded', 'AfterPotionProcured',
   // [Round 277] AfterApplied(Creature applier, CardModel cardSource) and
   // AfterRemoved(Creature owner) -- neither real signature has a
   // PlayerChoiceContext param (see backend/compiler.js:TRIGGER_HOOKS.
@@ -4482,6 +4485,8 @@ const NO_CHOICE_CONTEXT_HOOK_TRIGGERS = new Set([
 // DiscardCard/EndTurn hidden — still need real cardPlayBound, which
 // neither has; DealDamage stays offered — both DO have a real
 // choiceContext, unlike the 17 NO_CHOICE_CONTEXT_HOOK_TRIGGERS).
+// [Round 393] set by renderEffectsList: 'relic' | 'mechanic' | null (cards/potions/enchantments/etc.)
+let currentEffectsEntityKind = null;
 const CARD_PLAY_BOUND_TRIGGERS = new Set(['OnPlay', 'OnAnyCardPlayed']);
 // [Round 59] GainEnergy/ModifyGold/EndTurn removed — round 24-26 upgraded
 // all three to real codegen on EVERY trigger via resolvePlayerExpr(ctx)
@@ -4520,6 +4525,12 @@ const CARD_PLAYER_ONLY_TRIGGERS = new Set(['OnDiscard', 'OnTurnEndInHand', 'OnRe
 // player/target binding is otherwise confirmed.
 function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   const hidden = new Set();
+  // [Round 393] These six always act on a specific CardModel (resolveActedCardExpr). On a relic/status
+  // hook with no card in scope there is nothing to act on, so hide them (validate.js rejects them too).
+  // AfflictCard / AddReplay stay visible: their "random card(s) in a pile" mode works everywhere.
+  if((currentEffectsEntityKind === 'relic' || currentEffectsEntityKind === 'mechanic') && !CARD_REFERENCE_TRIGGERS.includes(trigger)){
+    ['ModifyCost','RemoveAffliction','EnchantCard','RemoveEnchantment','ShuffleCardIntoDraw','RemoveFromCombat'].forEach(t=>hidden.add(t));
+  }
   if(!returnToHandEligible) hidden.add('ReturnToHand');
   // [Round 357] AnyTime potions can be drunk outside combat, where Forge's
   // combat-state actions have nothing to act on -- only HP/gold are offered
@@ -11360,7 +11371,7 @@ function conditionKindAllowedForTrigger(kindDef, trigger, modifierHook){
 // the other 3 — see backend/compiler.js:TRIGGER_HOOKS' own cardParamExpr
 // comments). Used by conditionKindAllowedForTrigger's 'cardReferenceTrigger'
 // sentinel and by CONDITION_SUBJECTS.ThatCard's onlyForTriggers below.
-const CARD_REFERENCE_TRIGGERS = ['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'];
+const CARD_REFERENCE_TRIGGERS = ['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust', 'OnDrawCard', 'AfterEnergySpent']; // [Round 393] OnDrawCard/AfterEnergySpent added (cardParamExpr)
 // Comparators used by every condition kind except PlayedCardHasKeyword
 // (which uses `keyword` instead — a has/has-not check, not a threshold).
 const COMPARATORS = [
@@ -14163,6 +14174,7 @@ function allowedHookTriggers(isRelic){
   return HOOK_TRIGGERS.filter(t => !excluded.has(t));
 }
 function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPile, isRelic){
+  currentEffectsEntityKind = isRelic ? 'relic' : ((state.mechanics || []).includes(entity) ? 'mechanic' : null);
   // listElId defaults to 'effects-list' (the Character/Relic/Mechanic
   // editors' single effects panel, all three unaffected by this param).
   // The card editor is the one place with TWO effects editors open in the

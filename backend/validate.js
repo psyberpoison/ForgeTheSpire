@@ -374,7 +374,7 @@ const DISCOVER_POOL_VALUES = ['OwnCharacter', ...Object.keys(CARD_POOL_CLASS_MAP
 // branch), but still never bind fgTarget either way — same real CS0103
 // risk, same gate needed.
 const TARGETLESS_BOUND_HOOK_TRIGGERS = new Set([
-  ...Object.keys(TRIGGER_HOOKS).filter(t => (TRIGGER_HOOKS[t].playerExpr || TRIGGER_HOOKS[t].collectionExpr) && !TRIGGER_HOOKS[t].targetExpr),
+  ...Object.keys(TRIGGER_HOOKS).filter(t => (TRIGGER_HOOKS[t].playerExpr || TRIGGER_HOOKS[t].collectionExpr || TRIGGER_HOOKS[t].ownerBound) && !TRIGGER_HOOKS[t].targetExpr),
   // [Round 57] Same derivation, now also over a card's OWN hook table
   // (CARD_TRIGGER_HOOKS) — OnDiscard/OnTurnEndInHand gained a real
   // playerExpr (CardModel.Owner, see compiler.js:PET_SUPPORTED_TRIGGERS'
@@ -437,9 +437,25 @@ const TARGETLESS_BOUND_HOOK_TRIGGERS = new Set([
 // below. Full writeup in claude/status.md's Round 21 section (original
 // derivation) and Round 35 (collectionExpr extension).
 const NO_CHOICE_CONTEXT_HOOK_TRIGGERS = new Set(
-  Object.keys(TRIGGER_HOOKS).filter(t => (TRIGGER_HOOKS[t].playerExpr || TRIGGER_HOOKS[t].collectionExpr) && !(TRIGGER_HOOKS[t].params || '').includes('choiceContext'))
+  Object.keys(TRIGGER_HOOKS).filter(t => (TRIGGER_HOOKS[t].playerExpr || TRIGGER_HOOKS[t].collectionExpr || TRIGGER_HOOKS[t].ownerBound) && !(TRIGGER_HOOKS[t].params || '').includes('choiceContext'))
 );
 
+// [Round 393] Single source of truth for "this relic/mechanic hook has a real
+// CardModel in scope": derived from TRIGGER_HOOKS (cardPlayBound = a real
+// `cardPlay` local, cardParamExpr = the hook's own card parameter). Replaces
+// the hand-maintained 5-trigger literal the three PlayedCardHas* checks used,
+// so OnDrawCard / AfterEnergySpent (which gained cardParamExpr this round)
+// are picked up automatically.
+const REFERENCED_CARD_TRIGGERS = Object.keys(TRIGGER_HOOKS).filter(t => TRIGGER_HOOKS[t].cardPlayBound || TRIGGER_HOOKS[t].cardParamExpr);
+// Does an effect block of this entity kind / trigger have a CardModel the
+// compiler's resolveActedCardExpr can resolve? (card: `this`; enchantment/
+// affliction: `this.Card`; relic/mechanic: only hooks with a card in scope;
+// potions and orbs: never.)
+function cardInScopeFor(entityKind, trigger) {
+  if (entityKind === 'card' || entityKind === 'enchantment' || entityKind === 'affliction') return true;
+  if (entityKind === 'relic' || entityKind === 'mechanic') return REFERENCED_CARD_TRIGGERS.includes(trigger);
+  return false;
+}
 function isNonEmptyString(v) { return typeof v === 'string' && v.trim().length > 0; }
 function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 
@@ -491,7 +507,7 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // AfterCardDiscarded/OnExhaust now also expose a real referenced-card
       // reference (see backend/compiler.js:TRIGGER_HOOKS' own
       // cardParamExpr comments and resolveReferencedCardExpr).
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+      if (!REFERENCED_CARD_TRIGGERS.includes(trigger)) {
         errors.push(`${p} has kind "PlayedCardHasKeyword" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_KEYWORDS.includes(cond.keyword)) errors.push(`${p}.keyword "${cond.keyword}" is not one of: ${CARD_KEYWORDS.join(', ')}.`);
@@ -510,7 +526,7 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // reasoning statusRef/cardRef references already get elsewhere in
       // this file.
       // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+      if (!REFERENCED_CARD_TRIGGERS.includes(trigger)) {
         errors.push(`${p} has kind "PlayedCardHasTag" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!isNonEmptyString(cond.tag)) {
@@ -531,7 +547,7 @@ function validateConditions(conditions, path, errors, mechanicIds, cardIds, reli
       // against below), not a numeric threshold. Replaces the old
       // single-type "IsAttack" condition.
       // [2026-09-25] Same widening as PlayedCardHasKeyword's own check above.
-      if (!['OnAnyCardPlayed', 'AfterCardGeneratedForCombat', 'AfterCardDiscarded', 'AfterCardMilled', 'OnExhaust'].includes(trigger)) {
+      if (!REFERENCED_CARD_TRIGGERS.includes(trigger)) {
         errors.push(`${p} has kind "PlayedCardHasType" but this effect block's trigger is "${trigger}" — this condition only makes sense on "OnAnyCardPlayed", "AfterCardGeneratedForCombat", "AfterCardDiscarded", "AfterCardMilled", or "OnExhaust" (it checks the card that triggered THAT hook; no other trigger exposes one to check).`);
       }
       if (!CARD_TYPES.includes(cond.cardType)) errors.push(`${p}.cardType "${cond.cardType}" is not one of: ${CARD_TYPES.join(', ')}.`);
@@ -1712,6 +1728,21 @@ function validateActions(actions, path, errors, mechanicIds, cardIds, affliction
         && effectivePile !== 'Hand';
       if (!eligible) {
         errors.push(`${p}: action "ReturnToHand" ("Return This Card To Hand") is only valid inside a card's own "While in a pile" effect whose pile isn't "Hand" — got entityKind=${xContext.entityKind || 'unknown'}, trigger=${xContext.trigger || 'unknown'}, pile=${effectivePile}. A card can't return to a pile it's already in.`);
+      }
+    }
+    // [Round 393] "This card" actions need a CardModel in scope. These compile
+    // through resolveActedCardExpr, which is null on a relic/mechanic hook with
+    // no card (OnCombatStart, AfterGoldGained, ...) and on potions/orbs -- the
+    // compiler used to emit a ForgeActions.Todo() log line there while the
+    // validator accepted it. Fail loud instead, and point at the working
+    // alternatives.
+    {
+      const needsCard = ['ModifyCost', 'RemoveAffliction', 'EnchantCard', 'RemoveEnchantment', 'ShuffleCardIntoDraw', 'RemoveFromCombat'].includes(act.type)
+        || (act.type === 'AfflictCard' && act.afflictTargetKind !== 'RandomFromPile')
+        || (act.type === 'AddReplay' && act.replayTargetKind !== 'RandomFromPile');
+      if (needsCard && xContext.entityKind && xContext.entityKind !== 'card' && !cardInScopeFor(xContext.entityKind, xContext.trigger)) {
+        const alt = (act.type === 'AfflictCard' || act.type === 'AddReplay') ? ' Choose "random card(s) in a pile" instead of "this card".' : '';
+        errors.push(`${p}: action "${act.type}" acts on a specific card, but a ${xContext.entityKind} effect on the "${xContext.trigger || 'unknown'}" trigger has no card in scope.${alt} Triggers that do expose a card: ${REFERENCED_CARD_TRIGGERS.join(', ')}.`);
       }
     }
     // amount SCALING with a status's stack count — Tyler's request:
