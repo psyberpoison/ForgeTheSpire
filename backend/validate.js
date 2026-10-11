@@ -456,6 +456,34 @@ function cardInScopeFor(entityKind, trigger) {
   if (entityKind === 'relic' || entityKind === 'mechanic') return REFERENCED_CARD_TRIGGERS.includes(trigger);
   return false;
 }
+// [Round 394] Triggers that can fire with NO combat running (derived from the
+// `outOfCombat` flag on TRIGGER_HOOKS). IL-verified: AfterActEntered
+// (RunManager.EnterAct), AfterRestSiteHeal/Smith (rest-site options),
+// AfterItemPurchased (merchant entries) take only an IRunState -- they never
+// run in combat; AfterGoldGained (PlayerCmd.GainGold) and the four potion
+// hooks (PotionCmd/PotionModel, passing `player.Creature.CombatState` which is
+// null outside combat) can run either way. Outside combat there is no
+// Creature.CombatState / PlayerCombatState, so -- exactly like an AnyTime
+// potion -- only HP and gold actions, plain amounts, and combat-free
+// conditions are allowed on these triggers.
+const OUT_OF_COMBAT_TRIGGERS = Object.keys(TRIGGER_HOOKS).filter(t => TRIGGER_HOOKS[t].outOfCombat);
+const OUT_OF_COMBAT_SAFE_ACTIONS = ['ModifyHp', 'ModifyGold'];
+const OUT_OF_COMBAT_SAFE_CONDITIONS = ['HpBelowPercent', 'MaxHp', 'HasSpecificRelic', 'Chance'];
+function validateOutOfCombatEffect(eff, p, errors) {
+  const where = `the "${eff.trigger}" trigger can fire outside combat (no enemies, energy, block or combat statuses exist there)`;
+  (Array.isArray(eff.conditions) ? eff.conditions : []).forEach((c, ci) => {
+    if (!c || typeof c !== 'object') return;
+    if (!OUT_OF_COMBAT_SAFE_CONDITIONS.includes(c.kind)) errors.push(`${p}.conditions[${ci}]: condition "${c.kind}" reads combat state, but ${where}. Allowed here: ${OUT_OF_COMBAT_SAFE_CONDITIONS.join(', ')}.`);
+    else if (c.subject !== undefined && c.subject !== 'Self') errors.push(`${p}.conditions[${ci}]: on "${eff.trigger}" a condition can only check yourself (subject "Self") -- ${where}.`);
+  });
+  [['actions', eff.actions], ['elseActions', eff.elseActions]].forEach(([field, arr]) => (Array.isArray(arr) ? arr : []).forEach((a, ai) => {
+    if (!a || typeof a !== 'object') return;
+    const ap = `${p}.${field}[${ai}]`;
+    if (!OUT_OF_COMBAT_SAFE_ACTIONS.includes(a.type)) errors.push(`${ap}: "${a.type}" needs combat state, but ${where}. Allowed here: ${OUT_OF_COMBAT_SAFE_ACTIONS.join(', ')}.`);
+    else if (a.amountFormula || a.amountScalesWithStatus || a.amountScalesWithBuiltinStatus || a.amountScalesWithStatusKind || a.amountIsX || a.amountIsStarX) errors.push(`${ap}: ${where}, so the amount must be a plain number (no formula, status scaling or X).`);
+    else if (a.type === 'ModifyHp' && a.target !== 'Self') errors.push(`${ap}: ModifyHp on "${eff.trigger}" must target "Self".`);
+  }));
+}
 function isNonEmptyString(v) { return typeof v === 'string' && v.trim().length > 0; }
 function isInt(v) { return typeof v === 'number' && Number.isInteger(v); }
 
@@ -2104,6 +2132,7 @@ function validateEffects(effects, path, errors, { allowedTriggers, mechanicIds, 
       }
     }
     validateConditions(eff.conditions, p, errors, mechanicIds, cardIds, relicIds, eff.trigger, gameplayTagsInUse, undefined, petIds, stanceIds);
+    if (entityKind !== 'card' && OUT_OF_COMBAT_TRIGGERS.includes(eff.trigger)) validateOutOfCombatEffect(eff, p, errors);
     // [Fix, round 33 — real crash: a genuine, mechanistically-proven
     // infinite-recursion stack overflow, root-caused via a real Windows
     // minidump (STATUS_STACK_OVERFLOW, ~thousands of uniformly-repeated

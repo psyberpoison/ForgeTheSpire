@@ -5703,6 +5703,7 @@ const TRIGGER_HOOKS = {
   // who's who, Todo() fallback otherwise. All [VERIFIED via direct sts2.dll read].
   AfterActEntered: {
     method: 'AfterActEntered',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: '',
     playerExpr: null, targetExpr: null, ownerBound: true, // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // Turn/run lifecycle — a new Act begins. No params at all.
   },
@@ -5885,6 +5886,7 @@ const TRIGGER_HOOKS = {
   },
   AfterGoldGained: {
     method: 'AfterGoldGained',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },
@@ -5932,6 +5934,7 @@ const TRIGGER_HOOKS = {
   },
   AfterItemPurchased: {
     method: 'AfterItemPurchased',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player, MerchantEntry itemPurchased, int goldSpent',
     playerExpr: 'player.Creature', targetExpr: null,
   },
@@ -5952,21 +5955,25 @@ const TRIGGER_HOOKS = {
   },
   BeforePotionUsed: {
     method: 'BeforePotionUsed',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion, Creature target',
     playerExpr: 'target', targetExpr: null, // Single Creature — bound as fgPlayer.
   },
   AfterPotionUsed: {
     method: 'AfterPotionUsed',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion, Creature target',
     playerExpr: 'target', targetExpr: null, // Single Creature — bound as fgPlayer.
   },
   AfterPotionDiscarded: {
     method: 'AfterPotionDiscarded',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
   AfterPotionProcured: {
     method: 'AfterPotionProcured',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'PotionModel potion',
     playerExpr: null, targetExpr: null, ownerBound: true, guardExpr: 'potion?.Owner == {OWNER_PLAYER}', // [Round 393] owner-bound: fgPlayer = this entity's own owner (see generateHookEffects' ownerBound branch) // No Creature/Player exposed.
   },
@@ -6124,11 +6131,13 @@ const TRIGGER_HOOKS = {
   },
   AfterRestSiteHeal: {
     method: 'AfterRestSiteHeal',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player, bool isMimicked',
     playerExpr: 'player.Creature', targetExpr: null,
   },
   AfterRestSiteSmith: {
     method: 'AfterRestSiteSmith',
+    outOfCombat: true, // [Round 394] can fire with NO combat (AfterActEntered/RestSite*/ItemPurchased: never in combat; AfterGoldGained + potion hooks: either) -- see validate.js OUT_OF_COMBAT_TRIGGERS
     params: 'Player player',
     playerExpr: 'player.Creature', targetExpr: null,
   },

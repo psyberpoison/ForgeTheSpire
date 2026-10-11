@@ -4485,6 +4485,12 @@ const NO_CHOICE_CONTEXT_HOOK_TRIGGERS = new Set([
 // DiscardCard/EndTurn hidden — still need real cardPlayBound, which
 // neither has; DealDamage stays offered — both DO have a real
 // choiceContext, unlike the 17 NO_CHOICE_CONTEXT_HOOK_TRIGGERS).
+// [Round 394] Triggers that can fire with no combat running -- mirrors backend/validate.js's OUT_OF_COMBAT_TRIGGERS
+// (derived there from TRIGGER_HOOKS.outOfCombat). Only HP/gold actions, plain amounts and combat-free conditions
+// are offered on them; validate.js rejects the rest.
+const OUT_OF_COMBAT_TRIGGERS = new Set(['AfterActEntered','AfterGoldGained','AfterItemPurchased','AfterRestSiteHeal','AfterRestSiteSmith','AfterPotionProcured','AfterPotionDiscarded','BeforePotionUsed','AfterPotionUsed']);
+const OUT_OF_COMBAT_SAFE_ACTIONS = ['ModifyHp','ModifyGold'];
+const OUT_OF_COMBAT_SAFE_CONDITIONS = ['HpBelowPercent','MaxHp','HasSpecificRelic','Chance'];
 // [Round 393] set by renderEffectsList: 'relic' | 'mechanic' | null (cards/potions/enchantments/etc.)
 let currentEffectsEntityKind = null;
 const CARD_PLAY_BOUND_TRIGGERS = new Set(['OnPlay', 'OnAnyCardPlayed']);
@@ -4525,6 +4531,11 @@ const CARD_PLAYER_ONLY_TRIGGERS = new Set(['OnDiscard', 'OnTurnEndInHand', 'OnRe
 // player/target binding is otherwise confirmed.
 function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
   const hidden = new Set();
+  // [Round 394] Out-of-combat triggers: hide everything that needs combat state.
+  if(OUT_OF_COMBAT_TRIGGERS.has(trigger)){
+    ACTION_TYPES.forEach(t=>{ if(!OUT_OF_COMBAT_SAFE_ACTIONS.includes(t)) hidden.add(t); });
+    return hidden;
+  }
   // [Round 393] These six always act on a specific CardModel (resolveActedCardExpr). On a relic/status
   // hook with no card in scope there is nothing to act on, so hide them (validate.js rejects them too).
   // AfflictCard / AddReplay stay visible: their "random card(s) in a pile" mode works everywhere.
@@ -4559,6 +4570,8 @@ function hiddenActionTypesForTrigger(trigger, returnToHandEligible){
 // filtered-out type. GainBlock is real on every non-unbound trigger (the
 // only case DealDamage gets hidden), so it's a safe universal fallback.
 function defaultActionForTrigger(trigger){
+  // [Round 394] out-of-combat triggers only offer HP/gold actions
+  if(OUT_OF_COMBAT_TRIGGERS.has(trigger)) return {type:'ModifyHp', mode:'Gain', target:'Self', amount:5};
   if(potionEditCtx && trigger === 'OnPlay'){
     // [Round 357] a potion's drink effect: pick something valid for its usage/target.
     if(potionEditCtx.usage === 'AnyTime') return {type:'ModifyHp', mode:'Gain', target:'Self', amount:10};
@@ -14604,7 +14617,8 @@ function renderEffectsList(entity, triggerOptions, listElId, costsXCard, showPil
       // simplest always-available kind (CardsInHand) — never defaults to
       // PlayedCardHasKeyword, since that one's only valid on a specific
       // trigger and shouldn't silently appear as the default elsewhere.
-      const defaultKind = state.mechanics.length ? 'HasStatusStacks' : 'CardsInHand';
+      let defaultKind = state.mechanics.length ? 'HasStatusStacks' : 'CardsInHand';
+      if(OUT_OF_COMBAT_TRIGGERS.has(eff.trigger)) defaultKind = 'HpBelowPercent'; // [Round 394] combat-free default
       eff.conditions.push(blankCondition(defaultKind));
       renderConditionRows(eff, condListEl, onConditionsChanged);
     };
@@ -15360,6 +15374,8 @@ function renderConditionRows(eff, container, onChange){
 // rejected, since validate.js would reject it server-side anyway — no
 // reason to let the UI offer a choice it already knows is invalid here).
 function availableConditionKinds(eff){
+  // [Round 394] out-of-combat triggers: only combat-free condition kinds (mirrors validate.js)
+  if(OUT_OF_COMBAT_TRIGGERS.has(eff.trigger)) return CONDITION_KINDS.filter(k => OUT_OF_COMBAT_SAFE_CONDITIONS.includes(k.id) && conditionKindAllowedForTrigger(k, eff.trigger, eff.modifierHook));
   return CONDITION_KINDS.filter(k => conditionKindAllowedForTrigger(k, eff.trigger, eff.modifierHook));
 }
 
@@ -17293,9 +17309,9 @@ function renderActionRowFields(row, act, xEligible, xStarEligible, trigger, retu
   // and ensureActionRefDefaults below self-heals any such leftover on
   // load (converts a plain Literal formula back to a flat `amount`, then
   // drops the formula fields entirely).
-  const formulaEligible = (needsAmount || isModifyStatusAdd) && act.type !== 'AfflictCard' && act.type !== 'EnchantCard';
+  const formulaEligible = (needsAmount || isModifyStatusAdd) && act.type !== 'AfflictCard' && act.type !== 'EnchantCard' && !OUT_OF_COMBAT_TRIGGERS.has(trigger); // [Round 394] no combat formulas out of combat
   const hasFormula = formulaEligible && Array.isArray(act.amountFormula) && act.amountFormula.length > 0;
-  const canScale = actionCanScaleWithStatus(act.type) && (act.type !== 'ModifyStatus' || isModifyStatusAdd) && !hasFormula;
+  const canScale = actionCanScaleWithStatus(act.type) && (act.type !== 'ModifyStatus' || isModifyStatusAdd) && !hasFormula && !OUT_OF_COMBAT_TRIGGERS.has(trigger);
   const isDealDamage = act.type === 'DealDamage';
   // amountIsX/hitCountIsX are [VERIFIED via decompiling Tyler's own
   // TheBurdenedNewCharacter.dll] — see schema's action.amountIsX/
