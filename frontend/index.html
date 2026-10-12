@@ -1663,10 +1663,10 @@
   .side-nav-group{padding:0;}
   .side-nav-group + .side-nav-group{margin-top:2px;}
   .side-nav-group-label{padding:4px 18px 2px; font-size:9.5px; line-height:1.2; letter-spacing:.12em; text-transform:uppercase; color:var(--parchment-dim); opacity:.7;}
-  /* [Round 402] Tyler's mockup: instead of a hairline THEN a title, the title sits centered ON the line (-- EXTRAS --). The first group's title stays a plain left label. */
-  .side-nav-group + .side-nav-group .side-nav-group-label{display:flex; align-items:center; gap:8px; justify-content:center; padding:5px 10px 3px;}
-  .side-nav-group + .side-nav-group .side-nav-group-label::before,
-  .side-nav-group + .side-nav-group .side-nav-group-label::after{content:''; flex:1 1 0; height:1px; background:var(--border-soft);}
+  /* [Round 402] Tyler's mockup: instead of a hairline THEN a title, the title sits centered ON the line (-- EXTRAS --). Round 403: every group title (Essentials too) gets the lines, with the same 18px gutter on both sides. */
+  .side-nav-group-label{display:flex; align-items:center; gap:8px; justify-content:center; padding:5px 18px 3px;}
+  .side-nav-group-label::before,
+  .side-nav-group-label::after{content:''; flex:1 1 0; height:1px; background:var(--border-soft);}
   .side-nav-group.pinned .side-nav-group-label{color:var(--accent-bright); opacity:1;}
   /* [Round 402] compact rows for the grouped menu; fitSideNavDensity() steps these down (data-density 1-3) until nothing overflows */
   .side-nav[data-layout="grouped"]{--nav-py:5px;}
@@ -1678,7 +1678,6 @@
   .side-nav[data-layout="grouped"][data-density="3"]{--nav-py:2px;}
   .side-nav[data-layout="grouped"][data-density="3"] .side-nav-group-label{display:none;}
   .side-nav[data-layout="grouped"][data-density="3"] .side-nav-link{font-size:12px;}
-  .side-nav[data-layout="grouped"][data-density="3"] .side-nav-layout-switch{display:none;}
   .side-nav-item{position:relative; display:flex; align-items:stretch;}
   .side-nav-item > .side-nav-link{flex:1 1 auto; min-width:0; padding-right:30px;}
   .side-nav-item .side-nav-pin{position:absolute; right:6px; top:50%; transform:translateY(-50%); padding:3px 4px; border:0; background:transparent; color:var(--parchment-dim); opacity:0; cursor:pointer; line-height:0; border-radius:3px;}
@@ -1691,12 +1690,9 @@
   .side-nav-item.dragging{opacity:.4;}
   .side-nav-item.drop-before{box-shadow:0 -2px 0 var(--accent-bright);}
   .side-nav-item.drop-after{box-shadow:0 2px 0 var(--accent-bright);}
-  .side-nav-layout-switch{display:block; margin:4px 18px 2px; padding:1px 0; border:0; background:transparent; color:var(--parchment-dim); font-size:10.5px; text-decoration:underline; cursor:pointer; opacity:.7;}
-  .side-nav-layout-switch:hover{opacity:1; color:var(--parchment);}
   .side-nav.collapsed .side-nav-group-label, .side-nav.no-room .side-nav-group-label,
   .side-nav.collapsed .side-nav-pin, .side-nav.no-room .side-nav-pin,
-  .side-nav.collapsed .side-nav-grip, .side-nav.no-room .side-nav-grip,
-  .side-nav.collapsed .side-nav-layout-switch, .side-nav.no-room .side-nav-layout-switch{display:none;}
+  .side-nav.collapsed .side-nav-grip, .side-nav.no-room .side-nav-grip{display:none;} /* [Round 403] terminator restored after removing the layout-switch selector that used to end this list */
   .side-nav.collapsed .side-nav-item > .side-nav-link, .side-nav.no-room .side-nav-item > .side-nav-link{padding-right:4px; padding-left:4px;}
   .panel-req-chip{margin-left:4px; padding:0 8px; border-radius:9px; font-size:10.5px; line-height:17px; letter-spacing:.05em; color:var(--parchment-dim); border:1px solid var(--border-soft); font-family:'JetBrains Mono',monospace; text-transform:uppercase; align-self:center;}
   .panel-req-chip.required{color:#d9a94a; border-color:rgba(217,169,74,.5);}
@@ -24757,7 +24753,7 @@ function getNavPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem(NAV_PREFS_KEY) || '{}') || {}; }catch(e){ p = {}; }
   navPrefs = {
-    layout: p.layout === 'classic' ? 'classic' : 'grouped',
+    layout: 'grouped', // [Round 403] the Classic/Grouped switch was removed; a previously saved 'classic' is ignored
     pinned: Array.isArray(p.pinned) ? p.pinned.filter(x=>typeof x === 'string') : [],
     open: (p.open && typeof p.open === 'object') ? p.open : {}
   };
@@ -24829,12 +24825,6 @@ document.addEventListener('click', (ev)=>{
   const sec = head.parentElement;
   setSectionOpen(sec.id, sec.classList.contains('collapsed'));
 });
-function setNavLayout(layout){
-  getNavPrefs().layout = layout === 'classic' ? 'classic' : 'grouped';
-  saveNavPrefs();
-  applySectionLayout();
-  buildSideNavLinks();
-}
 function toggleNavPin(id){
   const p = getNavPrefs();
   const i = p.pinned.indexOf(id);
@@ -24859,7 +24849,6 @@ function layoutSideNavLinks(inner, sections, linkById){
   if(navEl) navEl.dataset.layout = grouped ? 'grouped' : 'classic';
   if(!grouped){
     sections.forEach(sec=>{ const a = linkById.get(sec.id); if(a) inner.appendChild(a); });
-    if(activeScreen === 'character') appendLayoutSwitch(inner);
     return;
   }
   const prefs = getNavPrefs();
@@ -24882,7 +24871,6 @@ function layoutSideNavLinks(inner, sections, linkById){
   addGroup('Essentials', essentials, 'essentials');
   addGroup('Extras', extras, 'extras');
   addGroup(review.length ? 'Review' : '', review, 'review');
-  appendLayoutSwitch(inner);
 }
 // [Round 402] Tyler: "i dont want any words clipped off ... and I dont want a scroll bar ... don't simply make the
 // menu longer". Tries the roomiest spacing first and steps down (smaller rows, then no group labels, then smaller
@@ -24899,14 +24887,6 @@ function fitSideNavDensity(){
   }
 }
 window.addEventListener('resize', ()=> fitSideNavDensity());
-function appendLayoutSwitch(inner){
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'side-nav-layout-switch ghost';
-  b.textContent = isGroupedLayout() ? 'Classic menu' : 'Grouped menu';
-  b.title = isGroupedLayout() ? 'Switch back to the original flat menu (also expands every section)' : 'Group sections into Essentials / Extras with pinning and collapsible optional sections';
-  b.onclick = ()=> setNavLayout(isGroupedLayout() ? 'classic' : 'grouped');
-  inner.appendChild(b);
-}
 function buildNavItem(id, a, isPinned, index){
   const item = document.createElement('div');
   item.className = 'side-nav-item' + (isPinned ? ' pinned' : '');
