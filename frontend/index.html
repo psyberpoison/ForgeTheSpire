@@ -238,8 +238,10 @@
     width:100%;
     max-height:80vh;
     overflow-y:auto;
-    overflow-x:hidden;
+    overflow-x:hidden;    scrollbar-width:none; /* [Round 402] never show a scrollbar -- fitSideNavDensity() keeps the menu inside its box; wheel scrolling is only a last-resort fallback */
+    -ms-overflow-style:none;
   }
+  .side-nav-clip::-webkit-scrollbar{display:none;}
   /* [Round 324] A long section name like "Enchantments & Afflictions"
      still renders on one line (.side-nav-link's own white-space:nowrap)
      and is clipped with an ellipsis rather than wrapped (see
@@ -415,7 +417,7 @@
   .world-pending{margin-top:12px; padding:14px 16px; border:1px dashed var(--border-soft); border-radius:var(--radius); color:var(--parchment-dim); font-style:italic; font-size:13px;}
   .side-nav-link{
     display:flex; align-items:center;
-    padding:8px 18px;
+    padding:var(--nav-py, 8px) 18px;
     color:var(--parchment-dim);
     text-decoration:none;
     font-size:13px;
@@ -1658,10 +1660,25 @@
   .hint-small{color:var(--parchment-dim); font-size:11px; font-style:italic;}
   /* [Round 397] Warnings section + nav badge */
   /* [Round 401] grouped menu / pinning / collapsible optional sections (experiment -- see the JS block's header) */
-  .side-nav-group{padding:4px 0;}
-  .side-nav-group + .side-nav-group{border-top:1px solid var(--border-soft); margin-top:4px; padding-top:8px;}
-  .side-nav-group-label{padding:2px 18px 4px; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--parchment-dim); opacity:.75;}
+  .side-nav-group{padding:0;}
+  .side-nav-group + .side-nav-group{margin-top:2px;}
+  .side-nav-group-label{padding:4px 18px 2px; font-size:9.5px; line-height:1.2; letter-spacing:.12em; text-transform:uppercase; color:var(--parchment-dim); opacity:.7;}
+  /* [Round 402] Tyler's mockup: instead of a hairline THEN a title, the title sits centered ON the line (-- EXTRAS --). The first group's title stays a plain left label. */
+  .side-nav-group + .side-nav-group .side-nav-group-label{display:flex; align-items:center; gap:8px; justify-content:center; padding:5px 10px 3px;}
+  .side-nav-group + .side-nav-group .side-nav-group-label::before,
+  .side-nav-group + .side-nav-group .side-nav-group-label::after{content:''; flex:1 1 0; height:1px; background:var(--border-soft);}
   .side-nav-group.pinned .side-nav-group-label{color:var(--accent-bright); opacity:1;}
+  /* [Round 402] compact rows for the grouped menu; fitSideNavDensity() steps these down (data-density 1-3) until nothing overflows */
+  .side-nav[data-layout="grouped"]{--nav-py:5px;}
+  .side-nav[data-layout="grouped"][data-density="1"]{--nav-py:4px;}
+  .side-nav[data-layout="grouped"][data-density="2"]{--nav-py:3px;}
+  .side-nav[data-layout="grouped"][data-density="2"] .side-nav-group-label{display:none;}
+  .side-nav[data-layout="grouped"][data-density="2"] .side-nav-group + .side-nav-group,
+  .side-nav[data-layout="grouped"][data-density="3"] .side-nav-group + .side-nav-group{border-top:1px solid var(--border-soft); padding-top:2px;} /* labels hidden -> plain divider */
+  .side-nav[data-layout="grouped"][data-density="3"]{--nav-py:2px;}
+  .side-nav[data-layout="grouped"][data-density="3"] .side-nav-group-label{display:none;}
+  .side-nav[data-layout="grouped"][data-density="3"] .side-nav-link{font-size:12px;}
+  .side-nav[data-layout="grouped"][data-density="3"] .side-nav-layout-switch{display:none;}
   .side-nav-item{position:relative; display:flex; align-items:stretch;}
   .side-nav-item > .side-nav-link{flex:1 1 auto; min-width:0; padding-right:30px;}
   .side-nav-item .side-nav-pin{position:absolute; right:6px; top:50%; transform:translateY(-50%); padding:3px 4px; border:0; background:transparent; color:var(--parchment-dim); opacity:0; cursor:pointer; line-height:0; border-radius:3px;}
@@ -1674,7 +1691,7 @@
   .side-nav-item.dragging{opacity:.4;}
   .side-nav-item.drop-before{box-shadow:0 -2px 0 var(--accent-bright);}
   .side-nav-item.drop-after{box-shadow:0 2px 0 var(--accent-bright);}
-  .side-nav-layout-switch{display:block; margin:10px 18px 4px; padding:2px 0; border:0; background:transparent; color:var(--parchment-dim); font-size:11px; text-decoration:underline; cursor:pointer; opacity:.7;}
+  .side-nav-layout-switch{display:block; margin:4px 18px 2px; padding:1px 0; border:0; background:transparent; color:var(--parchment-dim); font-size:10.5px; text-decoration:underline; cursor:pointer; opacity:.7;}
   .side-nav-layout-switch:hover{opacity:1; color:var(--parchment);}
   .side-nav.collapsed .side-nav-group-label, .side-nav.no-room .side-nav-group-label,
   .side-nav.collapsed .side-nav-pin, .side-nav.no-room .side-nav-pin,
@@ -24838,6 +24855,8 @@ const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentCo
 // Appends the links to .side-nav-inner. Classic layout / World screen: the original flat list.
 function layoutSideNavLinks(inner, sections, linkById){
   const grouped = isGroupedLayout() && activeScreen === 'character';
+  const navEl = document.getElementById('side-nav');
+  if(navEl) navEl.dataset.layout = grouped ? 'grouped' : 'classic';
   if(!grouped){
     sections.forEach(sec=>{ const a = linkById.get(sec.id); if(a) inner.appendChild(a); });
     if(activeScreen === 'character') appendLayoutSwitch(inner);
@@ -24865,6 +24884,21 @@ function layoutSideNavLinks(inner, sections, linkById){
   addGroup(review.length ? 'Review' : '', review, 'review');
   appendLayoutSwitch(inner);
 }
+// [Round 402] Tyler: "i dont want any words clipped off ... and I dont want a scroll bar ... don't simply make the
+// menu longer". Tries the roomiest spacing first and steps down (smaller rows, then no group labels, then smaller
+// text) only until the menu fits inside its own box -- so a tall window keeps the comfortable look and a short one
+// still never needs a scrollbar. Grouped layout only; classic is untouched.
+function fitSideNavDensity(){
+  const nav = document.getElementById('side-nav');
+  const clip = nav ? nav.querySelector('.side-nav-clip') : null;
+  if(!nav || !clip) return;
+  if(nav.dataset.layout !== 'grouped'){ delete nav.dataset.density; return; }
+  for(const d of ['0', '1', '2', '3']){
+    nav.dataset.density = d;
+    if(clip.scrollHeight <= clip.clientHeight + 1) break;
+  }
+}
+window.addEventListener('resize', ()=> fitSideNavDensity());
 function appendLayoutSwitch(inner){
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'side-nav-layout-switch ghost';
@@ -24973,6 +25007,7 @@ function buildSideNavLinks(){
   layoutSideNavLinks(inner, sections, linkById); // [Round 401] grouped/pinned layout (or the classic flat list)
 
   updateWarningsBadge(); // [Round 397] fresh badge element after every nav rebuild
+  fitSideNavDensity(); // [Round 402]
   if(!sections.length || !('IntersectionObserver' in window)) return;
   const orderedIds = sections.map(sec=>sec.id);
   const visible = new Set();
