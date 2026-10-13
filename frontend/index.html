@@ -17524,6 +17524,22 @@ function sanitizeEffectsArray(effects){
     sanitizeActionsArray(eff.elseActions, eff.trigger);
   });
 }
+// [Round 404] Walks the WHOLE project (every entity kind, however its effect lists are nested) and heals every effect
+// block, so stale data in something nobody has reopened (potions, orbs, enchantments, pets, stances...) is repaired at load
+// instead of surfacing as a warning the UI gives no way to fix. Returns true if anything changed.
+function healStaleEffectsEverywhere(root){
+  const snap = ()=> JSON.stringify(root, (k, v)=> (k === 'dataUrl' || k === 'assets') ? undefined : v);
+  const before = snap();
+  const seen = new Set();
+  (function walk(node){
+    if(!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    if(Array.isArray(node)){ node.forEach(walk); return; }
+    if(typeof node.trigger === 'string' && Array.isArray(node.actions)) sanitizeEffectsArray([node]);
+    Object.keys(node).forEach(k=>{ if(k !== 'assets') walk(node[k]); });
+  })(root);
+  return snap() !== before;
+}
 function sanitizeAllActionDefaults(){
   state.cards.forEach(card=>{
     sanitizeEffectsArray(card.effects);
@@ -17542,14 +17558,21 @@ function sanitizeAllActionDefaults(){
 // serves both lists instead of a second, drift-prone copy.
 function renderActionRows(actions, container, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget){
   container.innerHTML = '';
+  let healed = false;
   actions.forEach((act, j)=>{
+    // [Round 404] ensureActionRefDefaults quietly repairs stale data (e.g. a leftover amountFormula on Afflict/Enchant a Card).
+    // That repair used to stay in memory only, so the live warning computed from the OLD data lingered with nothing the user
+    // could do about it. Detect a repair and persist + re-validate it.
+    const before = JSON.stringify(act);
     ensureActionRefDefaults(act);
+    if(JSON.stringify(act) !== before) healed = true;
     const row = document.createElement('div');
     row.className = 'action-row';
     renderActionRowFields(row, act, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     wireActionRowHandlers(row, act, actions, container, j, xEligible, xStarEligible, trigger, returnToHandEligible, cardIsSingleTarget);
     container.appendChild(row);
   });
+  if(healed) save();
 }
 
 // Rebuilds just this row's inner fields (called on initial render AND
@@ -25046,6 +25069,7 @@ function renderAllFromState(){
   applySectionLayout(); // [Round 401]
 }
 navLayoutReady = true; // [Round 401] the layout module's consts are initialised by here
+try{ if(healStaleEffectsEverywhere(state)) save(); }catch(e){ console.error('[heal] load-time repair skipped', e); } // [Round 404] everything is initialised here (running it earlier hits not-yet-defined consts)
 applySectionLayout(); // before the first nav build
 renderSideNav();
 renderAllFromState();
