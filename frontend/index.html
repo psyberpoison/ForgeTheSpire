@@ -1703,6 +1703,13 @@
   section.panel.collapsible > .panel-head{cursor:pointer; user-select:none;}
   section.panel.collapsed > .panel-head{border-bottom-color:transparent;}
   section.panel.collapsed > .panel-body{display:none;}
+  .warn-open-note{margin:0; padding:10px 14px; border:0; border-bottom:1px solid rgba(217,100,80,.45); border-left:4px solid #d96450; background:rgba(120,40,30,.22);}
+  .warn-open-note-title{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--parchment-dim); margin-bottom:4px;}
+  .warn-open-note ul{margin:0; padding-left:18px;}
+  .warn-open-note li{margin:2px 0; font-size:13px;}
+  .warn-open-note li.advice .warn-open-note-tag{color:#d9a94a;}
+  .warn-open-note li.blocker .warn-open-note-tag{color:#e07a67;}
+  .warn-open-note-tag{font-weight:700; font-size:11px; margin-right:6px; text-transform:uppercase; letter-spacing:.04em;}
   .warn-tier{margin:14px 0 6px; font-size:13px; font-weight:700; letter-spacing:.03em;}
   .warn-tier.blocker{color:var(--danger-bright);}
   .warn-tier.advice{color:#d9a94a;}
@@ -6929,8 +6936,27 @@ function warnScrollTo(sectionId){
   const el = document.getElementById(sectionId);
   if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
 }
+// [Round 405] Tyler: "when i click 'open' it just brings me up to that section instead of opening that affliction. it also
+// doesn't tell me in the box what needs to be fixed when i open it". Enchantments/afflictions now open their own editor, and
+// every editor opened from the Warnings list gets a note at the top listing what is flagged for that item.
+function warnShowNoteInModal(kind, entity){
+  const { blockers, advice } = collectWarnings();
+  const mine = blockers.concat(advice).filter(it=> it.entity === entity);
+  const m = document.getElementById('modal');
+  if(!m || !mine.length) return;
+  const old = m.querySelector('.warn-open-note'); if(old) old.remove();
+  const note = document.createElement('div');
+  note.className = 'warn-open-note';
+  const line = it => `<li class="${it.tier}"><span class="warn-open-note-tag">${it.tier === 'blocker' ? 'Blocks compile' : 'Worth fixing'}</span> ${escapeHtml(it.message)}</li>`;
+  note.innerHTML = `<div class="warn-open-note-title">Flagged in Warnings</div><ul>${mine.map(line).join('')}</ul>`;
+  m.insertBefore(note, m.firstChild);
+}
 function warnOpenEntity(kind, entity){
   if(!entity) return;
+  warnOpenEntityCore(kind, entity);
+  warnShowNoteInModal(kind, entity);
+}
+function warnOpenEntityCore(kind, entity){
   if(kind === 'cards') openCardEditor(entity.id);
   else if(kind === 'relics') openRelicEditor(entity.id);
   else if(kind === 'mechanics') openMechEditor(entity.id);
@@ -6938,7 +6964,9 @@ function warnOpenEntity(kind, entity){
   else if(kind === 'pets') openPetEditor(entity.id);
   else if(kind === 'orbs') openOrbEditor(entity.id);
   else if(kind === 'stances') openStanceEditor(entity.id);
-  else warnScrollTo(WARN_KIND_SECTION[kind] || 'section-character'); // enchantments/afflictions edit inline in their section
+  else if(kind === 'enchantments') enchantmentSection.openEditor(entity.id);
+  else if(kind === 'afflictions') afflictionSection.openEditor(entity.id);
+  else warnScrollTo(WARN_KIND_SECTION[kind] || 'section-character');
 }
 function warnItem(tier, category, kind, entity, message){
   return { tier, category, kind, entity, who: entity ? `${WARN_KIND_LABEL[kind] || kind} “${entity.name || 'Untitled'}”` : 'Character', message,
@@ -22644,7 +22672,7 @@ function makeAfflictionSection(opts){
     document.getElementById(`save-${idPrefix}`).onclick = doSaveAffliction;
     modalSaveOnOutsideClick = doSaveAffliction;
   }
-  return { render };
+  return { render, openEditor }; // [Round 405] openEditor exposed so the Warnings list can open one specific affliction
 }
 
 function makeRichEntitySection(opts){
@@ -23001,7 +23029,7 @@ function makeRichEntitySection(opts){
     document.getElementById(`save-${idPrefix}`).onclick = doSaveRichEntity;
     modalSaveOnOutsideClick = doSaveRichEntity;
   }
-  return { render };
+  return { render, openEditor }; // [Round 405] same, for enchantments
 }
 const enchantmentSection = makeRichEntitySection({ stateKey:'enchantments', gridId:'enchantments-grid', countId:'enchantment-count', singular:'Enchantment', idPrefix:'ench', noun:'enchantment' });
 // Round 196: Afflictions now use their own makeAfflictionSection factory

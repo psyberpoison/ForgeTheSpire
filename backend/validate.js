@@ -3429,7 +3429,7 @@ function validateCharacterPackage(pkg) {
       if (!cc || typeof cc !== 'object') {
         errors.push(`${p}.costChange must be an object.`);
       } else {
-        if (cc.amount !== undefined && typeof cc.amount !== 'number') errors.push(`${p}.costChange.amount must be a number.`);
+        if (cc.amount !== undefined && cc.amount !== null && cc.amount !== '' && typeof cc.amount !== 'number') errors.push(`${p}.costChange.amount must be a number.`);
         if (cc.multiplyByAmount !== undefined && typeof cc.multiplyByAmount !== 'boolean') errors.push(`${p}.costChange.multiplyByAmount must be a boolean.`);
       }
     }
